@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pets-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pets
+      POSTGRES_PASSWORD: pets
+      POSTGRES_DB: pets_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pets_pgdata:/var/lib/postgresql/data
+
+volumes:
+  pets_pgdata:
