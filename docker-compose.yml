@@ -11,6 +11,24 @@ services:
       - "5433:5432"
     volumes:
       - pets_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pets -d pets_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: pets-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://pets:pets@postgres:5432/pets_db"
+      PORT: "3001"
+    ports:
+      - "3001:3001"
 
 volumes:
   pets_pgdata:

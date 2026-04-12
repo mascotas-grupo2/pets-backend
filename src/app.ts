@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import { petsRouter } from "./routes/pets.routes.js";
+import { mascotasRouter } from "./routes/mascotas.routes.js";
 
 export const app = express();
 
@@ -11,4 +11,4 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.use("/api/pets", petsRouter);
+app.use("/api/mascotas", mascotasRouter);
