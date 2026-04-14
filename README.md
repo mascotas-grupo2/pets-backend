@@ -69,6 +69,8 @@ Base URL: `http://localhost:3001`
 | POST | `/api/mascotas` | Crear mascota |
 | PUT | `/api/mascotas/:id` | Actualizar mascota (parcial) |
 | DELETE | `/api/mascotas/:id` | Eliminar mascota |
+| POST | `/api/auth/register` | Registrar un nuevo usuario (name, email, password) |
+| POST | `/api/auth/login` | Autenticar usuario (email, password) |
 
 ### Ejemplo de creación
 
@@ -86,6 +88,35 @@ Content-Type: application/json
   "direccion": "Av. Corrientes 1500, Buenos Aires"
 }
 ```
+
+### Endpoints de autenticación
+
+Registro de usuario:
+
+```json
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Nombre Apellido",
+  "email": "usuario@example.com",
+  "password": "MiPass123"
+}
+```
+
+Login:
+
+```json
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "usuario@example.com",
+  "password": "MiPass123"
+}
+```
+
+### Geocodificación de direcciones
 
 La `direccion` se geocodifica automáticamente al guardar utilizando la API [Nominatim](https://nominatim.org/release-docs/latest/api/Search/) para poder guardar `latitud` y `longitud` en la base de datos y facilitar su representación a futuro.
 
