@@ -17,6 +17,21 @@ services:
       timeout: 5s
       retries: 10
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: pets-keycloak
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - pets_kcdata:/opt/keycloak/data
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+
   backend:
     build: .
     container_name: pets-backend
@@ -24,11 +39,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_started
     environment:
       DATABASE_URL: "postgresql://pets:pets@postgres:5432/pets_db"
       PORT: "3001"
+      KEYCLOAK_ISSUER: "http://keycloak:8080/realms/pets"
+      KEYCLOAK_AUDIENCE: "pets-backend"
     ports:
       - "3001:3001"
 
 volumes:
   pets_pgdata:
+  pets_kcdata:
