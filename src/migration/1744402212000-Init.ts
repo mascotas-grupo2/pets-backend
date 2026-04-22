@@ -22,6 +22,7 @@ export class Init1744402212000 implements MigrationInterface {
         "direccion"   character varying,
         "latitud"     double precision,
         "longitud"    double precision,
+        "imagen"      character varying,
         "createdAt"   TIMESTAMP NOT NULL DEFAULT now(),
         "updatedAt"   TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_mascota_id" PRIMARY KEY ("id")

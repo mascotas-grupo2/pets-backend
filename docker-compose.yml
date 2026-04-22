@@ -32,6 +32,35 @@ services:
       - pets_kcdata:/opt/keycloak/data
       - ./keycloak/import:/opt/keycloak/data/import:ro
 
+  minio:
+    image: minio/minio:latest
+    container_name: pets-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh -c "sleep 5; mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; mc mb --ignore-existing myminio/report-images; mc policy set download myminio/report-images || true; exit 0"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
   backend:
     build: .
     container_name: pets-backend
@@ -46,9 +75,15 @@ services:
       PORT: "3001"
       KEYCLOAK_ISSUER: "http://keycloak:8080/realms/pets"
       KEYCLOAK_AUDIENCE: "pets-backend"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
     ports:
       - "3001:3001"
 
 volumes:
   pets_pgdata:
   pets_kcdata:
+  minio_data:
+
