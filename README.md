@@ -7,7 +7,7 @@ API REST para la plataforma de mascotas perdidas, encontradas y en adopción.
 - Node.js + TypeScript
 - Express
 - TypeORM + PostgreSQL
-- Keycloak (OpenID Connect) para autenticación SSO
+- Keycloak (OpenID Connect) — disponible en el stack, sin enforcement en el backend por ahora (ver [Autenticación](#autenticación))
 - Docker
 
 ## Requisitos previos
@@ -63,49 +63,47 @@ npm run seed
 |---|---|
 | `DATABASE_URL` | Cadena de conexión a PostgreSQL |
 | `PORT` | Puerto del servidor (default: 3001) |
-| `KEYCLOAK_ISSUER` | URL del realm de Keycloak (ej: `http://localhost:8080/realms/pets`) |
-| `KEYCLOAK_AUDIENCE` | Audience esperada en los tokens (el client-id del backend, ej: `pets-backend`) |
+| `KEYCLOAK_ISSUER` | URL del realm de Keycloak (ej: `http://localhost:8080/realms/pets`). Solo se usa si activás el middleware JWT |
+| `KEYCLOAK_AUDIENCE` | Audience esperada en los tokens (ej: `pets-backend`). Opcional |
 
 Ver `.env.example` para los valores de desarrollo.
 
-## Autenticación con Keycloak
+## Autenticación
 
-El backend valida tokens JWT firmados por Keycloak usando el endpoint JWKS del realm. No maneja contraseñas ni sesiones propias: la identidad es 100% delegada a Keycloak.
+Para esta POC el backend expone **dos endpoints propios** de register/login con hash de contraseñas (PBKDF2 + salt por usuario). Los endpoints de mascotas **no requieren auth** por ahora.
 
-### Setup del realm
+Keycloak también forma parte del stack y se levanta con `docker compose up`, pero el middleware de validación JWT (`src/lib/auth.ts`) está disponible sin aplicarse a ninguna ruta. Queda listo para enchufarlo cuando el equipo decida migrar a SSO.
 
-El realm `pets` y el client `pets-backend` se **importan automáticamente** al levantar Keycloak. La configuración versionada vive en [`keycloak/import/realm-pets.json`](./keycloak/import/realm-pets.json) y Keycloak la carga vía `--import-realm` la primera vez que arranca.
-
-Lo único que cada integrante tiene que hacer manualmente es **crear su usuario**:
-
-1. Abrir `http://localhost:8080` e ingresar con `admin` / `admin`.
-2. Seleccionar el realm **`pets`** (arriba a la izquierda).
-3. Ir a **Users → Add user**, poner username, guardar.
-4. En la pestaña **Credentials**, setear una contraseña (destildar "Temporary").
-
-> **¿Modificaste algo en la UI y querés compartirlo con el equipo?** Exportá el realm (`Realm settings → Action → Partial export`) y reemplazá `keycloak/import/realm-pets.json`. Para que el cambio tome efecto en tu máquina: `docker compose down -v && docker compose up` (borra el volumen de Keycloak y re-importa).
-
-### Flujo típico
-
-1. El frontend (pets-front) redirige al usuario a Keycloak para autenticarse (Authorization Code + PKCE).
-2. Keycloak devuelve un `access_token` (JWT) al frontend.
-3. El frontend llama a este backend incluyendo el header `Authorization: Bearer <access_token>`.
-4. Este backend valida firma, issuer y expiración contra el JWKS de Keycloak. Si es válido, deja pasar.
-
-### Obtener un token manualmente para testing
-
-Usando el flujo Direct Access Grants (`Password`) — útil para pruebas, no usar en producción:
+### Endpoints de auth propios
 
 ```bash
-curl -X POST 'http://localhost:8080/realms/pets/protocol/openid-connect/token' \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode 'grant_type=password' \
-  --data-urlencode 'client_id=pets-backend' \
-  --data-urlencode 'username=<tu_usuario>' \
-  --data-urlencode 'password=<tu_password>'
+# Registro
+curl -X POST http://localhost:3001/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test User","email":"test@example.com","password":"pass1234"}'
+
+# Login
+curl -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"pass1234"}'
 ```
 
-> Para que funcione, habilitar en el client **Capability config → Direct access grants**.
+`register` devuelve el usuario creado (sin hash ni salt) con status 201. `login` devuelve el usuario si las credenciales coinciden; 401 si no.
+
+### Keycloak (disponible, no activo)
+
+- El realm `pets` y el client `pets-backend` se **importan automáticamente** al levantar Keycloak. La configuración vive en [`keycloak/import/realm-pets.json`](./keycloak/import/realm-pets.json) y Keycloak la carga vía `--import-realm` la primera vez que arranca.
+- Admin UI: `http://localhost:8080` con `admin` / `admin`.
+
+Para activar la protección por JWT en algún endpoint, importá el middleware en la ruta correspondiente:
+
+```ts
+import { requireAuth } from "../lib/auth.js";
+
+mascotasRouter.post("/", requireAuth, createMascota);
+```
+
+El middleware valida firma, issuer y (opcionalmente) audience contra el JWKS remoto de Keycloak.
 
 ## API
 
@@ -116,17 +114,16 @@ Base URL: `http://localhost:3001`
 | GET | `/health` | No | Estado del servidor |
 | GET | `/api/mascotas` | No | Listar todas las mascotas |
 | GET | `/api/mascotas/:id` | No | Obtener una mascota |
-| POST | `/api/mascotas` | Sí | Crear mascota |
-| PUT | `/api/mascotas/:id` | Sí | Actualizar mascota (parcial) |
-| DELETE | `/api/mascotas/:id` | Sí | Eliminar mascota |
+| POST | `/api/mascotas` | No | Crear mascota |
+| PUT | `/api/mascotas/:id` | No | Actualizar mascota (parcial) |
+| DELETE | `/api/mascotas/:id` | No | Eliminar mascota |
+| POST | `/api/auth/register` | No | Registrar un nuevo usuario (`name`, `email`, `password`) |
+| POST | `/api/auth/login` | No | Autenticar usuario (`email`, `password`) |
 
-Los endpoints marcados con **Auth: Sí** requieren el header `Authorization: Bearer <token>`.
-
-### Ejemplo de creación
+### Ejemplo de creación de mascota
 
 ```bash
 curl -X POST http://localhost:3001/api/mascotas \
-  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "nombre": "Tobi",

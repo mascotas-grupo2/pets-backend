@@ -13,7 +13,6 @@ const jwks = createRemoteJWKSet(
 );
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       user?: JWTPayload;
@@ -36,12 +35,11 @@ export async function requireAuth(
   try {
     const { payload } = await jwtVerify(token, jwks, {
       issuer,
-      // Keycloak emite tokens con `aud` opcional; si está configurado, validamos.
       ...(audience ? { audience } : {}),
     });
     req.user = payload;
     return next();
   } catch (err) {
-    return res.status(401).json({ error: "Token inválido o expirado" });
+    return res.status(401).json({ error: "Token invalido o expirado" });
   }
 }
