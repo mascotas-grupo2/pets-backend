@@ -44,6 +44,9 @@ export class Mascota {
   @Column({ nullable: true, type: "varchar" })
   direccion: string | null;
 
+  @Column({ nullable: true, type: "varchar" })
+  imagen: string | null;
+
   @Column({ nullable: true, type: "float" })
   latitud: number | null;
 
