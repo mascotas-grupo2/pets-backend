@@ -1,15 +1,17 @@
 import "dotenv/config";
+import crypto from "crypto";
 import { AppDataSource } from "./data-source.js";
 import { Pet, AnimalType, PetSex } from "./entity/Pet.js";
+import { User } from "./entity/User.js"
 
 async function seed() {
   await AppDataSource.initialize();
   await AppDataSource.runMigrations();
 
-  const repo = AppDataSource.getRepository(Pet);
-  await repo.clear();
+  const repoPets = AppDataSource.getRepository(Pet);
+  await repoPets.clear();
 
-  const data = [
+  const petsData = [
     {
       name: "",
       animalType: AnimalType.PERRO,
@@ -46,11 +48,26 @@ async function seed() {
     },
   ];
 
-  for (const item of data) {
-    await repo.save(repo.create(item));
+  for (const item of petsData) {
+    await repoPets.save(repoPets.create(item));
   }
+  console.log(`Seed completed: ${petsData.length} pets inserted.`);
 
-  console.log(`Seed completed: ${data.length} pets inserted.`);
+  const repoUsers = AppDataSource.getRepository(User);
+  repoUsers.clear();
+  const password = "adminadmin";
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
+  await repoUsers.save(
+    repoUsers.create({
+      name: "Admin",
+      email: "admin@admin.com",
+      passwordHash: hash,
+      passwordSalt: salt,
+    })
+  );
+  console.log(`Seed completed: Admin user inserted.`);
+
   await AppDataSource.destroy();
 }
 
