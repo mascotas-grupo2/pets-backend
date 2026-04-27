@@ -2,8 +2,11 @@ import { z } from "zod";
 import { AnimalType, PetSex } from "../entity/Pet";
 
 export const petCreateSchema = z.object({
+  id: z.string().optional(),
+  createdAt: z.string().optional(),
+  userId: z.number().int().positive().optional(),
   name: z.string().min(1).max(120).optional(),
-  photo: z.string().url(),
+  photo: z.string().min(1).nullable().optional(),
   photos: z.array(z.string().url()).optional(),
   description: z.string().min(1).max(2000),
   animalType: z.nativeEnum(AnimalType),

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
 import { User } from "../entity/User.js";
 import { registerSchema, loginSchema } from "../schemas/auth.schema.js";
+import { publicUser } from "./user.controller.js";
 import crypto from "crypto";
 
 function userRepo() {
@@ -25,9 +26,7 @@ export async function register(req: Request, res: Response) {
   const { salt, hash } = hashPassword(password);
   const user = userRepo().create({ name, email, passwordHash: hash, passwordSalt: salt });
   const saved = await userRepo().save(user);
-  // Do not return password fields
-  const { passwordHash, passwordSalt, ...safe } = saved as any;
-  res.status(201).json(safe);
+  res.status(201).json(publicUser(saved));
 }
 
 export async function login(req: Request, res: Response) {
@@ -41,6 +40,5 @@ export async function login(req: Request, res: Response) {
   const hash = crypto.pbkdf2Sync(password, existing.passwordSalt, 310000, 32, "sha256").toString("hex");
   if (hash !== existing.passwordHash) return res.status(401).json({ error: "Credenciales invalidas" });
 
-  const { passwordHash, passwordSalt, ...safe } = existing as any;
-  res.json(safe);
+  res.json(publicUser(existing));
 }
