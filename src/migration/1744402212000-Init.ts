@@ -18,7 +18,7 @@ export class InitPetTable1744402212000 implements MigrationInterface {
       `CREATE TABLE "pet" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "name" character varying(120),
-        "photo" character varying(500) NOT NULL,
+        "photo" text,
         "photos" text array,
         "description" text NOT NULL,
         "animalType" "public"."pet_animaltype_enum" NOT NULL,
@@ -40,6 +40,7 @@ export class InitPetTable1744402212000 implements MigrationInterface {
         "friendlyWithKids" boolean,
         "trained" boolean,
         "reward" character varying(120),
+        "userId" integer,
         "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_pet_id" PRIMARY KEY ("id")
       )`

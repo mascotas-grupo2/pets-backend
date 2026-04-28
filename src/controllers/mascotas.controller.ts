@@ -1,11 +1,17 @@
 import { Request, Response } from "express";
+import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
+import { User } from "../entity/User.js";
 import { petCreateSchema, petUpdateSchema } from "../schemas/mascota.schema.js";
 import { geocodificarDireccion } from "../lib/geocoding.js";
 
 function repo() {
   return AppDataSource.getRepository(Pet);
+}
+
+function userRepo() {
+  return AppDataSource.getRepository(User);
 }
 
 async function resolverCoordenadas(direccion: string | undefined) {
@@ -33,9 +39,33 @@ export async function createMascota(req: Request, res: Response) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const coords = await resolverCoordenadas(parsed.data.location);
-  const mascota = repo().create({ ...parsed.data, ...coords });
+  const { id: _id, createdAt: _createdAt, ...data } = parsed.data;
+  const userId =
+    data.userId ??
+    (await userRepo().findOneBy({ email: data.contactEmail }))?.id ??
+    null;
+  const mascota = repo().create({ ...data, userId, ...coords });
   const saved = await repo().save(mascota);
   res.status(201).json(saved);
+}
+
+export async function listMascotasByIds(req: Request, res: Response) {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (ids.length === 0) return res.json([]);
+
+  const mascotas = await repo().findBy({ id: In(ids) });
+  res.json(mascotas);
+}
+
+export async function listMascotasByUser(req: Request, res: Response) {
+  const id = Number(req.query.id ?? req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const mascotas = await repo().find({
+    where: { userId: id },
+    order: { createdAt: "DESC" },
+  });
+  res.json(mascotas);
 }
 
 export async function updateMascota(req: Request, res: Response) {

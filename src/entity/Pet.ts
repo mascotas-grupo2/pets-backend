@@ -24,8 +24,8 @@ export class Pet {
   @Column({ nullable: true, type: "varchar", length: 120 })
   name: string | null;
 
-  @Column({ type: "varchar", length: 500 })
-  photo: string;
+  @Column({ nullable: true, type: "text" })
+  photo: string | null;
 
   @Column({ type: "text", array: true, nullable: true })
   photos: string[] | null;
@@ -92,4 +92,7 @@ export class Pet {
 
   @Column({ nullable: true, type: "varchar", length: 120 })
   reward: string | null;
+
+  @Column({ nullable: true, type: "int" })
+  userId: number | null;
 }
