@@ -25,11 +25,30 @@ app.use("/api/users", userRouter);
 app.post("/api/pet/reportar", createMascota);
 app.post("/api/pet/adoptar", submitAdoption);
 
-// Proxy para servir objetos desde MinIO (evita necesitar bucket público)
+function contentTypeForObject(objectName: string) {
+  const lower = objectName.toLowerCase();
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".jfif")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
+}
+
+// Proxy para servir objetos desde MinIO sin exponer el bucket directamente.
 app.get("/api/storage/:bucket/:object", async (req, res) => {
   const { bucket, object } = req.params;
   const objectName = decodeURIComponent(object);
+
   try {
+    const stat = await new Promise<any>((resolve, reject) => {
+      (minioClient as any).statObject(bucket, objectName, (err: any, data: any) => {
+        if (err) return reject(err);
+        resolve(data);
+      });
+    });
+    const metadata = stat?.metaData ?? {};
+    res.type(metadata["content-type"] ?? metadata["Content-Type"] ?? contentTypeForObject(objectName));
+
     const stream = await new Promise<any>((resolve, reject) => {
       (minioClient as any).getObject(bucket, objectName, (err: any, dataStream: any) => {
         if (err) return reject(err);

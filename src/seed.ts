@@ -1,8 +1,35 @@
 import "dotenv/config";
 import crypto from "crypto";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { AppDataSource } from "./data-source.js";
 import { Pet, AnimalType, PetSex } from "./entity/Pet.js";
-import { User } from "./entity/User.js"
+import { User } from "./entity/User.js";
+import { uploadSeedImageToMinio } from "./lib/minio.js";
+
+const seedAssetsDir = path.join(process.cwd(), "src", "seed-assets");
+
+function contentTypeForFile(fileName: string) {
+  const ext = path.extname(fileName).toLowerCase();
+  if (ext === ".jpg" || ext === ".jpeg" || ext === ".jfif") return "image/jpeg";
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  throw new Error(`Formato de imagen no soportado para seed: ${fileName}`);
+}
+
+async function uploadSeedPhoto(bucket: string, fileName: string) {
+  const filePath = path.join(seedAssetsDir, fileName);
+  if (!existsSync(filePath)) {
+    throw new Error(`No se encontro la imagen de seed: ${filePath}`);
+  }
+
+  return uploadSeedImageToMinio(
+    bucket,
+    `seed-${fileName}`,
+    readFileSync(filePath),
+    contentTypeForFile(fileName)
+  );
+}
 
 async function seed() {
   await AppDataSource.initialize();
@@ -11,12 +38,16 @@ async function seed() {
   const repoPets = AppDataSource.getRepository(Pet);
   await repoPets.clear();
 
+  const bucket = process.env.MINIO_BUCKET ?? "report-images";
+  const dogPhoto = await uploadSeedPhoto(bucket, "toby.png");
+  const catPhoto = await uploadSeedPhoto(bucket, "luna.png");
+
   const petsData = [
     {
-      name: "",
+      name: "Toby",
       animalType: AnimalType.PERRO,
-      photo: "https://placehold.co/600x400?text=perro",
-      description: "Perro marrón, amigable, llevaba collar azul cuando fue visto",
+      photo: dogPhoto,
+      description: "Perro marron, amigable, llevaba collar azul cuando fue visto",
       date: "2026-04-22",
       location: "Vergara 2396, Villa Tesei",
       contactPhone: "1134567890",
@@ -32,10 +63,10 @@ async function seed() {
       friendlyWithKids: true,
     },
     {
-      name: "",
+      name: "Luna",
       animalType: AnimalType.GATO,
-      photo: "https://placehold.co/600x400?text=gato",
-      description: "Es un gato naranja, se lo veía tranquilito, podemos tenerlo hasta nuevo aviso",
+      photo: catPhoto,
+      description: "Es una gata naranja, se la veia tranquila y podemos tenerla hasta nuevo aviso",
       date: "2026-04-22",
       location: "Adolfo Alsina 2256, Florida, Buenos Aires",
       contactPhone: "1198765432",
@@ -66,7 +97,7 @@ async function seed() {
       passwordSalt: salt,
     })
   );
-  console.log(`Seed completed: Admin user inserted.`);
+  console.log("Seed completed: Admin user inserted.");
 
   await AppDataSource.destroy();
 }

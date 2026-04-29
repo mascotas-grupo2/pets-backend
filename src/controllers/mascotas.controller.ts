@@ -4,7 +4,7 @@ import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
 import { petCreateSchema, petUpdateSchema } from "../schemas/mascota.schema.js";
-import { uploadBufferToMinio } from "../lib/minio.js";
+import { uploadBufferToMinio, uploadDataUrlToMinio } from "../lib/minio.js";
 import { geocodificarDireccion } from "../lib/geocoding.js";
 
 function repo() {
@@ -39,29 +39,36 @@ export async function createMascota(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  let data = { ...parsed.data };
   // si llegó un archivo (multer, memoryStorage) lo subimos a MinIO y colocamos la URL en photo
   const file = (req as any).file as Express.Multer.File | undefined;
   if (file) {
     try {
       const bucket = process.env.MINIO_BUCKET ?? "report-images";
       const uniqueName = `${Date.now()}-${file.originalname}`;
-      await uploadBufferToMinio(bucket, uniqueName, file.buffer, file.mimetype);
-      const backendUrl = process.env.BACKEND_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 3001}`;
-      (parsed.data as any).photo = `${backendUrl}/api/storage/${bucket}/${encodeURIComponent(uniqueName)}`;
+      data.photo = await uploadBufferToMinio(bucket, uniqueName, file.buffer, file.mimetype);
     } catch (e) {
       console.error("Error subiendo a MinIO:", e);
       return res.status(500).json({ error: "Error subiendo imagen" });
     }
   }
+  if (typeof data.photo === "string" && data.photo.startsWith("data:image/")) {
+    try {
+      const bucket = process.env.MINIO_BUCKET ?? "report-images";
+      data.photo = await uploadDataUrlToMinio(bucket, data.photo, "report");
+    } catch (e) {
+      console.error("Error subiendo data URL a MinIO:", e);
+      return res.status(500).json({ error: "Error subiendo imagen" });
+    }
+  }
 
-  const coords = await resolverCoordenadas(parsed.data.location);
-  const { id: _id, createdAt: _createdAt, ...data } = parsed.data;
-  console.log("Saving mascota, photo:", (data as any).photo);
+  const coords = await resolverCoordenadas(data.location);
+  const { id: _id, createdAt: _createdAt, ...petData } = data;
   const userId =
-    data.userId ??
-    (await userRepo().findOneBy({ email: data.contactEmail }))?.id ??
+    petData.userId ??
+    (await userRepo().findOneBy({ email: petData.contactEmail }))?.id ??
     null;
-  const mascota = repo().create({ ...data, userId, ...coords });
+  const mascota = repo().create({ ...petData, userId, ...coords });
   const saved = await repo().save(mascota);
   res.status(201).json(saved);
 }
