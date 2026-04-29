@@ -20,21 +20,69 @@ function parseEndpoint(endpoint: string) {
 }
 
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT ?? "http://localhost:9000";
+const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? process.env.MINIO_ROOT_USER ?? "minioadmin";
+const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? process.env.MINIO_ROOT_PASSWORD ?? "minioadmin";
 const { host, port, useSSL } = parseEndpoint(MINIO_ENDPOINT);
 
 const client = new Client({
   endPoint: host,
   port,
   useSSL,
-  accessKey: process.env.MINIO_ACCESS_KEY ?? undefined,
-  secretKey: process.env.MINIO_SECRET_KEY ?? undefined,
+  accessKey: MINIO_ACCESS_KEY,
+  secretKey: MINIO_SECRET_KEY,
 });
 
-async function ensureBucketPublic(bucket: string) {
+function createClient(endpoint: string) {
+  const parsed = parseEndpoint(endpoint);
+  return new Client({
+    endPoint: parsed.host,
+    port: parsed.port,
+    useSSL: parsed.useSSL,
+    accessKey: MINIO_ACCESS_KEY,
+    secretKey: MINIO_SECRET_KEY,
+  });
+}
+
+function getFallbackEndpoint() {
+  if (process.env.MINIO_PUBLIC_ENDPOINT) return process.env.MINIO_PUBLIC_ENDPOINT;
+  return host === "minio" ? "http://localhost:9000" : null;
+}
+
+function getBackendPublicUrl() {
+  return (process.env.BACKEND_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 3001}`).replace(/\/$/, "");
+}
+
+function getStorageUrl(bucket: string, objectName: string) {
+  return `${getBackendPublicUrl()}/api/storage/${bucket}/${encodeURIComponent(objectName)}`;
+}
+
+function extensionFromContentType(contentType?: string) {
+  if (contentType === "image/jpeg") return ".jpg";
+  if (contentType === "image/png") return ".png";
+  if (contentType === "image/webp") return ".webp";
+  if (contentType === "image/svg+xml") return ".svg";
+  return "";
+}
+
+function sanitizeObjectName(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+export function parseDataUrlImage(dataUrl: string) {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+
+  return {
+    contentType: match[1],
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+async function ensureBucketPublic(bucket: string, targetClient = client) {
   try {
-    const exists = await client.bucketExists(bucket);
+    const exists = await targetClient.bucketExists(bucket);
     if (!exists) {
-      await client.makeBucket(bucket);
+      await targetClient.makeBucket(bucket);
     }
 
     const policy = JSON.stringify({
@@ -53,14 +101,15 @@ async function ensureBucketPublic(bucket: string) {
     // si falla, no evitamos la subida, pero registramos el error
     try {
       // @ts-ignore
-      if (typeof (client as any).setBucketPolicy === "function") {
+      if (typeof (targetClient as any).setBucketPolicy === "function") {
         // some minio client versions expect (bucket, policy)
-        await (client as any).setBucketPolicy(bucket, policy);
+        await (targetClient as any).setBucketPolicy(bucket, policy);
       }
     } catch (e) {
       console.warn("No se pudo establecer política pública en bucket:", e);
     }
-  } catch (e) {
+  } catch (e: any) {
+    if (e?.code === "ENOTFOUND") throw e;
     console.warn("ensureBucketPublic fallo:", e);
   }
 }
@@ -72,53 +121,52 @@ export async function uploadBufferToMinio(
   contentType?: string
 ) {
   if (!bucket) throw new Error("MINIO bucket not specified");
-  // ensure bucket exists and is public
-  await ensureBucketPublic(bucket);
 
-  // putObject supports Buffer
-  try {
-    await client.putObject(bucket, objectName, buffer, buffer.length, {
+  async function uploadWith(targetClient: Client) {
+    await ensureBucketPublic(bucket, targetClient);
+    await targetClient.putObject(bucket, objectName, buffer, buffer.length, {
       "Content-Type": contentType ?? "application/octet-stream",
     } as any);
+  }
+
+  try {
+    await uploadWith(client);
   } catch (err: any) {
-    // Si falla por DNS (por ejemplo hostname 'minio' no resolvible desde host), intentar con MINIO_PUBLIC_ENDPOINT
-    const publicEp = process.env.MINIO_PUBLIC_ENDPOINT;
-    if (err && err.code === "ENOTFOUND" && publicEp && publicEp !== MINIO_ENDPOINT) {
-      const { host: phost, port: pport, useSSL: pssl } = parseEndpoint(publicEp);
-      const alt = new Client({
-        endPoint: phost,
-        port: pport,
-        useSSL: pssl,
-        accessKey: process.env.MINIO_ACCESS_KEY ?? undefined,
-        secretKey: process.env.MINIO_SECRET_KEY ?? undefined,
-      });
-      await alt.putObject(bucket, objectName, buffer, buffer.length, {
-        "Content-Type": contentType ?? "application/octet-stream",
-      } as any);
+    const fallbackEndpoint = getFallbackEndpoint();
+    if (err?.code === "ENOTFOUND" && fallbackEndpoint && fallbackEndpoint !== MINIO_ENDPOINT) {
+      await uploadWith(createClient(fallbackEndpoint));
     } else {
       throw err;
     }
   }
 
-  // Return a presigned URL so clients can access the object even if the bucket is not public.
-  const expiresSeconds = Number(process.env.MINIO_PRESIGNED_EXPIRES ?? 60 * 60 * 24 * 7); // default 7 days
-  try {
-    const presigned = await new Promise<string>((resolve, reject) => {
-      try {
-        (client as any).presignedGetObject(bucket, objectName, expiresSeconds, (err: any, url: string) => {
-          if (err) return reject(err);
-          resolve(url);
-        });
-      } catch (err) {
-        reject(err);
-      }
-    });
-    return presigned;
-  } catch (e) {
-    // If presigned fails (e.g. due to endpoint mismatch), fall back to public endpoint URL
-    const publicEndpoint = (process.env.MINIO_PUBLIC_ENDPOINT ?? MINIO_ENDPOINT).replace(/\/$/, "");
-    return `${publicEndpoint}/${bucket}/${encodeURIComponent(objectName)}`;
-  }
+  return getStorageUrl(bucket, objectName);
+}
+
+export async function uploadDataUrlToMinio(
+  bucket: string,
+  dataUrl: string,
+  objectPrefix = "report"
+) {
+  const parsed = parseDataUrlImage(dataUrl);
+  if (!parsed) return null;
+
+  const objectName = `${objectPrefix}-${Date.now()}${extensionFromContentType(parsed.contentType)}`;
+  return uploadBufferToMinio(bucket, objectName, parsed.buffer, parsed.contentType);
+}
+
+export async function uploadSeedImageToMinio(
+  bucket: string,
+  objectName: string,
+  buffer: Buffer,
+  contentType: string
+) {
+  return uploadBufferToMinio(
+    bucket,
+    sanitizeObjectName(objectName),
+    buffer,
+    contentType
+  );
 }
 
 export default client;
