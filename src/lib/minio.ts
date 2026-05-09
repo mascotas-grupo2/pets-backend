@@ -26,8 +26,8 @@ const client = new Client({
   endPoint: host,
   port,
   useSSL,
-  accessKey: process.env.MINIO_ACCESS_KEY ?? undefined,
-  secretKey: process.env.MINIO_SECRET_KEY ?? undefined,
+  accessKey: process.env.MINIO_ACCESS_KEY ?? "",
+  secretKey: process.env.MINIO_SECRET_KEY ?? "",
 });
 
 async function ensureBucketPublic(bucket: string) {
@@ -89,8 +89,8 @@ export async function uploadBufferToMinio(
         endPoint: phost,
         port: pport,
         useSSL: pssl,
-        accessKey: process.env.MINIO_ACCESS_KEY ?? undefined,
-        secretKey: process.env.MINIO_SECRET_KEY ?? undefined,
+        accessKey: process.env.MINIO_ACCESS_KEY ?? "",
+        secretKey: process.env.MINIO_SECRET_KEY ?? "",
       });
       await alt.putObject(bucket, objectName, buffer, buffer.length, {
         "Content-Type": contentType ?? "application/octet-stream",
