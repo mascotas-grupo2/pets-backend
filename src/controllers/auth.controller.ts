@@ -27,7 +27,6 @@ function verificationUrl(token: string) {
 function authResponse(user: User, token: string, refreshToken: string, extra: Record<string, unknown> = {}) {
   const safeUser = publicUser(user);
   return {
-    ...safeUser,
     user: safeUser,
     token,
     refreshToken,

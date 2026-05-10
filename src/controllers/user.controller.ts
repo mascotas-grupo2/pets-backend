@@ -33,9 +33,17 @@ function splitName(name: string) {
 }
 
 export function publicUser(user: User) {
-  const { passwordHash, passwordSalt, ...safe } = user as User & {
+  const {
+    passwordHash,
+    passwordSalt,
+    refreshTokenHash,
+    emailVerificationTokenHash,
+    ...safe
+  } = user as User & {
     passwordHash?: string;
     passwordSalt?: string;
+    refreshTokenHash?: string | null;
+    emailVerificationTokenHash?: string | null;
   };
 
   return {

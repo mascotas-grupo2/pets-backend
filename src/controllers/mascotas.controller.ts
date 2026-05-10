@@ -102,7 +102,7 @@ export async function updateMascota(req: Request, res: Response) {
   const existing = await repo().findOneBy({ id });
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
 
-  const coords = "direccion" in parsed.data
+  const coords = "location" in parsed.data
     ? await resolverCoordenadas(parsed.data.location)
     : {};
 
