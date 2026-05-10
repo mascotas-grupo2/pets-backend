@@ -142,3 +142,82 @@ export async function submitAdoption(req: Request, res: Response) {
 
   res.status(201).json(publicUser(updated));
 }
+
+export async function updateUser(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  const body = req.body || {};
+
+  function parseBoolField(val: any) {
+    if (val === "si") return true;
+    if (val === "no") return false;
+    if (val === "na") return null;
+    if (val === null) return null;
+    if (typeof val === "boolean") return val;
+    return null;
+  }
+
+  const updates: Partial<User> = {};
+
+  const allowedStringFields = [
+    "firstName",
+    "lastName",
+    "phone",
+    "addressLine1",
+    "addressLine2",
+    "postcode",
+    "town",
+    "livingSituation",
+    "householdSetting",
+    "activityLevel",
+    "allergies",
+    "otherAnimalsDetail",
+    "experience",
+    "preferredAnimal",
+    "photo",
+  ];
+
+  for (const key of allowedStringFields) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      // @ts-ignore
+      updates[key] = body[key] === "" ? null : body[key];
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "adults")) {
+    const v = Number(body.adults);
+    updates.adults = Number.isFinite(v) ? v : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "children")) {
+    const v = Number(body.children);
+    updates.children = Number.isFinite(v) ? v : null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "hasGarden")) {
+    updates.hasGarden = parseBoolField(body.hasGarden);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "visitingChildren")) {
+    updates.visitingChildren = parseBoolField(body.visitingChildren);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "hasFlatmates")) {
+    updates.hasFlatmates = parseBoolField(body.hasFlatmates);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "otherAnimals")) {
+    updates.otherAnimals = parseBoolField(body.otherAnimals);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "neutered")) {
+    updates.neutered = parseBoolField(body.neutered);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "vaccinated")) {
+    updates.vaccinated = parseBoolField(body.vaccinated);
+  }
+
+  // Prevent changing role, passwordHash, passwordSalt or id
+  const merged = await userRepo().save({ ...user, ...updates });
+
+  res.json(publicUser(merged));
+}
