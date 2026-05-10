@@ -14,3 +14,21 @@ export const loginSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(20).optional(),
+});
+
+export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(20),
+});
+
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+export const googleSsoSchema = z.object({
+  idToken: z.string().min(20),
+});
+
+export type GoogleSsoInput = z.infer<typeof googleSsoSchema>;

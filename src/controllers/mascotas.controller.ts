@@ -65,6 +65,7 @@ export async function createMascota(req: Request, res: Response) {
   const coords = await resolverCoordenadas(data.location);
   const { id: _id, createdAt: _createdAt, ...petData } = data;
   const userId =
+    req.authUser?.id ??
     petData.userId ??
     (await userRepo().findOneBy({ email: petData.contactEmail }))?.id ??
     null;
@@ -82,7 +83,7 @@ export async function listMascotasByIds(req: Request, res: Response) {
 }
 
 export async function listMascotasByUser(req: Request, res: Response) {
-  const id = Number(req.query.id ?? req.params.id);
+  const id = req.authUser?.id;
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
 
   const mascotas = await repo().find({
