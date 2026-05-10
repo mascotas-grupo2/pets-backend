@@ -3,8 +3,7 @@ import { AppDataSource } from "../data-source.js";
 import { User, UserRole } from "../entity/User.js";
 import { registerSchema, loginSchema, refreshTokenSchema, verifyEmailSchema, googleSsoSchema } from "../schemas/auth.schema.js";
 import { publicUser } from "./user.controller.js";
-import { createRemoteJWKSet, jwtVerify } from "jose";
-import { clearAuthCookies, createRefreshToken, hashToken, issueAuthTokens, setAuthCookies } from "../lib/auth.js";
+import { clearAuthCookies, createRefreshToken, getRequestToken, hashToken, issueAuthTokens, setAuthCookies, verifyKeycloakToken } from "../lib/auth.js";
 import crypto from "crypto";
 
 function userRepo() {
@@ -138,24 +137,21 @@ export async function verifyEmail(req: Request, res: Response) {
   res.json(publicUser(saved));
 }
 
-export async function googleSso(req: Request, res: Response) {
+export async function ssoSync(req: Request, res: Response) {
   const parsed = googleSsoSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) return res.status(500).json({ error: "Falta GOOGLE_CLIENT_ID" });
 
   try {
-    const jwks = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
-    const { payload } = await jwtVerify(parsed.data.idToken, jwks, {
-      issuer: ["https://accounts.google.com", "accounts.google.com"],
-      audience: clientId,
-    });
+    const token = parsed.data.idToken ?? parsed.data.token ?? parsed.data.accessToken ?? getRequestToken(req);
+    if (!token) return res.status(400).json({ error: "Token requerido" });
+
+    const payload = await verifyKeycloakToken(token);
 
     const email = typeof payload.email === "string" ? payload.email : null;
     const subject = payload.sub;
-    if (!email || !subject) return res.status(401).json({ error: "Token SSO invalido" });
+    if (!email || !subject) return res.status(401).json({ error: "Token SSO Keycloak invalido" });
 
-    let user = await userRepo().findOneBy({ ssoProvider: "google", ssoSubject: subject });
+    let user = await userRepo().findOneBy({ ssoProvider: "keycloak", ssoSubject: subject });
     if (!user) user = await userRepo().findOneBy({ email });
     if (!user) {
       const password = hashPassword(createRefreshToken());
@@ -168,7 +164,7 @@ export async function googleSso(req: Request, res: Response) {
       });
     }
 
-    user.ssoProvider = "google";
+    user.ssoProvider = "keycloak";
     user.ssoSubject = subject;
     user.emailVerified = payload.email_verified === true;
     if (typeof payload.picture === "string") user.photo = payload.picture;
@@ -177,6 +173,8 @@ export async function googleSso(req: Request, res: Response) {
     setAuthCookies(res, tokens.token, tokens.refreshToken);
     res.json(authResponse(saved, tokens.token, tokens.refreshToken));
   } catch {
-    res.status(401).json({ error: "Token SSO invalido" });
+    res.status(401).json({ error: "Token SSO Keycloak invalido" });
   }
 }
+
+export const googleSso = ssoSync;

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from "jose";
 import crypto from "crypto";
 import { User } from "../entity/User.js";
+import { AppDataSource } from "../data-source.js";
 
 const issuer = process.env.KEYCLOAK_ISSUER;
 const audience = process.env.KEYCLOAK_AUDIENCE;
@@ -101,14 +102,29 @@ export async function issueAuthTokens(user: User) {
   return { token, refreshToken };
 }
 
-function authUserFromPayload(payload: JWTPayload): AuthUser | null {
+async function authUserFromPayload(payload: JWTPayload): Promise<AuthUser | null> {
   const id = Number(payload.sub);
-  if (!Number.isInteger(id)) return null;
+  const email = typeof payload.email === "string" ? payload.email : undefined;
+  const role = typeof payload.role === "string" ? payload.role : undefined;
+  const provider = typeof payload.provider === "string" ? payload.provider : undefined;
+
+  if (Number.isInteger(id)) {
+    return { id, email, role, provider };
+  }
+
+  if (!payload.sub) return null;
+
+  const userRepo = AppDataSource.getRepository(User);
+  const user =
+    (await userRepo.findOneBy({ ssoProvider: "keycloak", ssoSubject: payload.sub })) ??
+    (email ? await userRepo.findOneBy({ email }) : null);
+
+  if (!user) return null;
   return {
-    id,
-    email: typeof payload.email === "string" ? payload.email : undefined,
-    role: typeof payload.role === "string" ? payload.role : undefined,
-    provider: typeof payload.provider === "string" ? payload.provider : undefined,
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    provider: user.ssoProvider ?? "keycloak",
   };
 }
 
@@ -117,13 +133,17 @@ async function verifyToken(token: string) {
     const { payload } = await jwtVerify(token, jwtSecret, { issuer: localIssuer });
     return payload;
   } catch {
-    if (!jwks || !issuer) throw new Error("Token invalido o expirado");
-    const { payload } = await jwtVerify(token, jwks, {
-      issuer,
-      ...(audience ? { audience } : {}),
-    });
-    return payload;
+    return verifyKeycloakToken(token);
   }
+}
+
+export async function verifyKeycloakToken(token: string) {
+  if (!jwks || !issuer) throw new Error("Token invalido o expirado");
+  const { payload } = await jwtVerify(token, jwks, {
+    issuer,
+    ...(audience ? { audience } : {}),
+  });
+  return payload;
 }
 
 export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
@@ -133,7 +153,7 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
   try {
     const payload = await verifyToken(token);
     req.user = payload;
-    req.authUser = authUserFromPayload(payload) ?? undefined;
+    req.authUser = (await authUserFromPayload(payload)) ?? undefined;
   } catch {
     req.user = undefined;
     req.authUser = undefined;
@@ -151,7 +171,7 @@ export async function requireAuth(
 
   try {
     const payload = await verifyToken(token);
-    const authUser = authUserFromPayload(payload);
+    const authUser = await authUserFromPayload(payload);
     if (!authUser) return res.status(401).json({ error: "Token invalido o expirado" });
     req.user = payload;
     req.authUser = authUser;

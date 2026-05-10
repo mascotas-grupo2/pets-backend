@@ -28,7 +28,9 @@ export const verifyEmailSchema = z.object({
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 
 export const googleSsoSchema = z.object({
-  idToken: z.string().min(20),
+  idToken: z.string().min(20).optional(),
+  token: z.string().min(20).optional(),
+  accessToken: z.string().min(20).optional(),
 });
 
 export type GoogleSsoInput = z.infer<typeof googleSsoSchema>;

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { googleSso, login, logout, refreshToken, register, verifyEmail } from "../controllers/auth.controller.js";
+import { googleSso, login, logout, refreshToken, register, ssoSync, verifyEmail } from "../controllers/auth.controller.js";
 
 export const authRouter = Router();
 
@@ -10,4 +10,5 @@ authRouter.post("/refresh", refreshToken);
 authRouter.post("/logout", logout);
 authRouter.post("/verify-email", verifyEmail);
 authRouter.get("/verify-email", verifyEmail);
+authRouter.post("/sso-sync", ssoSync);
 authRouter.post("/sso/google", googleSso);
