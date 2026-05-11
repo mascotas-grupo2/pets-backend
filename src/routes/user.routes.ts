@@ -12,5 +12,3 @@ userRouter.put("/update", requireAuth, updateUser);
 userRouter.patch("/update", requireAuth, updateUser);
 userRouter.get("/:id", getCommonInfo);
 userRouter.get("/:id/details", requireAuth, getUserDetails);
-userRouter.put("/:id", requireAuth, updateUser);
-userRouter.patch("/:id", requireAuth, updateUser);
