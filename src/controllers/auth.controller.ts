@@ -74,10 +74,12 @@ export async function register(req: Request, res: Response) {
   const saved = await userRepo().save(user);
   const tokens = await saveIssuedTokens(saved);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
-  res.status(201).json(authResponse(saved, tokens.token, tokens.refreshToken, {
-    verificationToken,
-    verificationUrl: verificationUrl(verificationToken),
-  }));
+  // Return minimal public info; tokens are set in cookies
+  res.status(201).json({
+    name: saved.name,
+    role: saved.role,
+    adopter: saved.adopter === true,
+  });
 }
 
 export async function login(req: Request, res: Response) {
@@ -93,7 +95,12 @@ export async function login(req: Request, res: Response) {
 
   const tokens = await saveIssuedTokens(existing);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
-  res.json(authResponse(existing, tokens.token, tokens.refreshToken));
+  // Return minimal public info; tokens are set in cookies
+  res.json({
+    name: existing.name,
+    role: existing.role,
+    adopter: existing.adopter === true,
+  });
 }
 
 export async function refreshToken(req: Request, res: Response) {
@@ -133,7 +140,14 @@ export async function verifyEmail(req: Request, res: Response) {
   existing.emailVerified = true;
   existing.emailVerificationTokenHash = null;
   const saved = await userRepo().save(existing);
-  res.json(publicUser(saved));
+  // Issue auth tokens and set them in cookies, then return minimal public info
+  const tokens = await saveIssuedTokens(saved);
+  setAuthCookies(res, tokens.token, tokens.refreshToken);
+  res.json({
+    name: saved.name,
+    role: saved.role,
+    adopter: saved.adopter === true,
+  });
 }
 
 export async function ssoSync(req: Request, res: Response) {

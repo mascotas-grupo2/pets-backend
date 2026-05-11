@@ -60,7 +60,12 @@ export async function getCommonInfo(req: Request, res: Response) {
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  res.json(publicUser(user));
+  // Devolver solo información pública mínima solicitada
+  res.json({
+    name: user.name,
+    role: user.role,
+    adopter: user.adopter === true,
+  });
 }
 
 export async function getMe(req: Request, res: Response) {
@@ -99,7 +104,6 @@ export async function getUserDetails(req: Request, res: Response) {
 
   const safe = publicUser(user);
   res.json({
-    userId: String(user.id),
     reports: reports.map((pet) => ({
       id: pet.id,
       title: pet.name ?? pet.animalType,
