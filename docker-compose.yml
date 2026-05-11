@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: pets-postgres
+    container_name: pets-postgres-local
     restart: unless-stopped
     environment:
       POSTGRES_USER: pets
@@ -19,7 +19,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
-    container_name: pets-keycloak
+    container_name: pets-keycloak-local
     restart: unless-stopped
     command: ["start-dev", "--import-realm"]
     environment:
@@ -34,7 +34,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: pets-minio
+    container_name: pets-minio-local
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -63,7 +63,7 @@ services:
 
   backend:
     build: .
-    container_name: pets-backend
+    container_name: pets-backend-local
     restart: unless-stopped
     depends_on:
       postgres:
@@ -79,6 +79,12 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET}
+      BASE_URL: ${BASE_URL}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      COOKIE_SECURE: ${COOKIE_SECURE}
     ports:
       - "3001:3001"
 
