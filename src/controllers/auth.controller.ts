@@ -39,12 +39,7 @@ function authResponse(user: User, token: string, refreshToken: string, extra: Re
 function requestRefreshToken(req: Request) {
   const parsed = refreshTokenSchema.safeParse(req.body ?? {});
   if (parsed.success && parsed.data.refreshToken) return parsed.data.refreshToken;
-  const cookies = req.headers.cookie?.split(";") ?? [];
-  for (const cookie of cookies) {
-    const [key, ...value] = cookie.trim().split("=");
-    if (key === "refresh_token") return decodeURIComponent(value.join("="));
-  }
-  return undefined;
+  return req.cookies?.refresh_token;
 }
 
 async function saveIssuedTokens(user: User) {
@@ -74,12 +69,7 @@ export async function register(req: Request, res: Response) {
   const saved = await userRepo().save(user);
   const tokens = await saveIssuedTokens(saved);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
-  // Return minimal public info; tokens are set in cookies
-  res.status(201).json({
-    name: saved.name,
-    role: saved.role,
-    adopter: saved.adopter === true,
-  });
+  res.status(201).json(authResponse(saved, tokens.token, tokens.refreshToken));
 }
 
 export async function login(req: Request, res: Response) {
@@ -95,12 +85,7 @@ export async function login(req: Request, res: Response) {
 
   const tokens = await saveIssuedTokens(existing);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
-  // Return minimal public info; tokens are set in cookies
-  res.json({
-    name: existing.name,
-    role: existing.role,
-    adopter: existing.adopter === true,
-  });
+  res.json(authResponse(existing, tokens.token, tokens.refreshToken));
 }
 
 export async function refreshToken(req: Request, res: Response) {
@@ -143,11 +128,7 @@ export async function verifyEmail(req: Request, res: Response) {
   // Issue auth tokens and set them in cookies, then return minimal public info
   const tokens = await saveIssuedTokens(saved);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
-  res.json({
-    name: saved.name,
-    role: saved.role,
-    adopter: saved.adopter === true,
-  });
+  res.json(authResponse(saved, tokens.token, tokens.refreshToken));
 }
 
 export async function ssoSync(req: Request, res: Response) {

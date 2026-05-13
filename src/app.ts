@@ -1,4 +1,5 @@
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import express from "express";
 import { mascotasRouter } from "./routes/mascotas.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
@@ -15,6 +16,7 @@ const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? "
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+app.use(cookieParser());
 app.use(cors({
   origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   credentials: true,

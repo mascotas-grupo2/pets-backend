@@ -35,19 +35,10 @@ declare global {
   }
 }
 
-function cookieValue(req: Request, name: string) {
-  const cookies = req.headers.cookie?.split(";") ?? [];
-  for (const cookie of cookies) {
-    const [key, ...value] = cookie.trim().split("=");
-    if (key === name) return decodeURIComponent(value.join("="));
-  }
-  return undefined;
-}
-
 export function getRequestToken(req: Request) {
   const header = req.headers.authorization;
   if (header?.startsWith("Bearer ")) return header.slice("Bearer ".length).trim();
-  return cookieValue(req, "auth_token");
+  return req.cookies?.auth_token;
 }
 
 export function hashToken(token: string) {
