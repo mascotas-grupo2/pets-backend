@@ -49,7 +49,12 @@ function contentTypeForObject(objectName: string) {
 app.get("/api/storage/:bucket/:object", async (req, res) => {
   const { bucket, object } = req.params;
   const objectName = decodeURIComponent(object);
-
+ // Si existe un endpoint público para MinIO, redirigimos al objeto directamente
+  const minioPublic = process.env.MINIO_PUBLIC_ENDPOINT;
+  if (minioPublic) {
+    const publicUrl = `${minioPublic.replace(/\/$/, "")}/${bucket}/${encodeURIComponent(objectName)}`;
+    return res.redirect(publicUrl);
+  }
   try {
     const stat = await new Promise<any>((resolve, reject) => {
       (minioClient as any).statObject(bucket, objectName, (err: any, data: any) => {
