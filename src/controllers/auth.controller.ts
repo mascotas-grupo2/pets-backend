@@ -28,10 +28,8 @@ function authResponse(user: User, token: string, refreshToken: string, extra: Re
   const safeUser = publicUser(user);
   return {
     user: safeUser,
-    token,
+    token, // Token local (pequeño y eficiente)
     refreshToken,
-    access_token: token,
-    refresh_token: refreshToken,
     ...extra,
   };
 }
@@ -39,12 +37,8 @@ function authResponse(user: User, token: string, refreshToken: string, extra: Re
 function requestRefreshToken(req: Request) {
   const parsed = refreshTokenSchema.safeParse(req.body ?? {});
   if (parsed.success && parsed.data.refreshToken) return parsed.data.refreshToken;
-  const cookies = req.headers.cookie?.split(";") ?? [];
-  for (const cookie of cookies) {
-    const [key, ...value] = cookie.trim().split("=");
-    if (key === "refresh_token") return decodeURIComponent(value.join("="));
-  }
-  return undefined;
+  console.log("[Auth] Buscando refresh_token en cookies:", !!req.cookies?.refresh_token);
+  return req.cookies?.refresh_token;
 }
 
 async function saveIssuedTokens(user: User) {
@@ -74,10 +68,9 @@ export async function register(req: Request, res: Response) {
   const saved = await userRepo().save(user);
   const tokens = await saveIssuedTokens(saved);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
-  res.status(201).json(authResponse(saved, tokens.token, tokens.refreshToken, {
-    verificationToken,
-    verificationUrl: verificationUrl(verificationToken),
-  }));
+
+  console.log(`[Register] Usuario creado exitosamente: ${saved.email}`);
+  res.status(201).json(authResponse(saved, tokens.token, tokens.refreshToken));
 }
 
 export async function login(req: Request, res: Response) {
@@ -85,6 +78,8 @@ export async function login(req: Request, res: Response) {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const { email, password } = parsed.data;
+  console.log(`[Login] Intento de login para: ${email}`);
+
   const existing = await userRepo().findOneBy({ email });
   if (!existing) return res.status(401).json({ error: "Credenciales invalidas" });
 
@@ -93,6 +88,8 @@ export async function login(req: Request, res: Response) {
 
   const tokens = await saveIssuedTokens(existing);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
+
+  console.log(`[Login] Login exitoso para: ${email}`);
   res.json(authResponse(existing, tokens.token, tokens.refreshToken));
 }
 
@@ -105,6 +102,8 @@ export async function refreshToken(req: Request, res: Response) {
 
   const tokens = await saveIssuedTokens(existing);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
+
+  console.log(`[RefreshToken] Tokens renovados para usuario: ${existing.email}`);
   res.json(authResponse(existing, tokens.token, tokens.refreshToken));
 }
 
@@ -112,6 +111,7 @@ export async function logout(req: Request, res: Response) {
   const refreshToken = requestRefreshToken(req);
   if (refreshToken) {
     const existing = await userRepo().findOneBy({ refreshTokenHash: hashToken(refreshToken) });
+    console.log(`[Logout] Cerrando sesión para: ${existing?.email ?? "token desconocido"}`);
     if (existing) {
       existing.refreshTokenHash = null;
       await userRepo().save(existing);
@@ -133,7 +133,10 @@ export async function verifyEmail(req: Request, res: Response) {
   existing.emailVerified = true;
   existing.emailVerificationTokenHash = null;
   const saved = await userRepo().save(existing);
-  res.json(publicUser(saved));
+  // Issue auth tokens and set them in cookies, then return minimal public info
+  const tokens = await saveIssuedTokens(saved);
+  setAuthCookies(res, tokens.token, tokens.refreshToken);
+  res.json(authResponse(saved, tokens.token, tokens.refreshToken));
 }
 
 export async function ssoSync(req: Request, res: Response) {
@@ -141,10 +144,12 @@ export async function ssoSync(req: Request, res: Response) {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   try {
+    console.log("[ssoSync] Iniciando sincronización SSO");
     const token = parsed.data.idToken ?? parsed.data.token ?? parsed.data.accessToken ?? getRequestToken(req);
     if (!token) return res.status(400).json({ error: "Token requerido" });
 
     const payload = await verifyKeycloakToken(token);
+    console.log("[ssoSync] Token Keycloak validado para:", payload.email);
 
     const email = typeof payload.email === "string" ? payload.email : null;
     const subject = payload.sub;
@@ -155,6 +160,7 @@ export async function ssoSync(req: Request, res: Response) {
     if (!user) {
       const password = hashPassword(createRefreshToken());
       user = userRepo().create({
+        firstName: typeof payload.given_name === "string" ? payload.given_name : "",
         name: typeof payload.name === "string" ? payload.name : email,
         email,
         passwordHash: password.hash,
@@ -167,11 +173,16 @@ export async function ssoSync(req: Request, res: Response) {
     user.ssoSubject = subject;
     user.emailVerified = payload.email_verified === true;
     if (typeof payload.picture === "string") user.photo = payload.picture;
+
     const saved = await userRepo().save(user);
     const tokens = await saveIssuedTokens(saved);
-    setAuthCookies(res, tokens.token, tokens.refreshToken);
-    res.json(authResponse(saved, tokens.token, tokens.refreshToken));
-  } catch {
+
+    const response = authResponse(saved, tokens.token, tokens.refreshToken);
+    console.log(`[ssoSync] Usuario sincronizado: ${saved.email}. Payload size: ${JSON.stringify(response).length} bytes`);
+
+    res.json(response);
+  } catch (err) {
+    console.error("[ssoSync] Error crítico:", err instanceof Error ? err.message : err);
     res.status(401).json({ error: "Token SSO Keycloak invalido" });
   }
 }

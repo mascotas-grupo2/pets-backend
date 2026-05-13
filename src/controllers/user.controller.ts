@@ -60,7 +60,34 @@ export async function getCommonInfo(req: Request, res: Response) {
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  res.json(publicUser(user));
+  // Devolver solo información pública mínima solicitada
+  res.json({
+    name: user.name,
+    role: user.role,
+    adopter: user.adopter === true,
+  });
+}
+
+export async function getMe(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  const safe = publicUser(user);
+  res.json({
+    id: safe.id,
+    userId: String(user.id),
+    name: safe.name,
+    firstName: safe.firstName,
+    lastName: safe.lastName,
+    email: safe.email,
+    photo: safe.photo,
+    role: safe.role,
+    emailVerified: safe.emailVerified,
+    ssoProvider: safe.ssoProvider,
+  });
 }
 
 export async function getMe(req: Request, res: Response) {
@@ -99,7 +126,6 @@ export async function getUserDetails(req: Request, res: Response) {
 
   const safe = publicUser(user);
   res.json({
-    userId: String(user.id),
     reports: reports.map((pet) => ({
       id: pet.id,
       title: pet.name ?? pet.animalType,
