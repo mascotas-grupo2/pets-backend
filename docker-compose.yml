@@ -85,10 +85,6 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
       BASE_URL: ${BASE_URL}
       CORS_ORIGIN: ${CORS_ORIGIN}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ISSUER: ${JWT_ISSUER}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
-      COOKIE_SECURE: ${COOKIE_SECURE}
     ports:
       - "3001:3001"
 
