@@ -90,28 +90,6 @@ export async function getMe(req: Request, res: Response) {
   });
 }
 
-export async function getMe(req: Request, res: Response) {
-  const id = req.authUser?.id;
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
-
-  const user = await userRepo().findOneBy({ id });
-  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-
-  const safe = publicUser(user);
-  res.json({
-    id: safe.id,
-    userId: String(user.id),
-    name: safe.name,
-    firstName: safe.firstName,
-    lastName: safe.lastName,
-    email: safe.email,
-    photo: safe.photo,
-    role: safe.role,
-    emailVerified: safe.emailVerified,
-    ssoProvider: safe.ssoProvider,
-  });
-}
-
 export async function getUserDetails(req: Request, res: Response) {
   const id = req.authUser?.id;
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
