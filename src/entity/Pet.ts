@@ -42,6 +42,12 @@ export class Pet {
   @Column({ type: "varchar", length: 200 })
   location: string;
 
+  @Column({ nullable: true, type: "float" })
+  latitud: number | null;
+
+  @Column({ nullable: true, type: "float" })
+  longitud: number | null;
+
   @Column({ type: "varchar", length: 30 })
   contactPhone: string;
 

@@ -12,6 +12,8 @@ export const petCreateSchema = z.object({
   animalType: z.nativeEnum(AnimalType),
   date: z.string().min(1).max(200),
   location: z.string().min(1).max(200),
+  latitud: z.number().optional().nullable(),
+  longitud: z.number().optional().nullable(),
   contactPhone: z.string().min(1).max(30),
   contactEmail: z.string().email().max(120),
   sex: z.nativeEnum(PetSex).optional(),

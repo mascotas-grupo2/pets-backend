@@ -33,9 +33,17 @@ function splitName(name: string) {
 }
 
 export function publicUser(user: User) {
-  const { passwordHash, passwordSalt, ...safe } = user as User & {
+  const {
+    passwordHash,
+    passwordSalt,
+    refreshTokenHash,
+    emailVerificationTokenHash,
+    ...safe
+  } = user as User & {
     passwordHash?: string;
     passwordSalt?: string;
+    refreshTokenHash?: string | null;
+    emailVerificationTokenHash?: string | null;
   };
 
   return {
@@ -55,8 +63,30 @@ export async function getCommonInfo(req: Request, res: Response) {
   res.json(publicUser(user));
 }
 
+export async function getMe(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  const safe = publicUser(user);
+  res.json({
+    id: safe.id,
+    userId: String(user.id),
+    name: safe.name,
+    firstName: safe.firstName,
+    lastName: safe.lastName,
+    email: safe.email,
+    photo: safe.photo,
+    role: safe.role,
+    emailVerified: safe.emailVerified,
+    ssoProvider: safe.ssoProvider,
+  });
+}
+
 export async function getUserDetails(req: Request, res: Response) {
-  const id = Number(req.query.id ?? req.params.id);
+  const id = req.authUser?.id;
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
 
   const user = await userRepo().findOneBy({ id });
@@ -110,7 +140,10 @@ export async function submitAdoption(req: Request, res: Response) {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const values: AdoptionInput = parsed.data;
-  const user = await userRepo().findOneBy({ id: values.userId });
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(401).json({ error: "Usuario no autenticado" });
+
+  const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
   const updated = await userRepo().save({
@@ -144,7 +177,7 @@ export async function submitAdoption(req: Request, res: Response) {
 }
 
 export async function updateUser(req: Request, res: Response) {
-  const id = Number(req.params.id);
+  const id = req.authUser?.id;
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
 
   const user = await userRepo().findOneBy({ id });

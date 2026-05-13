@@ -9,16 +9,17 @@ import {
   listMascotas,
   updateMascota,
 } from "../controllers/mascotas.controller.js";
+import { optionalAuth, requireAuth } from "../lib/auth.js";
 
 export const mascotasRouter = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 mascotasRouter.get("/", listMascotas);
-mascotasRouter.get("/userPetsById", listMascotasByUser);
-mascotasRouter.get("/user/:id", listMascotasByUser);
+mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
+mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
 mascotasRouter.post("/petsByIds", listMascotasByIds);
 mascotasRouter.get("/:id", getMascota);
-mascotasRouter.post("/", upload.single("photo"), createMascota);
+mascotasRouter.post("/", optionalAuth, upload.single("photo"), createMascota);
 mascotasRouter.put("/:id", updateMascota);
 mascotasRouter.delete("/:id", deleteMascota);

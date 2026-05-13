@@ -6,10 +6,19 @@ import { userRouter } from "./routes/user.routes.js";
 import { createMascota } from "./controllers/mascotas.controller.js";
 import minioClient from "./lib/minio.js";
 import { submitAdoption } from "./controllers/user.controller.js";
+import { optionalAuth, requireAuth } from "./lib/auth.js";
 
 export const app = express();
 
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.BASE_URL ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+  credentials: true,
+}));
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => {
@@ -22,8 +31,8 @@ app.use("/api/auth", authRouter);
 app.use("/api/user", userRouter);
 app.use("/api/users", userRouter);
 
-app.post("/api/pet/reportar", createMascota);
-app.post("/api/pet/adoptar", submitAdoption);
+app.post("/api/pet/reportar", optionalAuth, createMascota);
+app.post("/api/pet/adoptar", requireAuth, submitAdoption);
 
 function contentTypeForObject(objectName: string) {
   const lower = objectName.toLowerCase();

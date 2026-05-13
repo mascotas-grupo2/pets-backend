@@ -22,6 +22,21 @@ export class User {
   @Column({ name: "password_salt", type: "varchar" })
   passwordSalt!: string;
 
+  @Column({ name: "refresh_token_hash", nullable: true, type: "varchar", length: 128 })
+  refreshTokenHash!: string | null;
+
+  @Column({ name: "email_verified", type: "boolean", default: false })
+  emailVerified!: boolean;
+
+  @Column({ name: "email_verification_token_hash", nullable: true, type: "varchar", length: 128 })
+  emailVerificationTokenHash!: string | null;
+
+  @Column({ name: "sso_provider", nullable: true, type: "varchar", length: 40 })
+  ssoProvider!: string | null;
+
+  @Column({ name: "sso_subject", nullable: true, type: "varchar", length: 200 })
+  ssoSubject!: string | null;
+
   @Column({ type: "enum", enum: UserRole, default: UserRole.USER })
   role!: UserRole;
 
