@@ -24,14 +24,10 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "protocol": "openid-connect",
-      "redirectUris": [
-        "http://localhost:3000/*"
-      ],
-      "webOrigins": [
-        "http://localhost:3000"
-      ],
+      "redirectUris": ["https://pets.localdev.me/*", "http://localhost:3000/*"],
+      "webOrigins": ["https://pets.localdev.me", "http://localhost:3000"],
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:3000/*",
+        "post.logout.redirect.uris": "https://pets.localdev.me/*",
         "pkce.code.challenge.method": "S256"
       },
       "protocolMappers": [

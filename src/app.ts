@@ -11,7 +11,7 @@ import { optionalAuth, requireAuth } from "./lib/auth.js";
 
 export const app = express();
 
-const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? "")
+const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.BASE_URL ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
