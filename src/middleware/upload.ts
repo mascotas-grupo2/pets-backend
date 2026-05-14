@@ -9,6 +9,10 @@ function single(fieldName: string) {
   return upload.single(fieldName);
 }
 
+function multiple(fieldName: string, maxCount?: number) {
+  return upload.array(fieldName, maxCount ?? 6);
+}
+
 function multerErrorHandler(err: any, _req: any, res: any, next: any) {
   if (err) {
     if (err.code === "LIMIT_FILE_SIZE") {
@@ -19,4 +23,4 @@ function multerErrorHandler(err: any, _req: any, res: any, next: any) {
   next();
 }
 
-export { upload, single, multerErrorHandler, maxFileBytes };
+export { upload, single, multiple, multerErrorHandler, maxFileBytes };

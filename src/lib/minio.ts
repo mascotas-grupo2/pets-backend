@@ -180,4 +180,27 @@ export async function uploadSeedImageToMinio(
   );
 }
 
+export async function createFolderInBucket(bucket: string, folderName: string) {
+  if (!bucket) throw new Error("MINIO bucket not specified");
+  const objectName = `${folderName}/.keep`;
+  const buffer = Buffer.from("");
+
+  async function putWith(targetClient: Client) {
+    await ensureBucketPublic(bucket, targetClient);
+    await targetClient.putObject(bucket, objectName, buffer, 0);
+  }
+
+  try {
+    await putWith(client);
+  } catch (err: any) {
+    const fallbackEndpoint = getFallbackEndpoint();
+    if (err?.code === "ENOTFOUND" && fallbackEndpoint && fallbackEndpoint !== MINIO_ENDPOINT) {
+      await putWith(createClient(fallbackEndpoint));
+    } else {
+      // no bloquear la operación si falla la creación del placeholder
+      console.warn("No se pudo crear carpeta en bucket:", err);
+    }
+  }
+}
+
 export default client;

@@ -4,7 +4,7 @@ import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
 import { petCreateSchema, petUpdateSchema } from "../schemas/mascota.schema.js";
-import { uploadBufferToMinio, uploadDataUrlToMinio } from "../lib/minio.js";
+import { uploadBufferToMinio, uploadDataUrlToMinio, createFolderInBucket } from "../lib/minio.js";
 import { geocodificarDireccion } from "../lib/geocoding.js";
 
 function repo() {
@@ -35,38 +35,54 @@ export async function getMascota(req: Request, res: Response) {
 }
 
 export async function createMascota(req: Request, res: Response) {
-  const parsed = petCreateSchema.safeParse(req.body);
+  // Si el request viene como multipart/form-data (FormData), los valores
+  // en req.body llegarán como strings. Coercemos tipos antes de validar.
+  let bodyForValidation: any = { ...(req.body ?? {}) };
+  const contentType = (req.headers["content-type"] ?? "") as string;
+  if (contentType.includes("multipart/form-data")) {
+    // campos numéricos
+    const maybeNumber = (v: any) => (v === undefined || v === null || v === "" ? undefined : Number(v));
+    bodyForValidation = {
+      ...bodyForValidation,
+      ageMonths: maybeNumber(bodyForValidation.ageMonths),
+      weightKg: maybeNumber(bodyForValidation.weightKg),
+      heightCm: maybeNumber(bodyForValidation.heightCm),
+      userId: maybeNumber(bodyForValidation.userId),
+    };
+
+    // campos booleanos enviados como "true"/"false"
+    const booleanFields = [
+      "hasCollar",
+      "hasTag",
+      "microchipped",
+      "neutered",
+      "vaccinated",
+      "friendlyWithKids",
+      "trained",
+    ];
+    for (const f of booleanFields) {
+      if (bodyForValidation[f] === "true") bodyForValidation[f] = true;
+      else if (bodyForValidation[f] === "false") bodyForValidation[f] = false;
+    }
+
+    // Si photos fue enviada como múltiples entradas, Type of req.body.photos
+    // puede ser string or array of strings — dejamos tal cual para la validación
+  }
+
+  const parsed = petCreateSchema.safeParse(bodyForValidation);
   if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
+    // Log minimal debug info to help diagnose multipart/FormData issues
+    try {
+      console.warn("createMascota: validation failed. content-type=", req.headers["content-type"]);
+      console.warn("createMascota: files count=", Array.isArray((req as any).files) ? (req as any).files.length : 0);
+      console.warn("createMascota: body keys=", Object.keys(bodyForValidation));
+    } catch (e) {
+      /* ignore logging failures */
+    }
+    return res.status(400).json({ error: parsed.error.flatten(), debug: { bodyKeys: Object.keys(bodyForValidation), files: Array.isArray((req as any).files) ? (req as any).files.length : 0 } });
   }
   let data = { ...parsed.data };
-  // si llegó un archivo (multer, memoryStorage) lo subimos a MinIO y colocamos la URL en photo
-  const file = (req as any).file as Express.Multer.File | undefined;
-  if (file) {
-    try {
-      const bucket = process.env.MINIO_BUCKET ?? "report-images";
-      const uniqueName = `${Date.now()}-${file.originalname}`;
-      data.photo = await uploadBufferToMinio(bucket, uniqueName, file.buffer, file.mimetype);
-    } catch (e) {
-      console.error("Error subiendo a MinIO:", e);
-      if ((e as any)?.code === "LIMIT_FILE_SIZE") {
-        return res.status(413).json({ error: "Archivo demasiado grande. Máximo 5MB." });
-      }
-      return res.status(500).json({ error: "Error subiendo imagen" });
-    }
-  }
-  if (typeof data.photo === "string" && data.photo.startsWith("data:image/")) {
-    try {
-      const bucket = process.env.MINIO_BUCKET ?? "report-images";
-      data.photo = await uploadDataUrlToMinio(bucket, data.photo, "report");
-    } catch (e) {
-      console.error("Error subiendo data URL a MinIO:", e);
-      if ((e as any)?.code === "LIMIT_FILE_SIZE") {
-        return res.status(413).json({ error: "Imagen codificada demasiado grande. Máximo 5MB." });
-      }
-      return res.status(500).json({ error: "Error subiendo imagen" });
-    }
-  }
+  // No subimos aún; creamos el registro primero para obtener el id del reporte
 
   const coords = await resolverCoordenadas(data.location);
   const { id: _id, createdAt: _createdAt, ...petData } = data;
@@ -77,7 +93,78 @@ export async function createMascota(req: Request, res: Response) {
     null;
   const mascota = repo().create({ ...petData, userId, ...coords });
   const saved = await repo().save(mascota);
-  res.status(201).json(saved);
+
+  // ahora procesamos imágenes (si las hay) y las subimos dentro de una "carpeta" con el id del reporte
+  const bucket = process.env.MINIO_BUCKET ?? "report-images";
+  try {
+    await createFolderInBucket(bucket, saved.id);
+  } catch (e) {
+    console.warn("No se pudo crear carpeta de reporte en MinIO:", e);
+  }
+
+  const uploadedUrls: string[] = [];
+
+  // archivos subidos por multer: req.files (array)
+  const files = (req as any).files as Express.Multer.File[] | undefined;
+  if (Array.isArray(files) && files.length > 0) {
+    for (const f of files) {
+      try {
+        const uniqueName = `${saved.id}/${Date.now()}-${f.originalname}`;
+        const url = await uploadBufferToMinio(bucket, uniqueName, f.buffer, f.mimetype);
+        uploadedUrls.push(url);
+      } catch (e: any) {
+        console.error("Error subiendo a MinIO:", e);
+        if (e?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "Archivo demasiado grande. Máximo 5MB." });
+        return res.status(500).json({ error: "Error subiendo imagen" });
+      }
+    }
+  }
+
+  // si se envió data URL en data.photo
+  if (typeof data.photo === "string" && data.photo.startsWith("data:image/")) {
+    try {
+      const url = await uploadDataUrlToMinio(bucket, data.photo, `${saved.id}/report`);
+      if (url) uploadedUrls.push(url);
+    } catch (e: any) {
+      console.error("Error subiendo data URL a MinIO:", e);
+      if (e?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "Imagen codificada demasiado grande. Máximo 5MB." });
+      return res.status(500).json({ error: "Error subiendo imagen" });
+    }
+  }
+
+  // si el body trae photos como array de data URLs o URLs
+  if (Array.isArray(data.photos) && data.photos.length > 0) {
+    for (const p of data.photos) {
+      if (typeof p === "string" && p.startsWith("data:image/")) {
+        try {
+          const url = await uploadDataUrlToMinio(bucket, p, `${saved.id}/report`);
+          if (url) uploadedUrls.push(url);
+        } catch (e: any) {
+          console.error("Error subiendo data URL a MinIO:", e);
+          if (e?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "Imagen codificada demasiado grande. Máximo 5MB." });
+          return res.status(500).json({ error: "Error subiendo imagen" });
+        }
+      } else if (typeof p === "string" && (p.startsWith("http://") || p.startsWith("https://"))) {
+        // ya es una URL pública, la conservamos
+        uploadedUrls.push(p);
+      }
+    }
+  }
+
+  // si no subimos nada pero data.photo es una URL, la usamos
+  if (uploadedUrls.length === 0 && typeof data.photo === "string" && (data.photo.startsWith("http://") || data.photo.startsWith("https://"))) {
+    uploadedUrls.push(data.photo);
+  }
+
+  // actualizamos el registro con las URLs (photo = primera, photos = todas)
+  const updatePayload: any = {};
+  if (uploadedUrls.length > 0) {
+    updatePayload.photo = uploadedUrls[0];
+    updatePayload.photos = uploadedUrls;
+  }
+
+  const updated = await repo().save({ ...saved, ...updatePayload });
+  res.status(201).json(updated);
 }
 
 export async function listMascotasByIds(req: Request, res: Response) {
