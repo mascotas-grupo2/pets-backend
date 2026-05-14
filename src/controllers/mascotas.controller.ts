@@ -4,7 +4,7 @@ import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
 import { petCreateSchema, petUpdateSchema } from "../schemas/mascota.schema.js";
-import { uploadBufferToMinio, uploadDataUrlToMinio, createFolderInBucket } from "../lib/minio.js";
+import { uploadBufferToMinio, uploadDataUrlToMinio, createFolderInBucket, uploadFileToMinio } from "../lib/minio.js";
 import { geocodificarDireccion } from "../lib/geocoding.js";
 
 function repo() {
@@ -109,8 +109,7 @@ export async function createMascota(req: Request, res: Response) {
   if (Array.isArray(files) && files.length > 0) {
     for (const f of files) {
       try {
-        const uniqueName = `${saved.id}/${Date.now()}-${f.originalname}`;
-        const url = await uploadBufferToMinio(bucket, uniqueName, f.buffer, f.mimetype);
+        const url = await uploadFileToMinio(bucket, String(saved.id), f.originalname, f.buffer, f.mimetype);
         uploadedUrls.push(url);
       } catch (e: any) {
         console.error("Error subiendo a MinIO:", e);

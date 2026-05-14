@@ -154,6 +154,35 @@ export async function uploadBufferToMinio(
   return getStorageUrl(bucket, objectName);
 }
 
+export function generateUniqueObjectName(folder: string, originalName?: string, contentType?: string) {
+  // Prefer the `report-{timestamp}-{rand}` naming convention to keep files uniform
+  const timestamp = Date.now();
+  const rand = Math.floor(Math.random() * 10000);
+  // try to preserve extension from originalName, otherwise infer from contentType
+  let ext = "";
+  if (originalName) {
+    const m = originalName.match(/(\.[a-z0-9]+)$/i);
+    if (m) ext = m[1].toLowerCase();
+  }
+  if (!ext) {
+    ext = extensionFromContentType(contentType) || "";
+  }
+  const filename = `report-${timestamp}-${rand}${ext}`;
+  if (folder) return `${folder.replace(/\/$/, "")}/${filename}`;
+  return filename;
+}
+
+export async function uploadFileToMinio(
+  bucket: string,
+  folder: string,
+  originalName: string | undefined,
+  buffer: Buffer,
+  contentType?: string
+) {
+  const objectName = generateUniqueObjectName(folder, originalName, contentType);
+  return uploadBufferToMinio(bucket, objectName, buffer, contentType);
+}
+
 export async function uploadDataUrlToMinio(
   bucket: string,
   dataUrl: string,
