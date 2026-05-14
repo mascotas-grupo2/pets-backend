@@ -1,5 +1,5 @@
 import { Router } from "express";
-import multer from "multer";
+import { single, multerErrorHandler } from "../middleware/upload.js";
 import {
   createMascota,
   deleteMascota,
@@ -13,13 +13,12 @@ import { optionalAuth, requireAuth } from "../lib/auth.js";
 
 export const mascotasRouter = Router();
 
-const upload = multer({ storage: multer.memoryStorage() });
 
 mascotasRouter.get("/", listMascotas);
 mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
 mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
 mascotasRouter.post("/petsByIds", listMascotasByIds);
 mascotasRouter.get("/:id", getMascota);
-mascotasRouter.post("/", optionalAuth, upload.single("photo"), createMascota);
+mascotasRouter.post("/", optionalAuth, single("photo"), multerErrorHandler, createMascota);
 mascotasRouter.put("/:id", updateMascota);
 mascotasRouter.delete("/:id", deleteMascota);
