@@ -49,6 +49,9 @@ export async function createMascota(req: Request, res: Response) {
       data.photo = await uploadBufferToMinio(bucket, uniqueName, file.buffer, file.mimetype);
     } catch (e) {
       console.error("Error subiendo a MinIO:", e);
+      if ((e as any)?.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ error: "Archivo demasiado grande. Máximo 5MB." });
+      }
       return res.status(500).json({ error: "Error subiendo imagen" });
     }
   }
@@ -58,6 +61,9 @@ export async function createMascota(req: Request, res: Response) {
       data.photo = await uploadDataUrlToMinio(bucket, data.photo, "report");
     } catch (e) {
       console.error("Error subiendo data URL a MinIO:", e);
+      if ((e as any)?.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ error: "Imagen codificada demasiado grande. Máximo 5MB." });
+      }
       return res.status(500).json({ error: "Error subiendo imagen" });
     }
   }

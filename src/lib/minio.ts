@@ -24,6 +24,10 @@ const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? process.env.MINIO_ROOT_
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? process.env.MINIO_ROOT_PASSWORD ?? "minioadmin";
 const { host, port, useSSL } = parseEndpoint(MINIO_ENDPOINT);
 
+// Tamaño máximo por archivo (bytes). Por defecto 5MB, puede sobrescribirse con MINIO_MAX_FILE_BYTES
+const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_BYTES = Number(process.env.MINIO_MAX_FILE_BYTES ?? DEFAULT_MAX_FILE_BYTES);
+
 const client = new Client({
   endPoint: host,
   port,
@@ -121,6 +125,13 @@ export async function uploadBufferToMinio(
   contentType?: string
 ) {
   if (!bucket) throw new Error("MINIO bucket not specified");
+
+  // Validación de tamaño: rechazar archivos mayores al límite configurado
+  if (buffer && buffer.length > MAX_FILE_BYTES) {
+    const err = new Error(`File too large: ${buffer.length} bytes (max ${MAX_FILE_BYTES})`);
+    (err as any).code = "LIMIT_FILE_SIZE";
+    throw err;
+  }
 
   async function uploadWith(targetClient: Client) {
     await ensureBucketPublic(bucket, targetClient);
