@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
+import { uploadFileToMinio } from "../lib/minio.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
 
 function userRepo() {
@@ -257,4 +258,27 @@ export async function updateUser(req: Request, res: Response) {
   const merged = await userRepo().save({ ...user, ...updates });
 
   res.json(publicUser(merged));
+}
+
+export async function uploadProfilePhoto(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(401).json({ error: "Usuario no autenticado" });
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file) return res.status(400).json({ error: "No se subió ningún archivo" });
+
+  const bucket = process.env.MINIO_PROFILE_BUCKET ?? process.env.MINIO_BUCKET ?? "profile";
+  try {
+    const url = await uploadFileToMinio(bucket, "users", file.originalname, file.buffer, file.mimetype);
+    user.photo = url;
+    const saved = await userRepo().save(user);
+    res.json({ photo: saved.photo });
+  } catch (e: any) {
+    console.error("Error subiendo foto de perfil a MinIO:", e);
+    if (e?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "Archivo demasiado grande." });
+    res.status(500).json({ error: "Error subiendo foto" });
+  }
 }
