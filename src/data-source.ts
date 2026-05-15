@@ -8,6 +8,7 @@ import { AddUser1744402213000 } from "./migration/1744402213000-AddUser.js";
 import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTokens.js";
 import { AddPetCoordinates1744402215000 } from "./migration/1744402215000-AddPetCoordinates.js";
 import { AddAdoption1744402216000 } from "./migration/1744402216000-AddAdoption.js";
+import { RemoveUserAdoptionFields1744402217000 } from "./migration/1744402217000-RemoveUserAdoptionFields.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -19,6 +20,7 @@ export const AppDataSource = new DataSource({
     AddAuthTokens1744402214000,
     AddPetCoordinates1744402215000,
     AddAdoption1744402216000,
+    RemoveUserAdoptionFields1744402217000,
   ],
   synchronize: false,
 });

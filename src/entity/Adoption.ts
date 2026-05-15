@@ -5,6 +5,9 @@ export class Adoption {
   @PrimaryGeneratedColumn()
   id!: number;
 
+  @Column({ type: "int", nullable: true })
+  userId!: number | null;
+
   @Column({ type: "varchar", length: 20, nullable: true })
   preferredAnimal!: string | null;
 

@@ -4,6 +4,7 @@ import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
 import { uploadFileToMinio } from "../lib/minio.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
+import { Adoption } from "../entity/Adoption.js";
 
 function userRepo() {
   return AppDataSource.getRepository(User);
@@ -13,45 +14,20 @@ function petRepo() {
   return AppDataSource.getRepository(Pet);
 }
 
-function yesNoToBoolean(value: "si" | "no" | "") {
-  if (value === "si") return true;
-  if (value === "no") return false;
-  return null;
-}
-
-function yesNoNAToBoolean(value: "si" | "no" | "na" | "") {
-  if (value === "si") return true;
-  if (value === "no") return false;
-  return null;
-}
-
 function splitName(name: string) {
-  const [firstName, ...rest] = name.trim().split(/\s+/);
-  return {
-    firstName: firstName || name,
-    lastName: rest.join(" ") || "",
-  };
+  const [firstName, ...rest] = (name || "").trim().split(/\s+/);
+  return { firstName: firstName || name, lastName: rest.join(" ") || "" };
 }
 
 export function publicUser(user: User) {
-  const {
-    passwordHash,
-    passwordSalt,
-    refreshTokenHash,
-    emailVerificationTokenHash,
-    ...safe
-  } = user as User & {
-    passwordHash?: string;
-    passwordSalt?: string;
-    refreshTokenHash?: string | null;
-    emailVerificationTokenHash?: string | null;
-  };
+  const { passwordHash, passwordSalt, refreshTokenHash, emailVerificationTokenHash, ...safe } =
+    user as User & { passwordHash?: string; passwordSalt?: string; refreshTokenHash?: string | null; emailVerificationTokenHash?: string | null };
 
   return {
     ...safe,
-    firstName: safe.firstName ?? splitName(safe.name).firstName,
-    lastName: safe.lastName ?? splitName(safe.name).lastName,
-  };
+    firstName: (safe as any).firstName ?? splitName(safe.name).firstName,
+    lastName: (safe as any).lastName ?? splitName(safe.name).lastName,
+  } as any;
 }
 
 export async function getCommonInfo(req: Request, res: Response) {
@@ -61,34 +37,15 @@ export async function getCommonInfo(req: Request, res: Response) {
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  // Devolver solo información pública mínima solicitada
-  res.json({
-    name: user.name,
-    role: user.role,
-    adopter: user.adopter === true,
-  });
+  res.json({ name: user.name, photo: user.photo });
 }
 
 export async function getMe(req: Request, res: Response) {
   const id = req.authUser?.id;
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
-
+  if (!Number.isInteger(id)) return res.status(401).json({ error: "Usuario no autenticado" });
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-
-  const safe = publicUser(user);
-  res.json({
-    id: safe.id,
-    userId: String(user.id),
-    name: safe.name,
-    firstName: safe.firstName,
-    lastName: safe.lastName,
-    email: safe.email,
-    photo: safe.photo,
-    role: safe.role,
-    emailVerified: safe.emailVerified,
-    ssoProvider: safe.ssoProvider,
-  });
+  res.json(publicUser(user));
 }
 
 export async function getUserDetails(req: Request, res: Response) {
@@ -98,45 +55,40 @@ export async function getUserDetails(req: Request, res: Response) {
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  const reports = await petRepo().find({
-    where: { userId: id },
-    order: { createdAt: "DESC" },
-  });
+  const reports = await petRepo().find({ where: { userId: id }, order: { createdAt: "DESC" } });
+
+  const adoptionRepo = AppDataSource.getRepository(Adoption);
+  const latest = await adoptionRepo.findOne({ where: { userId: id }, order: { createdAt: "DESC" } });
 
   const safe = publicUser(user);
+
   res.json({
-    reports: reports.map((pet) => ({
-      id: pet.id,
-      title: pet.name ?? pet.animalType,
-      description: pet.description,
-      status: "perdido",
-      created_at: pet.createdAt.toISOString(),
-    })),
+    reports: reports.map((pet) => ({ id: pet.id, title: pet.name ?? pet.animalType, description: pet.description, status: "perdido", created_at: pet.createdAt.toISOString() })),
     photo: safe.photo,
     email: safe.email,
     messages: [],
     notifications: [],
     created_at: user.createdAt.toISOString(),
-    addressLine1: safe.addressLine1,
-    addressLine2: safe.addressLine2,
-    firstName: safe.firstName,
-    lastName: safe.lastName,
-    phone: safe.phone,
-    postcode: safe.postcode,
-    town: safe.town,
-    hasGarden: safe.hasGarden,
-    livingSituation: safe.livingSituation,
-    householdSetting: safe.householdSetting,
-    activityLevel: safe.activityLevel,
-    adults: safe.adults,
-    children: safe.children,
-    visitingChildren: safe.visitingChildren,
-    hasFlatmates: safe.hasFlatmates,
-    allergies: safe.allergies,
-    otherAnimals: safe.otherAnimals,
-    otherAnimalsDetail: safe.otherAnimalsDetail,
-    neutered: safe.neutered,
-    vaccinated: safe.vaccinated,
+    addressLine1: latest?.addressLine1 ?? null,
+    addressLine2: latest?.addressLine2 ?? null,
+    firstName: latest?.firstName ?? null,
+    lastName: latest?.lastName ?? null,
+    phone: latest?.phone ?? null,
+    postcode: latest?.postcode ?? null,
+    town: latest?.town ?? null,
+    hasGarden: latest?.hasGarden ?? null,
+    livingSituation: latest?.livingSituation ?? null,
+    householdSetting: latest?.householdSetting ?? null,
+    activityLevel: latest?.activityLevel ?? null,
+    adults: latest?.adults ?? null,
+    children: latest?.children ?? null,
+    visitingChildren: latest?.visitingChildren ?? null,
+    hasFlatmates: latest?.hasFlatmates ?? null,
+    allergies: latest?.allergies ?? null,
+    otherAnimals: latest?.otherAnimals ?? null,
+    otherAnimalsDetail: latest?.otherAnimalsDetail ?? null,
+    neutered: latest?.neutered ?? null,
+    vaccinated: latest?.vaccinated ?? null,
   });
 }
 
@@ -151,32 +103,43 @@ export async function submitAdoption(req: Request, res: Response) {
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  const updated = await userRepo().save({
-    ...user,
-    adopter: true,
-    preferredAnimal: values.preferredAnimal || null,
-    firstName: values.firstName,
-    lastName: values.lastName,
-    phone: values.phone,
-    addressLine1: values.addressLine1,
-    addressLine2: values.addressLine2 || null,
-    postcode: values.postcode,
-    town: values.town,
-    hasGarden: yesNoToBoolean(values.hasGarden),
-    livingSituation: values.livingSituation || null,
-    householdSetting: values.householdSetting || null,
-    activityLevel: values.activityLevel || null,
-    adults: values.adults,
-    children: values.children,
-    visitingChildren: yesNoToBoolean(values.visitingChildren),
-    hasFlatmates: yesNoToBoolean(values.hasFlatmates),
-    allergies: values.allergies || null,
-    otherAnimals: yesNoToBoolean(values.otherAnimals),
-    otherAnimalsDetail: values.otherAnimalsDetail || null,
-    neutered: yesNoNAToBoolean(values.neutered),
-    vaccinated: yesNoNAToBoolean(values.vaccinated),
-    experience: values.experience || null,
-  });
+  // store adoption record
+  try {
+    const adoptionRepo = AppDataSource.getRepository(Adoption);
+    const adoption = adoptionRepo.create({
+      userId: id,
+      preferredAnimal: values.preferredAnimal || null,
+      firstName: values.firstName,
+      lastName: values.lastName,
+      email: values.email,
+      phone: values.phone,
+      addressLine1: values.addressLine1,
+      addressLine2: values.addressLine2 || null,
+      postcode: values.postcode,
+      town: values.town,
+      hasGarden: values.hasGarden,
+      livingSituation: values.livingSituation || null,
+      householdSetting: values.householdSetting || null,
+      activityLevel: values.activityLevel || null,
+      adults: values.adults,
+      children: values.children,
+      visitingChildren: values.visitingChildren,
+      hasFlatmates: values.hasFlatmates,
+      allergies: values.allergies || null,
+      otherAnimals: values.otherAnimals,
+      otherAnimalsDetail: values.otherAnimalsDetail || null,
+      neutered: values.neutered,
+      vaccinated: values.vaccinated,
+      experience: values.experience || null,
+      acceptsTerms: values.acceptsTerms,
+    });
+    await adoptionRepo.save(adoption);
+  } catch (e) {
+    console.warn("No se pudo guardar registro de adoption:", e);
+  }
+
+  // mark user as adopter
+  const updated = await userRepo().save({ ...user, adopter: true });
 
   res.status(201).json(publicUser(updated));
 }
@@ -190,35 +153,8 @@ export async function updateUser(req: Request, res: Response) {
 
   const body = req.body || {};
 
-  function parseBoolField(val: any) {
-    if (val === "si") return true;
-    if (val === "no") return false;
-    if (val === "na") return null;
-    if (val === null) return null;
-    if (typeof val === "boolean") return val;
-    return null;
-  }
-
   const updates: Partial<User> = {};
-
-  const allowedStringFields = [
-    "firstName",
-    "lastName",
-    "phone",
-    "addressLine1",
-    "addressLine2",
-    "postcode",
-    "town",
-    "livingSituation",
-    "householdSetting",
-    "activityLevel",
-    "allergies",
-    "otherAnimalsDetail",
-    "experience",
-    "preferredAnimal",
-    "photo",
-  ];
-
+  const allowedStringFields = ["photo", "name"];
   for (const key of allowedStringFields) {
     if (Object.prototype.hasOwnProperty.call(body, key)) {
       // @ts-ignore
@@ -226,37 +162,7 @@ export async function updateUser(req: Request, res: Response) {
     }
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "adults")) {
-    const v = Number(body.adults);
-    updates.adults = Number.isFinite(v) ? v : null;
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "children")) {
-    const v = Number(body.children);
-    updates.children = Number.isFinite(v) ? v : null;
-  }
-
-  if (Object.prototype.hasOwnProperty.call(body, "hasGarden")) {
-    updates.hasGarden = parseBoolField(body.hasGarden);
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "visitingChildren")) {
-    updates.visitingChildren = parseBoolField(body.visitingChildren);
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "hasFlatmates")) {
-    updates.hasFlatmates = parseBoolField(body.hasFlatmates);
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "otherAnimals")) {
-    updates.otherAnimals = parseBoolField(body.otherAnimals);
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "neutered")) {
-    updates.neutered = parseBoolField(body.neutered);
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "vaccinated")) {
-    updates.vaccinated = parseBoolField(body.vaccinated);
-  }
-
-  // Prevent changing role, passwordHash, passwordSalt or id
   const merged = await userRepo().save({ ...user, ...updates });
-
   res.json(publicUser(merged));
 }
 
@@ -272,13 +178,12 @@ export async function uploadProfilePhoto(req: Request, res: Response) {
 
   const bucket = process.env.MINIO_PROFILE_BUCKET ?? process.env.MINIO_BUCKET ?? "profile";
   try {
-    const url = await uploadFileToMinio(bucket, "users", file.originalname, file.buffer, file.mimetype);
-    user.photo = url;
-    const saved = await userRepo().save(user);
-    res.json({ photo: saved.photo });
+    const url = await uploadFileToMinio(bucket, "profile", file.originalname, file.buffer, file.mimetype);
+    const merged = await userRepo().save({ ...user, photo: url });
+    res.json(publicUser(merged));
   } catch (e: any) {
-    console.error("Error subiendo foto de perfil a MinIO:", e);
-    if (e?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "Archivo demasiado grande." });
-    res.status(500).json({ error: "Error subiendo foto" });
+    console.warn("Error subiendo foto de perfil:", e);
+    if (e?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "Archivo demasiado grande" });
+    res.status(500).json({ error: "No se pudo subir la foto" });
   }
 }

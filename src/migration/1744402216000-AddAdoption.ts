@@ -7,6 +7,7 @@ export class AddAdoption1744402216000 implements MigrationInterface {
     await queryRunner.query(
       `CREATE TABLE "adoption" (
         "id" SERIAL NOT NULL,
+        "userId" integer,
         "preferredAnimal" character varying(20),
         "firstName" character varying(120) NOT NULL,
         "lastName" character varying(120) NOT NULL,
