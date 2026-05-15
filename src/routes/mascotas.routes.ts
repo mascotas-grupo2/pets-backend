@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { single, multerErrorHandler } from "../middleware/upload.js";
+import { multiple, multerErrorHandler } from "../middleware/upload.js";
 import {
   createMascota,
   deleteMascota,
@@ -19,6 +19,6 @@ mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
 mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
 mascotasRouter.post("/petsByIds", listMascotasByIds);
 mascotasRouter.get("/:id", getMascota);
-mascotasRouter.post("/", optionalAuth, single("photo"), multerErrorHandler, createMascota);
+mascotasRouter.post("/", optionalAuth, multiple("photo", 6), multerErrorHandler, createMascota);
 mascotasRouter.put("/:id", updateMascota);
 mascotasRouter.delete("/:id", deleteMascota);

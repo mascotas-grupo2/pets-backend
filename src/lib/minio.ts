@@ -154,6 +154,35 @@ export async function uploadBufferToMinio(
   return getStorageUrl(bucket, objectName);
 }
 
+export function generateUniqueObjectName(folder: string, originalName?: string, contentType?: string) {
+  // Prefer the `report-{timestamp}-{rand}` naming convention to keep files uniform
+  const timestamp = Date.now();
+  const rand = Math.floor(Math.random() * 10000);
+  // try to preserve extension from originalName, otherwise infer from contentType
+  let ext = "";
+  if (originalName) {
+    const m = originalName.match(/(\.[a-z0-9]+)$/i);
+    if (m) ext = m[1].toLowerCase();
+  }
+  if (!ext) {
+    ext = extensionFromContentType(contentType) || "";
+  }
+  const filename = `report-${timestamp}-${rand}${ext}`;
+  if (folder) return `${folder.replace(/\/$/, "")}/${filename}`;
+  return filename;
+}
+
+export async function uploadFileToMinio(
+  bucket: string,
+  folder: string,
+  originalName: string | undefined,
+  buffer: Buffer,
+  contentType?: string
+) {
+  const objectName = generateUniqueObjectName(folder, originalName, contentType);
+  return uploadBufferToMinio(bucket, objectName, buffer, contentType);
+}
+
 export async function uploadDataUrlToMinio(
   bucket: string,
   dataUrl: string,
@@ -178,6 +207,29 @@ export async function uploadSeedImageToMinio(
     buffer,
     contentType
   );
+}
+
+export async function createFolderInBucket(bucket: string, folderName: string) {
+  if (!bucket) throw new Error("MINIO bucket not specified");
+  const objectName = `${folderName}/.keep`;
+  const buffer = Buffer.from("");
+
+  async function putWith(targetClient: Client) {
+    await ensureBucketPublic(bucket, targetClient);
+    await targetClient.putObject(bucket, objectName, buffer, 0);
+  }
+
+  try {
+    await putWith(client);
+  } catch (err: any) {
+    const fallbackEndpoint = getFallbackEndpoint();
+    if (err?.code === "ENOTFOUND" && fallbackEndpoint && fallbackEndpoint !== MINIO_ENDPOINT) {
+      await putWith(createClient(fallbackEndpoint));
+    } else {
+      // no bloquear la operación si falla la creación del placeholder
+      console.warn("No se pudo crear carpeta en bucket:", err);
+    }
+  }
 }
 
 export default client;
