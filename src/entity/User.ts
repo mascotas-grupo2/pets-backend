@@ -43,7 +43,7 @@ export class User {
   @Column({ type: "boolean", default: false })
   adopter!: boolean;
 
-  @Column({ nullable: true, type: "varchar", length: 500 })
+  @Column({ nullable: true, type: "text" })
   photo!: string | null;
 
   @Column({ nullable: true, type: "varchar", length: 120 })
