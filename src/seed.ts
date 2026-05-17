@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { AppDataSource } from "./data-source.js";
 import { Pet, AnimalType, PetSex } from "./entity/Pet.js";
-import { User } from "./entity/User.js";
+import { User, UserRole } from "./entity/User.js";
 import { uploadSeedImageToMinio } from "./lib/minio.js";
 
 const seedAssetsDir = path.join(process.cwd(), "src", "seed-assets");
@@ -86,7 +86,7 @@ async function seed() {
 
   const repoUsers = AppDataSource.getRepository(User);
   repoUsers.clear();
-  const password = "adminadmin";
+  const password = "Admin1234!";
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
   await repoUsers.save(
@@ -95,9 +95,11 @@ async function seed() {
       email: "admin@admin.com",
       passwordHash: hash,
       passwordSalt: salt,
+      role: UserRole.ADMIN,
+      emailVerified: true,
     })
   );
-  console.log("Seed completed: Admin user inserted.");
+  console.log("Seed completed: Admin user inserted (role=admin).");
 
   await AppDataSource.destroy();
 }
