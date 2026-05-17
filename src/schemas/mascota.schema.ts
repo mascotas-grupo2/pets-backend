@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { AnimalType, PetSex } from "../entity/Pet";
+import { AnimalType, PetMedicalStatus, PetSex, PetStatus } from "../entity/Pet";
+import { PetNoteKind } from "../entity/PetNote";
 
 export const petCreateSchema = z.object({
   id: z.string().optional(),
@@ -30,9 +31,19 @@ export const petCreateSchema = z.object({
   friendlyWithKids: z.boolean().optional(),
   trained: z.boolean().optional(),
   reward: z.string().max(120).optional(),
+  status: z.nativeEnum(PetStatus).optional(),
+  medicalStatus: z.nativeEnum(PetMedicalStatus).optional(),
 });
 
-export const petUpdateSchema = petCreateSchema.partial();
+export const petUpdateSchema = petCreateSchema
+  .omit({ id: true, createdAt: true, userId: true })
+  .partial();
+
+export const petNoteCreateSchema = z.object({
+  text: z.string().min(1).max(2000),
+  kind: z.nativeEnum(PetNoteKind).optional(),
+});
 
 export type PetCreateInput = z.infer<typeof petCreateSchema>;
 export type PetUpdateInput = z.infer<typeof petUpdateSchema>;
+export type PetNoteCreateInput = z.infer<typeof petNoteCreateSchema>;
