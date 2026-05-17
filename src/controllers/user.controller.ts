@@ -1,9 +1,22 @@
 import { Request, Response } from "express";
+import { ILike } from "typeorm";
+import { z } from "zod";
 import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
-import { User } from "../entity/User.js";
+import { User, UserRole } from "../entity/User.js";
 import { uploadFileToMinio } from "../lib/minio.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
+
+const adminUserRoleSchema = z.object({
+  role: z.nativeEnum(UserRole),
+});
+
+const adminListQuerySchema = z.object({
+  search: z.string().trim().min(1).max(120).optional(),
+  role: z.nativeEnum(UserRole).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 function userRepo() {
   return AppDataSource.getRepository(User);
@@ -258,6 +271,100 @@ export async function updateUser(req: Request, res: Response) {
   const merged = await userRepo().save({ ...user, ...updates });
 
   res.json(publicUser(merged));
+}
+
+export async function adminListUsers(req: Request, res: Response) {
+  const parsed = adminListQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { search, role, page, pageSize } = parsed.data;
+
+  const where = [] as Record<string, unknown>[];
+  if (search) {
+    const like = ILike(`%${search}%`);
+    where.push({ email: like });
+    where.push({ name: like });
+  }
+  const baseWhere = role ? { role } : {};
+  const finalWhere =
+    where.length > 0
+      ? where.map((w) => ({ ...baseWhere, ...w }))
+      : baseWhere;
+
+  const [users, total] = await userRepo().findAndCount({
+    where: finalWhere as any,
+    order: { id: "ASC" },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+
+  res.json({
+    page,
+    pageSize,
+    total,
+    items: users.map((u) => {
+      const safe = publicUser(u);
+      return {
+        id: safe.id,
+        name: safe.name,
+        email: safe.email,
+        role: safe.role,
+        adopter: safe.adopter,
+        emailVerified: safe.emailVerified,
+        ssoProvider: safe.ssoProvider,
+        photo: safe.photo,
+        createdAt: u.createdAt,
+      };
+    }),
+  });
+}
+
+export async function adminUpdateUserRole(req: Request, res: Response) {
+  const targetId = Number(req.params.id);
+  if (!Number.isInteger(targetId)) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+
+  const parsed = adminUserRoleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { role: newRole } = parsed.data;
+
+  const target = await userRepo().findOneBy({ id: targetId });
+  if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  if (target.role === newRole) {
+    return res.json(publicUser(target));
+  }
+
+  // No permitir auto-degradación: un admin no puede quitarse el rol a sí mismo.
+  if (
+    req.authUser?.id === target.id &&
+    target.role === UserRole.ADMIN &&
+    newRole !== UserRole.ADMIN
+  ) {
+    return res
+      .status(400)
+      .json({ error: "No podés quitarte el rol de admin a vos mismo" });
+  }
+
+  // No permitir dejar al sistema sin admins.
+  if (target.role === UserRole.ADMIN && newRole !== UserRole.ADMIN) {
+    const adminCount = await userRepo().count({
+      where: { role: UserRole.ADMIN },
+    });
+    if (adminCount <= 1) {
+      return res
+        .status(400)
+        .json({ error: "No podés dejar al sistema sin administradores" });
+    }
+  }
+
+  target.role = newRole;
+  const saved = await userRepo().save(target);
+  res.json(publicUser(saved));
 }
 
 export async function uploadProfilePhoto(req: Request, res: Response) {
