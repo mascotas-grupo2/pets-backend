@@ -4,6 +4,7 @@ import { User, UserRole } from "../entity/User.js";
 import { registerSchema, loginSchema, refreshTokenSchema, verifyEmailSchema, googleSsoSchema } from "../schemas/auth.schema.js";
 import { publicUser } from "./user.controller.js";
 import { clearAuthCookies, createRefreshToken, getRequestToken, hashToken, issueAuthTokens, setAuthCookies, verifyKeycloakToken } from "../lib/auth.js";
+import { isAdminEmail } from "../lib/bootstrap-admins.js";
 import crypto from "crypto";
 
 function userRepo() {
@@ -64,6 +65,7 @@ export async function register(req: Request, res: Response) {
     passwordHash: hash,
     passwordSalt: salt,
     emailVerificationTokenHash: hashToken(verificationToken),
+    role: isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER,
   });
   const saved = await userRepo().save(user);
   const tokens = await saveIssuedTokens(saved);
@@ -165,8 +167,10 @@ export async function ssoSync(req: Request, res: Response) {
         email,
         passwordHash: password.hash,
         passwordSalt: password.salt,
-        role: UserRole.USER,
+        role: isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER,
       });
+    } else if (user.role !== UserRole.ADMIN && isAdminEmail(email)) {
+      user.role = UserRole.ADMIN;
     }
 
     user.ssoProvider = "keycloak";
