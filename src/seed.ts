@@ -46,7 +46,7 @@ async function seed() {
     {
       name: "Toby",
       animalType: AnimalType.PERRO,
-      photo: dogPhoto,
+      photos: [dogPhoto],
       description: "Perro marron, amigable, llevaba collar azul cuando fue visto",
       date: "2026-04-22",
       location: "Vergara 2396, Villa Tesei",
@@ -65,7 +65,7 @@ async function seed() {
     {
       name: "Luna",
       animalType: AnimalType.GATO,
-      photo: catPhoto,
+      photos: [catPhoto],
       description: "Es una gata naranja, se la veia tranquila y podemos tenerla hasta nuevo aviso",
       date: "2026-04-22",
       location: "Adolfo Alsina 2256, Florida, Buenos Aires",

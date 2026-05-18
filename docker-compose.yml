@@ -85,6 +85,12 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
       BASE_URL: ${BASE_URL}
       CORS_ORIGIN: ${CORS_ORIGIN}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_SECURE: ${SMTP_SECURE}
     ports:
       - "3001:3001"
 
