@@ -27,3 +27,21 @@ export async function sendVerificationMail(to: string, name: string, url: string
     `,
   });
 }
+
+export async function sendPasswordResetMail(to: string, name: string, url: string) {
+  const from = process.env.SMTP_FROM || `"Huellitas Unidas" <${process.env.SMTP_USER}>`;
+
+  await transporter.sendMail({
+    from,
+    to,
+    subject: "Restablece tu contraseña en Huellitas Unidas - NO RESPONDER",
+    html: `
+      <h1>Hola, ${name}!</h1>
+      <p>Recibimos una solicitud para restablecer tu contraseña.</p>
+      <p>Para crear una nueva, haz clic en el siguiente enlace:</p>
+      <p><a href="${url}">${url}</a></p>
+      <p>Este enlace vence en 1 hora.</p>
+      <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+    `,
+  });
+}

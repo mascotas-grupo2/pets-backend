@@ -1,12 +1,28 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
 import { User, UserRole } from "../entity/User.js";
-import { registerSchema, loginSchema, refreshTokenSchema, verifyEmailSchema, googleSsoSchema } from "../schemas/auth.schema.js";
+import {
+  forgotPasswordSchema,
+  googleSsoSchema,
+  loginSchema,
+  refreshTokenSchema,
+  registerSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+} from "../schemas/auth.schema.js";
 import { publicUser } from "./user.controller.js";
-import { clearAuthCookies, createRefreshToken, getRequestToken, hashToken, issueAuthTokens, setAuthCookies, verifyKeycloakToken } from "../lib/auth.js";
+import {
+  clearAuthCookies,
+  createRefreshToken,
+  getRequestToken,
+  hashToken,
+  issueAuthTokens,
+  setAuthCookies,
+  verifyKeycloakToken
+} from "../lib/auth.js";
 import { isAdminEmail } from "../lib/bootstrap-admins.js";
 import crypto from "crypto";
-import { sendVerificationMail } from "../lib/mailer.js";
+import { sendPasswordResetMail, sendVerificationMail } from "../lib/mailer.js";
 
 function userRepo() {
   return AppDataSource.getRepository(User);
@@ -24,6 +40,12 @@ function verificationUrl(token: string) {
   const url = new URL("/auth", frontendUrl);
   url.searchParams.set("token", token);
   return url.toString();
+}
+
+function resetPasswordUrl(token: string) {
+  const frontendUrl = process.env.BASE_URL ?? process.env.FRONT_HOST;
+  if (!frontendUrl) return undefined;
+  return new URL(`/forgot-password/${token}`, frontendUrl).toString();
 }
 
 function authResponse(user: User, token: string, refreshToken: string, extra: Record<string, unknown> = {}) {
@@ -100,6 +122,9 @@ export async function login(req: Request, res: Response) {
 
   const hash = crypto.pbkdf2Sync(password, existing.passwordSalt, 310000, 32, "sha256").toString("hex");
   if (hash !== existing.passwordHash) return res.status(401).json({ error: "Credenciales invalidas" });
+  if (!existing.emailVerified) {
+    return res.status(403).json({ error: "Tenés que verificar tu email antes de iniciar sesión" });
+  }
 
   const tokens = await saveIssuedTokens(existing);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
@@ -154,6 +179,56 @@ export async function verifyEmail(req: Request, res: Response) {
   res.json(authResponse(saved, tokens.token, tokens.refreshToken));
 }
 
+export async function forgotPassword(req: Request, res: Response) {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const email = parsed.data.email;
+  const existing = await userRepo().findOneBy({ email });
+
+  if (existing) {
+    const resetToken = createRefreshToken();
+    existing.passwordResetTokenHash = hashToken(resetToken);
+    existing.passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await userRepo().save(existing);
+
+    const url = resetPasswordUrl(resetToken);
+    if (url) {
+      try {
+        await sendPasswordResetMail(existing.email, existing.name, url);
+        console.log(`[ForgotPassword] Email de recuperacion enviado a: ${existing.email}`);
+      } catch (error) {
+        console.error(`[ForgotPassword] Error al enviar email a ${existing.email}:`, error);
+      }
+    }
+  }
+
+  res.status(204).send();
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const existing = await userRepo().findOneBy({
+    passwordResetTokenHash: hashToken(parsed.data.token),
+  });
+  if (!existing || !existing.passwordResetExpiresAt || existing.passwordResetExpiresAt <= new Date()) {
+    return res.status(400).json({ error: "Token de recuperacion invalido o expirado" });
+  }
+
+  const password = hashPassword(parsed.data.newPassword);
+  existing.passwordHash = password.hash;
+  existing.passwordSalt = password.salt;
+  existing.passwordResetTokenHash = null;
+  existing.passwordResetExpiresAt = null;
+  existing.refreshTokenHash = null;
+  await userRepo().save(existing);
+
+  clearAuthCookies(res);
+  res.status(204).send();
+}
+
 export async function ssoSync(req: Request, res: Response) {
   const parsed = googleSsoSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -175,7 +250,6 @@ export async function ssoSync(req: Request, res: Response) {
     if (!user) {
       const password = hashPassword(createRefreshToken());
       user = userRepo().create({
-        firstName: typeof payload.given_name === "string" ? payload.given_name : "",
         name: typeof payload.name === "string" ? payload.name : email,
         email,
         passwordHash: password.hash,

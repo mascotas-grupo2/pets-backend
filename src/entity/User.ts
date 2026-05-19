@@ -31,6 +31,12 @@ export class User {
   @Column({ name: "email_verification_token_hash", nullable: true, type: "varchar", length: 128 })
   emailVerificationTokenHash!: string | null;
 
+  @Column({ name: "password_reset_token_hash", nullable: true, type: "varchar", length: 128 })
+  passwordResetTokenHash!: string | null;
+
+  @Column({ name: "password_reset_expires_at", nullable: true, type: "timestamp" })
+  passwordResetExpiresAt!: Date | null;
+
   @Column({ name: "sso_provider", nullable: true, type: "varchar", length: 40 })
   ssoProvider!: string | null;
 

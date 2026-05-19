@@ -8,6 +8,9 @@ export class Adoption {
   @Column({ type: "int", nullable: true })
   userId!: number | null;
 
+  @Column({ type: "uuid", nullable: true })
+  petId!: string | null;
+
   @Column({ type: "varchar", length: 20, nullable: true })
   preferredAnimal!: string | null;
 
