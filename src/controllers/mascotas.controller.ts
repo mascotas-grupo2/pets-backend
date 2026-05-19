@@ -3,7 +3,11 @@ import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
-import { petCreateSchema, petUpdateSchema } from "../schemas/mascota.schema.js";
+import {
+  petCreateSchema,
+  petNoteCreateSchema,
+  petUpdateSchema,
+} from "../schemas/mascota.schema.js";
 import { uploadBufferToMinio, uploadDataUrlToMinio, createFolderInBucket, uploadFileToMinio } from "../lib/minio.js";
 import { geocodificarDireccion } from "../lib/geocoding.js";
 

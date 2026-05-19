@@ -9,11 +9,15 @@ import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTok
 import { AddPetCoordinates1744402215000 } from "./migration/1744402215000-AddPetCoordinates.js";
 import { AddAdoption1744402216000 } from "./migration/1744402216000-AddAdoption.js";
 import { RemoveUserAdoptionFields1744402217000 } from "./migration/1744402217000-RemoveUserAdoptionFields.js";
+import { PetNote } from "./entity/PetNote.js";
+import { WidenUserPhoto1744402216000 } from "./migration/1744402216000-WidenUserPhoto.js";
+import { AddPetStatusAndNotes1744402217000 } from "./migration/1744402217000-AddPetStatusAndNotes.js";
+import { AddMedicalStatusAndNoteKind1744402218000 } from "./migration/1744402218000-AddMedicalStatusAndNoteKind.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.DATABASE_URL,
-  entities: [Pet, User, Adoption],
+  entities: [Pet, User, Adoption, PetNote],
   migrations: [
     InitPetTable1744402212000,
     AddUser1744402213000,
@@ -21,6 +25,9 @@ export const AppDataSource = new DataSource({
     AddPetCoordinates1744402215000,
     AddAdoption1744402216000,
     RemoveUserAdoptionFields1744402217000,
+    WidenUserPhoto1744402216000,
+    AddPetStatusAndNotes1744402217000,
+    AddMedicalStatusAndNoteKind1744402218000,
   ],
   synchronize: false,
 });
