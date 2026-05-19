@@ -4,7 +4,9 @@ import { User, UserRole } from "../entity/User.js";
 import { registerSchema, loginSchema, refreshTokenSchema, verifyEmailSchema, googleSsoSchema } from "../schemas/auth.schema.js";
 import { publicUser } from "./user.controller.js";
 import { clearAuthCookies, createRefreshToken, getRequestToken, hashToken, issueAuthTokens, setAuthCookies, verifyKeycloakToken } from "../lib/auth.js";
+import { isAdminEmail } from "../lib/bootstrap-admins.js";
 import crypto from "crypto";
+import { sendVerificationMail } from "../lib/mailer.js";
 
 function userRepo() {
   return AppDataSource.getRepository(User);
@@ -17,7 +19,7 @@ function hashPassword(password: string) {
 }
 
 function verificationUrl(token: string) {
-  const frontendUrl = process.env.FRONTEND_URL ?? process.env.FRONT_HOST;
+  const frontendUrl = process.env.BASE_URL ?? process.env.FRONT_HOST;
   if (!frontendUrl) return undefined;
   const url = new URL("/auth", frontendUrl);
   url.searchParams.set("token", token);
@@ -64,13 +66,26 @@ export async function register(req: Request, res: Response) {
     passwordHash: hash,
     passwordSalt: salt,
     emailVerificationTokenHash: hashToken(verificationToken),
+    role: isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER,
   });
   const saved = await userRepo().save(user);
-  const tokens = await saveIssuedTokens(saved);
-  setAuthCookies(res, tokens.token, tokens.refreshToken);
 
-  console.log(`[Register] Usuario creado exitosamente: ${saved.email}`);
-  res.status(201).json(authResponse(saved, tokens.token, tokens.refreshToken));
+  // Enviar correo de verificación
+  const url = verificationUrl(verificationToken);
+  if (url) {
+    try {
+      await sendVerificationMail(saved.email, saved.name, url);
+      console.log(`[Register] Email de verificación enviado a: ${saved.email}`);
+    } catch (error) {
+      console.error(`[Register] Error al enviar email a ${saved.email}:`, error);
+    }
+  }
+
+  console.log(`[Register] Usuario creado (pendiente de verificación): ${saved.email}`);
+  res.status(201).json({
+    message: "Registro exitoso. Revisa tu correo electrónico para verificar tu cuenta.",
+    email: saved.email
+  });
 }
 
 export async function login(req: Request, res: Response) {
@@ -165,8 +180,10 @@ export async function ssoSync(req: Request, res: Response) {
         email,
         passwordHash: password.hash,
         passwordSalt: password.salt,
-        role: UserRole.USER,
+        role: isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER,
       });
+    } else if (user.role !== UserRole.ADMIN && isAdminEmail(email)) {
+      user.role = UserRole.ADMIN;
     }
 
     user.ssoProvider = "keycloak";

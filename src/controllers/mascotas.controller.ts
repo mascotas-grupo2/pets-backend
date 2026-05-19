@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
+import { PetNote, PetNoteKind } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
 import {
   petCreateSchema,
@@ -19,6 +20,10 @@ function userRepo() {
   return AppDataSource.getRepository(User);
 }
 
+function noteRepo() {
+  return AppDataSource.getRepository(PetNote);
+}
+
 async function resolverCoordenadas(direccion: string | undefined) {
   if (!direccion) return { latitud: null, longitud: null };
   const coords = await geocodificarDireccion(direccion);
@@ -29,6 +34,54 @@ async function resolverCoordenadas(direccion: string | undefined) {
 export async function listMascotas(_req: Request, res: Response) {
   const mascotas = await repo().find({ order: { id: "DESC" } });
   res.json(mascotas);
+}
+
+export async function adminListMascotas(_req: Request, res: Response) {
+  const mascotas = await repo().find({ order: { createdAt: "DESC" } });
+  if (mascotas.length === 0) return res.json([]);
+
+  const ids = mascotas.map((m) => m.id);
+  const summary = await noteRepo()
+    .createQueryBuilder("note")
+    .select("note.petId", "petId")
+    .addSelect("note.kind", "kind")
+    .addSelect("COUNT(*)", "count")
+    .addSelect("MAX(note.createdAt)", "lastAt")
+    .where("note.petId IN (:...ids)", { ids })
+    .groupBy("note.petId")
+    .addGroupBy("note.kind")
+    .getRawMany<{ petId: string; kind: PetNoteKind; count: string; lastAt: Date }>();
+
+  const byPet = new Map<
+    string,
+    { adoption: number; medical: number; general: number; lastNoteAt: Date | null }
+  >();
+  for (const id of ids) {
+    byPet.set(id, { adoption: 0, medical: 0, general: 0, lastNoteAt: null });
+  }
+  for (const row of summary) {
+    const acc = byPet.get(row.petId)!;
+    const n = Number(row.count);
+    if (row.kind === PetNoteKind.ADOPCION) acc.adoption = n;
+    else if (row.kind === PetNoteKind.MEDICA) acc.medical = n;
+    else acc.general = n;
+    if (!acc.lastNoteAt || row.lastAt > acc.lastNoteAt) {
+      acc.lastNoteAt = row.lastAt;
+    }
+  }
+
+  res.json(
+    mascotas.map((m) => {
+      const s = byPet.get(m.id)!;
+      return {
+        ...m,
+        adoptionInterestCount: s.adoption,
+        medicalNoteCount: s.medical,
+        generalNoteCount: s.general,
+        lastNoteAt: s.lastNoteAt,
+      };
+    }),
+  );
 }
 
 export async function getMascota(req: Request, res: Response) {
@@ -212,4 +265,42 @@ export async function deleteMascota(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   await repo().remove(existing);
   res.status(204).send();
+}
+
+export async function listPetNotes(req: Request, res: Response) {
+  const petId = req.params.id;
+  const exists = await repo().findOneBy({ id: petId });
+  if (!exists) return res.status(404).json({ error: "Pet no encontrada" });
+  const notes = await noteRepo().find({
+    where: { petId },
+    order: { createdAt: "DESC" },
+  });
+  res.json(notes);
+}
+
+export async function createPetNote(req: Request, res: Response) {
+  const petId = req.params.id;
+  const parsed = petNoteCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const pet = await repo().findOneBy({ id: petId });
+  if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const authorId = req.authUser?.id ?? null;
+  let authorName: string | null = null;
+  if (authorId) {
+    const author = await userRepo().findOneBy({ id: authorId });
+    authorName = author?.name ?? author?.email ?? null;
+  }
+
+  const note = noteRepo().create({
+    petId,
+    authorId,
+    authorName,
+    text: parsed.data.text,
+    kind: parsed.data.kind,
+  });
+  const saved = await noteRepo().save(note);
+  res.status(201).json(saved);
 }

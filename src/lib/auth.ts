@@ -171,3 +171,26 @@ export async function requireAuth(
     return res.status(401).json({ error: "Token invalido o expirado" });
   }
 }
+
+export async function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const token = getRequestToken(req);
+  if (!token) return res.status(401).json({ error: "Falta token Bearer" });
+
+  try {
+    const payload = await verifyToken(token);
+    const authUser = await authUserFromPayload(payload);
+    if (!authUser) return res.status(401).json({ error: "Token invalido o expirado" });
+    if (authUser.role !== "admin") {
+      return res.status(403).json({ error: "Se requiere rol de administrador" });
+    }
+    req.user = payload;
+    req.authUser = authUser;
+    return next();
+  } catch (err) {
+    return res.status(401).json({ error: "Token invalido o expirado" });
+  }
+}

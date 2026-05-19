@@ -53,8 +53,16 @@ Servicios expuestos:
 
 Corre migraciones pendientes, limpia datos de prueba e inserta mascotas y un usuario admin. Requiere que Postgres este corriendo.
 
+Para ejecutarlo desde tu máquina local (requiere Node.js y acceso al puerto de DB):
+
 ```bash
 npm run seed
+```
+
+Para ejecutarlo **dentro de Docker** (recomendado):
+
+```bash
+docker compose exec backend npm run seed
 ```
 
 Usuario creado por seed:

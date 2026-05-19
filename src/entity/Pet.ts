@@ -16,6 +16,24 @@ export enum PetSex {
   HEMBRA = "hembra",
 }
 
+export enum PetStatus {
+  PERDIDO = "perdido",
+  ENCONTRADO = "encontrado",
+  TRANSITO = "en tránsito",
+  MEDICO = "en tratamiento médico",
+  ADOPCION = "en adopción",
+  ADOPTADO = "adoptado",
+}
+
+export enum PetMedicalStatus {
+  SANO = "sano",
+  EVALUACION = "en evaluación",
+  TRATAMIENTO = "en tratamiento",
+  POST_OPERATORIO = "post-operatorio",
+  RECUPERANDOSE = "recuperándose",
+  CRITICO = "crítico",
+}
+
 @Entity("pet")
 export class Pet {
   @PrimaryGeneratedColumn("uuid")
@@ -101,4 +119,14 @@ export class Pet {
 
   @Column({ nullable: true, type: "int" })
   userId: number | null;
+
+  @Column({ type: "enum", enum: PetStatus, default: PetStatus.PERDIDO })
+  status: PetStatus;
+
+  @Column({
+    type: "enum",
+    enum: PetMedicalStatus,
+    default: PetMedicalStatus.SANO,
+  })
+  medicalStatus: PetMedicalStatus;
 }

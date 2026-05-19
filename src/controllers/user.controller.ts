@@ -19,6 +19,17 @@ const adminListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+const adminUserRoleSchema = z.object({
+  role: z.nativeEnum(UserRole),
+});
+
+const adminListQuerySchema = z.object({
+  search: z.string().trim().min(1).max(120).optional(),
+  role: z.nativeEnum(UserRole).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 function userRepo() {
   return AppDataSource.getRepository(User);
 }

@@ -9,6 +9,51 @@
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "accessTokenLifespan": 900,
+  "smtpServer": {
+    "host": "smtp.gmail.com",
+    "port": "587",
+    "from": "huellitas.unidas.info@gmail.com",
+    "fromDisplayName": "Huellitas Unidas - NO REPLY",
+    "auth": "true",
+    "starttls": "true",
+    "user": "huellitas.unidas.info@gmail.com",
+    "password": "**********"
+  },
+  "identityProviders": [
+    {
+      "alias": "google",
+      "providerId": "google",
+      "enabled": true,
+      "updateProfileFirstLoginMode": "on",
+      "trustEmail": false,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "config": {
+        "syncMode": "LEGACY",
+        "clientId": "476396194697-fidvgik58g6juco6c80fasif5r8lul8n.apps.googleusercontent.com",
+        "clientSecret": "**********"
+      }
+    }
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}}]}"
+          ]
+        }
+      }
+    ]
+  },
+  "browserSecurityHeaders": {
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+    "xFrameOptions": "SAMEORIGIN",
+    "strictTransportSecurity": "max-age=31536000; includeSubDomains"
+  },
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
   "clients": [
@@ -17,6 +62,7 @@
       "name": "Pets Backend (public client)",
       "description": "Client usado por el frontend para obtener tokens y por el backend como audience.",
       "enabled": true,
+      "rootUrl": "https://pets.localdev.me",
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
@@ -27,8 +73,7 @@
       "redirectUris": ["https://pets.localdev.me/*", "http://localhost:3000/*"],
       "webOrigins": ["https://pets.localdev.me", "http://localhost:3000"],
       "attributes": {
-        "post.logout.redirect.uris": "https://pets.localdev.me/*",
-        "pkce.code.challenge.method": "S256"
+        "post.logout.redirect.uris": "https://pets.localdev.me/*"
       },
       "protocolMappers": [
         {

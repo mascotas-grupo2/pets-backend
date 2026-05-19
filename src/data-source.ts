@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { Pet } from "./entity/Pet.js";
+import { PetNote } from "./entity/PetNote.js";
 import { User } from "./entity/User.js";
 import { Adoption } from "./entity/Adoption.js";
 import { InitPetTable1744402212000 } from "./migration/1744402212000-Init.js";
@@ -9,7 +10,6 @@ import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTok
 import { AddPetCoordinates1744402215000 } from "./migration/1744402215000-AddPetCoordinates.js";
 import { AddAdoption1744402216000 } from "./migration/1744402216000-AddAdoption.js";
 import { RemoveUserAdoptionFields1744402217000 } from "./migration/1744402217000-RemoveUserAdoptionFields.js";
-import { PetNote } from "./entity/PetNote.js";
 import { WidenUserPhoto1744402216000 } from "./migration/1744402216000-WidenUserPhoto.js";
 import { AddPetStatusAndNotes1744402217000 } from "./migration/1744402217000-AddPetStatusAndNotes.js";
 import { AddMedicalStatusAndNoteKind1744402218000 } from "./migration/1744402218000-AddMedicalStatusAndNoteKind.js";
