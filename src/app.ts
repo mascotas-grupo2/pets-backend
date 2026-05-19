@@ -4,6 +4,7 @@ import express from "express";
 import { mascotasRouter } from "./routes/mascotas.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { userRouter } from "./routes/user.routes.js";
+import { adoptionRouter } from "./routes/adoption.routes.js";
 import { createMascota } from "./controllers/mascotas.controller.js";
 import storageProxyHandler from "./controllers/storage.controller.js";
 import { multiple, multerErrorHandler } from "./middleware/upload.js";
@@ -33,6 +34,7 @@ app.use("/api/pets", mascotasRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/user", userRouter);
 app.use("/api/users", userRouter);
+app.use("/api/adoptions", adoptionRouter);
 app.post("/api/pet/reportar", optionalAuth, multiple("photo", 10), multerErrorHandler, createMascota);
 app.post("/api/pet/adoptar", requireAuth, submitAdoption);
 // Proxy para servir objetos desde MinIO sin exponer el bucket directamente.
