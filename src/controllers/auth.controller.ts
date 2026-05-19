@@ -122,6 +122,9 @@ export async function login(req: Request, res: Response) {
 
   const hash = crypto.pbkdf2Sync(password, existing.passwordSalt, 310000, 32, "sha256").toString("hex");
   if (hash !== existing.passwordHash) return res.status(401).json({ error: "Credenciales invalidas" });
+  if (!existing.emailVerified) {
+    return res.status(403).json({ error: "Tenés que verificar tu email antes de iniciar sesión" });
+  }
 
   const tokens = await saveIssuedTokens(existing);
   setAuthCookies(res, tokens.token, tokens.refreshToken);
