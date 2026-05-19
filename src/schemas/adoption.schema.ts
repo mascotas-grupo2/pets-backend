@@ -5,6 +5,7 @@ const yesNoNA = z.enum(["si", "no", "na", ""]);
 
 export const adoptionSchema = z.object({
   userId: z.number().int().positive().optional(),
+  petId: z.string().uuid().optional(),
   preferredAnimal: z.enum(["perro", "gato", "otro", ""]),
   firstName: z.string().min(1).max(120),
   lastName: z.string().min(1).max(120),

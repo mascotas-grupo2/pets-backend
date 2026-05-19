@@ -15,6 +15,7 @@ export async function createAdoption(req: Request, res: Response) {
   const userIdFromReq = req.authUser?.id;
   const adoption = adoptionRepo().create({
     userId: userIdFromReq ?? values.userId ?? null,
+    petId: values.petId ?? null,
     preferredAnimal: values.preferredAnimal || null,
     firstName: values.firstName,
     lastName: values.lastName,

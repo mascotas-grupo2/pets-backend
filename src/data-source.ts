@@ -13,6 +13,8 @@ import { RemoveUserAdoptionFields1744402217000 } from "./migration/1744402217000
 import { WidenUserPhoto1744402216000 } from "./migration/1744402216000-WidenUserPhoto.js";
 import { AddPetStatusAndNotes1744402217000 } from "./migration/1744402217000-AddPetStatusAndNotes.js";
 import { AddMedicalStatusAndNoteKind1744402218000 } from "./migration/1744402218000-AddMedicalStatusAndNoteKind.js";
+import { AddPasswordReset1744402219000 } from "./migration/1744402219000-AddPasswordReset.js";
+import { AddAdoptionPetId1744402220000 } from "./migration/1744402220000-AddAdoptionPetId.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -28,6 +30,8 @@ export const AppDataSource = new DataSource({
     WidenUserPhoto1744402216000,
     AddPetStatusAndNotes1744402217000,
     AddMedicalStatusAndNoteKind1744402218000,
+    AddPasswordReset1744402219000,
+    AddAdoptionPetId1744402220000,
   ],
   synchronize: false,
 });

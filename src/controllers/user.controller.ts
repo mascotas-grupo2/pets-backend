@@ -33,8 +33,22 @@ function splitName(name: string) {
 }
 
 export function publicUser(user: User) {
-  const { passwordHash, passwordSalt, refreshTokenHash, emailVerificationTokenHash, ...safe } =
-    user as User & { passwordHash?: string; passwordSalt?: string; refreshTokenHash?: string | null; emailVerificationTokenHash?: string | null };
+  const {
+    passwordHash,
+    passwordSalt,
+    refreshTokenHash,
+    emailVerificationTokenHash,
+    passwordResetTokenHash,
+    passwordResetExpiresAt,
+    ...safe
+  } = user as User & {
+    passwordHash?: string;
+    passwordSalt?: string;
+    refreshTokenHash?: string | null;
+    emailVerificationTokenHash?: string | null;
+    passwordResetTokenHash?: string | null;
+    passwordResetExpiresAt?: Date | null;
+  };
 
   return {
     ...safe,
@@ -121,6 +135,7 @@ export async function submitAdoption(req: Request, res: Response) {
     const adoptionRepo = AppDataSource.getRepository(Adoption);
     const adoption = adoptionRepo.create({
       userId: id,
+      petId: values.petId ?? null,
       preferredAnimal: values.preferredAnimal || null,
       firstName: values.firstName,
       lastName: values.lastName,
