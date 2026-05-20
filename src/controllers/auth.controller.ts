@@ -35,7 +35,7 @@ function hashPassword(password: string) {
 }
 
 function verificationUrl(token: string) {
-  const frontendUrl = process.env.BASE_URL ?? process.env.FRONT_HOST;
+  const frontendUrl = process.env.FRONTEND_URL ?? process.env.FRONT_HOST;
   if (!frontendUrl) return undefined;
   const url = new URL("/auth", frontendUrl);
   url.searchParams.set("token", token);
@@ -43,7 +43,7 @@ function verificationUrl(token: string) {
 }
 
 function resetPasswordUrl(token: string) {
-  const frontendUrl = process.env.BASE_URL ?? process.env.FRONT_HOST;
+  const frontendUrl = process.env.FRONTEND_URL ?? process.env.FRONT_HOST;
   if (!frontendUrl) return undefined;
   return new URL(`/forgot-password/${token}`, frontendUrl).toString();
 }

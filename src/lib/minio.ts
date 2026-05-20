@@ -22,6 +22,7 @@ function parseEndpoint(endpoint: string) {
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT ?? "http://localhost:9000";
 const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? process.env.MINIO_ROOT_USER ?? "minioadmin";
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? process.env.MINIO_ROOT_PASSWORD ?? "minioadmin";
+const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const { host, port, useSSL } = parseEndpoint(MINIO_ENDPOINT);
 
 // Tamaño máximo por archivo (bytes). Por defecto 5MB, puede sobrescribirse con MINIO_MAX_FILE_BYTES
@@ -53,7 +54,8 @@ function getFallbackEndpoint() {
 }
 
 function getBackendPublicUrl() {
-  return (process.env.BACKEND_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 3001}`).replace(/\/$/, "");
+  const url = (!IS_DEVELOPMENT && process.env.FRONTEND_URL) || `http://localhost:${process.env.PORT || 3001}`;
+  return url.replace(/\/$/, "");
 }
 
 function getStorageUrl(bucket: string, objectName: string) {
