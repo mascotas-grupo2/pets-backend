@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class RemoveUserAdoptionFields1744402217000 implements MigrationInterface {
-  name = "RemoveUserAdoptionFields1744402217000";
+export class RemoveUserAdoptionFields1744402217001 implements MigrationInterface {
+  name = "RemoveUserAdoptionFields1744402217001";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
