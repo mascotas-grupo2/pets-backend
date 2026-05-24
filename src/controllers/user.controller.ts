@@ -298,9 +298,10 @@ export async function uploadProfilePhoto(req: Request, res: Response) {
   const file = (req as any).file as Express.Multer.File | undefined;
   if (!file) return res.status(400).json({ error: "No se subió ningún archivo" });
 
-  const bucket = process.env.MINIO_PROFILE_BUCKET ?? process.env.MINIO_BUCKET ?? "profile";
+  const bucket = process.env.MINIO_PROFILE_BUCKET ?? "profile";
   try {
-    const url = await uploadFileToMinio(bucket, "profile", file.originalname, file.buffer, file.mimetype);
+    // store under a folder named by the user id so each user's files are grouped
+    const url = await uploadFileToMinio(bucket, String(id), file.originalname, file.buffer, file.mimetype);
     const merged = await userRepo().save({ ...user, photo: url });
     res.json(publicUser(merged));
   } catch (e: any) {
