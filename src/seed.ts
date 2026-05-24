@@ -5,7 +5,7 @@ import path from "node:path";
 import { AppDataSource } from "./data-source.js";
 import { Pet, AnimalType, PetSex } from "./entity/Pet.js";
 import { User, UserRole } from "./entity/User.js";
-import { uploadSeedImageToMinio } from "./lib/minio.js";
+import { uploadFileToMinio } from "./lib/minio.js";
 
 const seedAssetsDir = path.join(process.cwd(), "src", "seed-assets");
 
@@ -17,18 +17,15 @@ function contentTypeForFile(fileName: string) {
   throw new Error(`Formato de imagen no soportado para seed: ${fileName}`);
 }
 
-async function uploadSeedPhoto(bucket: string, fileName: string) {
+async function uploadSeedPhoto(bucket: string, fileName: string, folder?: string) {
   const filePath = path.join(seedAssetsDir, fileName);
   if (!existsSync(filePath)) {
     throw new Error(`No se encontro la imagen de seed: ${filePath}`);
   }
 
-  return uploadSeedImageToMinio(
-    bucket,
-    `seed-${fileName}`,
-    readFileSync(filePath),
-    contentTypeForFile(fileName)
-  );
+  // Use uploadFileToMinio to place the file under a folder (e.g., pet id)
+  const buffer = readFileSync(filePath);
+  return uploadFileToMinio(bucket, folder ?? "", fileName, buffer, contentTypeForFile(fileName));
 }
 
 async function seed() {
@@ -39,14 +36,12 @@ async function seed() {
   await repoPets.clear();
 
   const bucket = process.env.MINIO_BUCKET ?? "report-images";
-  const dogPhoto = await uploadSeedPhoto(bucket, "toby.png");
-  const catPhoto = await uploadSeedPhoto(bucket, "luna.png");
 
   const petsData = [
     {
       name: "Toby",
       animalType: AnimalType.PERRO,
-      photos: [dogPhoto],
+      // photos will be uploaded per-pet below
       description: "Perro marron, amigable, llevaba collar azul cuando fue visto",
       date: "2026-04-22",
       location: "Vergara 2396, Villa Tesei",
@@ -65,7 +60,7 @@ async function seed() {
     {
       name: "Luna",
       animalType: AnimalType.GATO,
-      photos: [catPhoto],
+      // photos will be uploaded per-pet below
       description: "Es una gata naranja, se la veia tranquila y podemos tenerla hasta nuevo aviso",
       date: "2026-04-22",
       location: "Adolfo Alsina 2256, Florida, Buenos Aires",
@@ -80,7 +75,21 @@ async function seed() {
   ];
 
   for (const item of petsData) {
-    await repoPets.save(repoPets.create(item));
+    // create pet first to obtain id, then upload seed image into folder named by pet id
+    const created = await repoPets.save(repoPets.create(item));
+    // determine seed image by name (simple mapping)
+    let seedFile = "";
+    if ((created.name || "").toLowerCase().startsWith("toby")) seedFile = "toby.png";
+    if ((created.name || "").toLowerCase().startsWith("luna")) seedFile = "luna.png";
+    if (seedFile) {
+      try {
+        const url = await uploadSeedPhoto(bucket, seedFile, String(created.id));
+        created.photos = [url];
+        await repoPets.save(created);
+      } catch (e) {
+        console.warn("No se pudo subir imagen de seed para pet", created.id, e);
+      }
+    }
   }
   console.log(`Seed completed: ${petsData.length} pets inserted.`);
 
