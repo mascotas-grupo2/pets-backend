@@ -472,6 +472,26 @@ export async function updateMascota(req: Request, res: Response) {
   res.json(serializeMascota(reloaded, catalogValuesById));
 }
 
+export async function approveMascota(req: Request, res: Response) {
+  const id = req.params.id;
+  const existing = await repo().findOneBy({ id });
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+  existing.reportStatusId = CatalogIds.petReportStatus.activo;
+  const saved = await repo().save(existing);
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(saved, catalogValuesById));
+}
+
+export async function finalizeMascota(req: Request, res: Response) {
+  const id = req.params.id;
+  const existing = await repo().findOneBy({ id });
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+  existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  const saved = await repo().save(existing);
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(saved, catalogValuesById));
+}
+
 export async function deleteMascota(req: Request, res: Response) {
   const id = req.params.id;
   const existing = await repo().findOneBy({ id });

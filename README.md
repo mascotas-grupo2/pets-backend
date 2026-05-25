@@ -138,6 +138,8 @@ Base URL: `http://localhost:3001`
 | POST | `/api/pet/reportar` | No | Alias compatible con front para reportar mascota |
 | POST | `/api/pet/adoptar` | No | Guarda perfil adoptante y marca `adopter: true` |
 | GET | `/api/pets/userPetsById?id=:id` | No | Alias compatible con front para reportes por usuario |
+| POST | `/api/mascotas/:id/approve` | Admin | Marca un reporte como `activo` |
+| POST | `/api/mascotas/:id/finalize` | Admin | Marca un reporte como `finalizado` |
 
 Tambien existen aliases:
 
