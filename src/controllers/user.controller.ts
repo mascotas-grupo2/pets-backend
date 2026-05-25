@@ -203,6 +203,8 @@ export async function getUserDetails(req: Request, res: Response) {
       description: pet.description,
       status: item(pet.statusId)?.code ?? null,
       statusId: pet.statusId,
+      reportStatus: item((pet as any).reportStatusId)?.code ?? null,
+      reportStatusId: (pet as any).reportStatusId,
       created_at: pet.createdAt.toISOString(),
     })),
     photo: safe.photo,

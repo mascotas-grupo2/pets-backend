@@ -43,6 +43,7 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
   const animalType = catalogInfo(catalogValuesById, mascota.animalTypeId);
   const sex = catalogInfo(catalogValuesById, mascota.sexId);
   const status = catalogInfo(catalogValuesById, mascota.statusId);
+  const reportStatus = catalogInfo(catalogValuesById, mascota.reportStatusId);
   const medicalStatus = catalogInfo(catalogValuesById, mascota.medicalStatusId);
   const payload = { ...(mascota as any) };
 
@@ -60,6 +61,9 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
     medicalStatus: medicalStatus?.code ?? null,
     medicalStatusLabel: medicalStatus?.label ?? null,
     medicalStatusInfo: medicalStatus,
+    reportStatus: reportStatus?.code ?? null,
+    reportStatusLabel: reportStatus?.label ?? null,
+    reportStatusInfo: reportStatus,
   };
 }
 
@@ -398,6 +402,7 @@ export async function updateMascota(req: Request, res: Response) {
         sexId?: number | null;
         statusId?: number | null;
         medicalStatusId?: number | null;
+        reportStatusId?: number | null;
       }
     | undefined;
   try {
@@ -412,6 +417,11 @@ export async function updateMascota(req: Request, res: Response) {
         Catalog.PET_STATUS,
         parsed.data.statusId,
         parsed.data.status,
+      ),
+      reportStatusId: await resolveOptionalCatalogId(
+        Catalog.PET_REPORT_STATUS,
+        (parsed.data as any).reportStatusId,
+        (parsed.data as any).reportStatus,
       ),
       medicalStatusId: await resolveOptionalCatalogId(
         Catalog.PET_MEDICAL_STATUS,
@@ -452,11 +462,34 @@ export async function updateMascota(req: Request, res: Response) {
     ...(catalogIds?.medicalStatusId !== undefined && catalogIds.medicalStatusId !== null
       ? { medicalStatusId: catalogIds.medicalStatusId }
       : {}),
+    ...(catalogIds?.reportStatusId !== undefined && catalogIds.reportStatusId !== null
+      ? { reportStatusId: catalogIds.reportStatusId }
+      : {}),
     ...coords,
   });
   const reloaded = await repo().findOneByOrFail({ id: updated.id });
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(reloaded, catalogValuesById));
+}
+
+export async function approveMascota(req: Request, res: Response) {
+  const id = req.params.id;
+  const existing = await repo().findOneBy({ id });
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+  existing.reportStatusId = CatalogIds.petReportStatus.activo;
+  const saved = await repo().save(existing);
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(saved, catalogValuesById));
+}
+
+export async function finalizeMascota(req: Request, res: Response) {
+  const id = req.params.id;
+  const existing = await repo().findOneBy({ id });
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+  existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  const saved = await repo().save(existing);
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(saved, catalogValuesById));
 }
 
 export async function deleteMascota(req: Request, res: Response) {
