@@ -97,4 +97,7 @@ export class Pet {
 
   @Column({ type: "int", default: CatalogIds.petMedicalStatus.sano })
   medicalStatusId: number;
+
+  @Column({ type: "int", default: CatalogIds.petReportStatus.pendiente })
+  reportStatusId: number;
 }

@@ -4,6 +4,7 @@ export const Catalog = {
   PET_STATUS: "pet_status",
   PET_MEDICAL_STATUS: "pet_medical_status",
   PET_NOTE_KIND: "pet_note_kind",
+  PET_REPORT_STATUS: "pet_report_status",
   USER_ROLE: "user_role",
   SSO_PROVIDER: "sso_provider",
   YES_NO: "yes_no",
@@ -77,6 +78,11 @@ export const CatalogIds = {
     moderado: 1002,
     activo: 1003,
   },
+  petReportStatus: {
+    pendiente: 1101,
+    activo: 1102,
+    finalizado: 1103,
+  },
 } as const;
 
 export type CatalogName = (typeof Catalog)[keyof typeof Catalog];
@@ -139,6 +145,9 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 1001, catalog: Catalog.ACTIVITY_LEVEL, code: "tranquilo", label: "Tranquilo" },
   { id: 1002, catalog: Catalog.ACTIVITY_LEVEL, code: "moderado", label: "Moderado" },
   { id: 1003, catalog: Catalog.ACTIVITY_LEVEL, code: "activo", label: "Activo" },
+  { id: 1101, catalog: Catalog.PET_REPORT_STATUS, code: "pendiente", label: "Pendiente" },
+  { id: 1102, catalog: Catalog.PET_REPORT_STATUS, code: "activo", label: "Activo" },
+  { id: 1103, catalog: Catalog.PET_REPORT_STATUS, code: "finalizado", label: "Finalizado" },
 ];
 
 const byId = new Map(CatalogSeed.map((item) => [item.id, item]));
