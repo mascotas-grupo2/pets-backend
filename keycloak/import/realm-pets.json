@@ -33,7 +33,7 @@
       "config": {
         "syncMode": "LEGACY",
         "clientId": "476396194697-fidvgik58g6juco6c80fasif5r8lul8n.apps.googleusercontent.com",
-        "clientSecret": "**********"
+        "clientSecret": "${GOOGLE_CLIENT_SECRET}"
       }
     }
   ],
