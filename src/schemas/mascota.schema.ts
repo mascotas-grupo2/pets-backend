@@ -52,6 +52,8 @@ const petBaseSchema = z.object({
   reward: z.string().max(120).optional(),
   statusId: optionalPositiveInt,
   status: catalogReference.optional(),
+  reportStatusId: optionalPositiveInt,
+  reportStatus: catalogReference.optional(),
   medicalStatusId: optionalPositiveInt,
   medicalStatus: catalogReference.optional(),
 });
