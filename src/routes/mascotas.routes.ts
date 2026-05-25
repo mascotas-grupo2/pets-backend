@@ -6,6 +6,7 @@ import {
   createPetNote,
   deleteMascota,
   getMascota,
+  listAnimalTypeCatalog,
   listMascotasByIds,
   listMascotasByUser,
   listMascotas,
@@ -19,6 +20,7 @@ export const mascotasRouter = Router();
 
 mascotasRouter.get("/", listMascotas);
 mascotasRouter.get("/admin/list", requireAdmin, adminListMascotas);
+mascotasRouter.get("/animal-types", listAnimalTypeCatalog);
 mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
 mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
 mascotasRouter.post("/petsByIds", listMascotasByIds);

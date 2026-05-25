@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
-import { User, UserRole } from "../entity/User.js";
+import { User } from "../entity/User.js";
 import {
   forgotPasswordSchema,
   googleSsoSchema,
@@ -21,6 +21,7 @@ import {
   verifyKeycloakToken
 } from "../lib/auth.js";
 import { isAdminEmail } from "../lib/bootstrap-admins.js";
+import { CatalogIds } from "../lib/catalog-constants.js";
 import crypto from "crypto";
 import { sendPasswordResetMail, sendVerificationMail } from "../lib/mailer.js";
 
@@ -88,7 +89,7 @@ export async function register(req: Request, res: Response) {
     passwordHash: hash,
     passwordSalt: salt,
     emailVerificationTokenHash: hashToken(verificationToken),
-    role: isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER,
+    roleId: isAdminEmail(email) ? CatalogIds.userRole.admin : CatalogIds.userRole.user,
   });
   const saved = await userRepo().save(user);
 
@@ -245,7 +246,10 @@ export async function ssoSync(req: Request, res: Response) {
     const subject = payload.sub;
     if (!email || !subject) return res.status(401).json({ error: "Token SSO Keycloak invalido" });
 
-    let user = await userRepo().findOneBy({ ssoProvider: "keycloak", ssoSubject: subject });
+    let user = await userRepo().findOneBy({
+      ssoProviderId: CatalogIds.ssoProvider.keycloak,
+      ssoSubject: subject,
+    });
     if (!user) user = await userRepo().findOneBy({ email });
     if (!user) {
       const password = hashPassword(createRefreshToken());
@@ -254,13 +258,13 @@ export async function ssoSync(req: Request, res: Response) {
         email,
         passwordHash: password.hash,
         passwordSalt: password.salt,
-        role: isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER,
+        roleId: isAdminEmail(email) ? CatalogIds.userRole.admin : CatalogIds.userRole.user,
       });
-    } else if (user.role !== UserRole.ADMIN && isAdminEmail(email)) {
-      user.role = UserRole.ADMIN;
+    } else if (user.roleId !== CatalogIds.userRole.admin && isAdminEmail(email)) {
+      user.roleId = CatalogIds.userRole.admin;
     }
 
-    user.ssoProvider = "keycloak";
+    user.ssoProviderId = CatalogIds.ssoProvider.keycloak;
     user.ssoSubject = subject;
     user.emailVerified = payload.email_verified === true;
     if (typeof payload.picture === "string") user.photo = payload.picture;

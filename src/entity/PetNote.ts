@@ -5,12 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from "typeorm";
-
-export enum PetNoteKind {
-  GENERAL = "general",
-  MEDICA = "medica",
-  ADOPCION = "adopcion",
-}
+import { CatalogIds } from "../lib/catalog-constants.js";
 
 @Entity("pet_note")
 export class PetNote {
@@ -30,8 +25,8 @@ export class PetNote {
   @Column({ type: "text" })
   text: string;
 
-  @Column({ type: "enum", enum: PetNoteKind, default: PetNoteKind.GENERAL })
-  kind: PetNoteKind;
+  @Column({ type: "int", default: CatalogIds.petNoteKind.general })
+  kindId: number;
 
   @CreateDateColumn()
   createdAt: Date;
