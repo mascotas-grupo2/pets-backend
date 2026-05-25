@@ -395,6 +395,14 @@ export async function updateMascota(req: Request, res: Response) {
   }
   const existing = await repo().findOneBy({ id });
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+  // permiso: admin puede editar cualquier reporte; usuario puede editar solo sus propios reportes
+  const authUser = req.authUser;
+  const isAdmin = authUser?.role === "admin";
+  if (!isAdmin) {
+    if (!authUser || authUser.id !== existing.userId) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+  }
 
   let catalogIds:
     | {
@@ -405,38 +413,38 @@ export async function updateMascota(req: Request, res: Response) {
         reportStatusId?: number | null;
       }
     | undefined;
+  // si no es admin, evitamos que modifique el reportStatus
+  const data = { ...(parsed.data as any) };
+  if (!isAdmin) {
+    delete data.reportStatus;
+    delete data.reportStatusId;
+  }
+
   try {
     catalogIds = {
       animalTypeId: await resolveOptionalCatalogId(
         Catalog.ANIMAL_TYPE,
-        parsed.data.animalTypeId,
-        parsed.data.animalType,
+        data.animalTypeId,
+        data.animalType,
       ),
-      sexId: await resolveOptionalCatalogId(Catalog.PET_SEX, parsed.data.sexId, parsed.data.sex),
-      statusId: await resolveOptionalCatalogId(
-        Catalog.PET_STATUS,
-        parsed.data.statusId,
-        parsed.data.status,
-      ),
-      reportStatusId: await resolveOptionalCatalogId(
-        Catalog.PET_REPORT_STATUS,
-        (parsed.data as any).reportStatusId,
-        (parsed.data as any).reportStatus,
-      ),
+      sexId: await resolveOptionalCatalogId(Catalog.PET_SEX, data.sexId, data.sex),
+      statusId: await resolveOptionalCatalogId(Catalog.PET_STATUS, data.statusId, data.status),
       medicalStatusId: await resolveOptionalCatalogId(
         Catalog.PET_MEDICAL_STATUS,
-        parsed.data.medicalStatusId,
-        parsed.data.medicalStatus,
+        data.medicalStatusId,
+        data.medicalStatus,
       ),
+      // reportStatus only resolved for admins
+      ...(isAdmin
+        ? { reportStatusId: await resolveOptionalCatalogId(Catalog.PET_REPORT_STATUS, data.reportStatusId, data.reportStatus) }
+        : {}),
     };
   } catch (error) {
     if (handleCatalogError(error, res)) return;
     throw error;
   }
 
-  const coords = "location" in parsed.data
-    ? await resolverCoordenadas(parsed.data.location)
-    : {};
+  const coords = "location" in data ? await resolverCoordenadas(data.location) : {};
 
   const {
     animalType: _animalType,
@@ -448,7 +456,7 @@ export async function updateMascota(req: Request, res: Response) {
     medicalStatus: _medicalStatus,
     medicalStatusId: _inputMedicalStatusId,
     ...petData
-  } = parsed.data;
+  } = data;
   const updated = await repo().save({
     ...existing,
     ...petData,
@@ -462,7 +470,7 @@ export async function updateMascota(req: Request, res: Response) {
     ...(catalogIds?.medicalStatusId !== undefined && catalogIds.medicalStatusId !== null
       ? { medicalStatusId: catalogIds.medicalStatusId }
       : {}),
-    ...(catalogIds?.reportStatusId !== undefined && catalogIds.reportStatusId !== null
+    ...(isAdmin && catalogIds?.reportStatusId !== undefined && catalogIds.reportStatusId !== null
       ? { reportStatusId: catalogIds.reportStatusId }
       : {}),
     ...coords,
