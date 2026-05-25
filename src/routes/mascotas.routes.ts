@@ -12,6 +12,8 @@ import {
   listMascotas,
   listPetNotes,
   updateMascota,
+  approveMascota,
+  finalizeMascota,
 } from "../controllers/mascotas.controller.js";
 import { optionalAuth, requireAdmin, requireAuth } from "../lib/auth.js";
 
@@ -26,28 +28,9 @@ mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
 mascotasRouter.post("/petsByIds", listMascotasByIds);
 mascotasRouter.get("/:id", getMascota);
 mascotasRouter.post("/", optionalAuth, multiple("photo", 6), multerErrorHandler, createMascota);
-mascotasRouter.put("/:id", requireAdmin, updateMascota);
+mascotasRouter.put("/:id", requireAuth, updateMascota);
 mascotasRouter.delete("/:id", requireAdmin, deleteMascota);
-
-// Admin actions for reports
-mascotasRouter.post("/:id/approve", requireAdmin, async (req, res, next) => {
-  try {
-    // delegate to controller
-    const { approveMascota } = await import("../controllers/mascotas.controller.js");
-    return approveMascota(req, res);
-  } catch (e) {
-    return next(e);
-  }
-});
-
-mascotasRouter.post("/:id/finalize", requireAdmin, async (req, res, next) => {
-  try {
-    const { finalizeMascota } = await import("../controllers/mascotas.controller.js");
-    return finalizeMascota(req, res);
-  } catch (e) {
-    return next(e);
-  }
-});
-
+mascotasRouter.post("/:id/approve", requireAdmin, approveMascota);
+mascotasRouter.post("/:id/finalize", requireAdmin, finalizeMascota);
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
 mascotasRouter.post("/:id/notes", requireAdmin, createPetNote);
