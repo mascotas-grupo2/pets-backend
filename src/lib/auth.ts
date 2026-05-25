@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from "jose";
 import crypto from "crypto";
 import { User } from "../entity/User.js";
 import { AppDataSource } from "../data-source.js";
+import { CatalogIds, catalogCodeForId } from "./catalog-constants.js";
 
 const issuer = process.env.KEYCLOAK_ISSUER;
 const audience = process.env.KEYCLOAK_AUDIENCE;
@@ -52,8 +53,8 @@ export function createRefreshToken() {
 export async function createAccessToken(user: User) {
   return new SignJWT({
     email: user.email,
-    role: user.role,
-    provider: user.ssoProvider ?? "local",
+    role: catalogCodeForId(user.roleId) ?? "user",
+    provider: catalogCodeForId(user.ssoProviderId) ?? "local",
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(localIssuer)
@@ -107,15 +108,18 @@ async function authUserFromPayload(payload: JWTPayload): Promise<AuthUser | null
 
   const userRepo = AppDataSource.getRepository(User);
   const user =
-    (await userRepo.findOneBy({ ssoProvider: "keycloak", ssoSubject: payload.sub })) ??
+    (await userRepo.findOneBy({
+      ssoProviderId: CatalogIds.ssoProvider.keycloak,
+      ssoSubject: payload.sub,
+    })) ??
     (email ? await userRepo.findOneBy({ email }) : null);
 
   if (!user) return null;
   return {
     id: user.id,
     email: user.email,
-    role: user.role,
-    provider: user.ssoProvider ?? "keycloak",
+    role: catalogCodeForId(user.roleId) ?? "user",
+    provider: catalogCodeForId(user.ssoProviderId) ?? "keycloak",
   };
 }
 

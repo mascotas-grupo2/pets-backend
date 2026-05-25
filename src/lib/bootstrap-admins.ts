@@ -1,5 +1,6 @@
 import { AppDataSource } from "../data-source.js";
-import { User, UserRole } from "../entity/User.js";
+import { User } from "../entity/User.js";
+import { CatalogIds } from "./catalog-constants.js";
 
 export function getAdminEmailsFromEnv(): string[] {
   const raw = process.env.ADMIN_EMAILS;
@@ -29,8 +30,8 @@ export async function bootstrapAdmins() {
       missing.push(email);
       continue;
     }
-    if (user.role === UserRole.ADMIN) continue;
-    user.role = UserRole.ADMIN;
+    if (user.roleId === CatalogIds.userRole.admin) continue;
+    user.roleId = CatalogIds.userRole.admin;
     await repo.save(user);
     promoted++;
   }

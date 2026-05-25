@@ -3,8 +3,9 @@ import crypto from "crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { AppDataSource } from "./data-source.js";
-import { Pet, AnimalType, PetSex } from "./entity/Pet.js";
-import { User, UserRole } from "./entity/User.js";
+import { Pet } from "./entity/Pet.js";
+import { User } from "./entity/User.js";
+import { CatalogIds } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 
 const seedAssetsDir = path.join(process.cwd(), "src", "seed-assets");
@@ -40,14 +41,14 @@ async function seed() {
   const petsData = [
     {
       name: "Toby",
-      animalType: AnimalType.PERRO,
+      animalTypeId: 1,
       // photos will be uploaded per-pet below
       description: "Perro marron, amigable, llevaba collar azul cuando fue visto",
       date: "2026-04-22",
       location: "Vergara 2396, Villa Tesei",
       contactPhone: "1134567890",
       contactEmail: "contacto1@example.com",
-      sex: PetSex.MACHO,
+      sexId: CatalogIds.petSex.macho,
       breed: "Mezcla",
       ageMonths: 24,
       color: "Marron",
@@ -59,14 +60,14 @@ async function seed() {
     },
     {
       name: "Luna",
-      animalType: AnimalType.GATO,
+      animalTypeId: 2,
       // photos will be uploaded per-pet below
       description: "Es una gata naranja, se la veia tranquila y podemos tenerla hasta nuevo aviso",
       date: "2026-04-22",
       location: "Adolfo Alsina 2256, Florida, Buenos Aires",
       contactPhone: "1198765432",
       contactEmail: "contacto2@example.com",
-      sex: PetSex.HEMBRA,
+      sexId: CatalogIds.petSex.hembra,
       breed: "Naranja",
       ageMonths: 12,
       color: "Naranja",
@@ -104,7 +105,7 @@ async function seed() {
       email: "admin@admin.com",
       passwordHash: hash,
       passwordSalt: salt,
-      role: UserRole.ADMIN,
+      roleId: CatalogIds.userRole.admin,
       emailVerified: true,
     })
   );

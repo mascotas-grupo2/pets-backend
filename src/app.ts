@@ -5,7 +5,11 @@ import { mascotasRouter } from "./routes/mascotas.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { userRouter } from "./routes/user.routes.js";
 import { adoptionRouter } from "./routes/adoption.routes.js";
-import { createMascota } from "./controllers/mascotas.controller.js";
+import {
+  createMascota,
+  listAnimalTypeCatalog,
+  listCatalogValueCatalog,
+} from "./controllers/mascotas.controller.js";
 import storageProxyHandler from "./controllers/storage.controller.js";
 import { multiple, multerErrorHandler } from "./middleware/upload.js";
 import { submitAdoption } from "./controllers/user.controller.js";
@@ -31,6 +35,9 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/mascotas", mascotasRouter);
 app.use("/api/pets", mascotasRouter);
+app.get("/api/animal-types", listAnimalTypeCatalog);
+app.get("/api/catalog-values", listCatalogValueCatalog);
+app.get("/api/catalog-values/:catalog", listCatalogValueCatalog);
 app.use("/api/auth", authRouter);
 app.use("/api/user", userRouter);
 app.use("/api/users", userRouter);
