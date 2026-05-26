@@ -251,6 +251,16 @@ export async function updateMascota(req: Request, res: Response) {
   const existing = await repo().findOneBy({ id });
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
 
+  // Solo el admin o el dueño que la publicó pueden editar.
+  const authUser = req.authUser;
+  const isAdmin = authUser?.role === "admin";
+  const isOwner = existing.userId != null && existing.userId === authUser?.id;
+  if (!isAdmin && !isOwner) {
+    return res
+      .status(403)
+      .json({ error: "No tenés permiso para editar esta publicación" });
+  }
+
   const coords = "location" in parsed.data
     ? await resolverCoordenadas(parsed.data.location)
     : {};

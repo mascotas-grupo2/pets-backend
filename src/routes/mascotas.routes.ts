@@ -24,7 +24,7 @@ mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
 mascotasRouter.post("/petsByIds", listMascotasByIds);
 mascotasRouter.get("/:id", getMascota);
 mascotasRouter.post("/", optionalAuth, multiple("photo", 6), multerErrorHandler, createMascota);
-mascotasRouter.put("/:id", requireAdmin, updateMascota);
+mascotasRouter.put("/:id", requireAuth, updateMascota);
 mascotasRouter.delete("/:id", requireAdmin, deleteMascota);
 
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
