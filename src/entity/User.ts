@@ -1,9 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from "typeorm";
-
-export enum UserRole {
-  USER = "user",
-  ADMIN = "admin",
-}
+import { CatalogIds } from "../lib/catalog-constants.js";
 
 @Entity()
 export class User {
@@ -37,14 +33,14 @@ export class User {
   @Column({ name: "password_reset_expires_at", nullable: true, type: "timestamp" })
   passwordResetExpiresAt!: Date | null;
 
-  @Column({ name: "sso_provider", nullable: true, type: "varchar", length: 40 })
-  ssoProvider!: string | null;
+  @Column({ name: "sso_provider_id", nullable: true, type: "int" })
+  ssoProviderId!: number | null;
 
   @Column({ name: "sso_subject", nullable: true, type: "varchar", length: 200 })
   ssoSubject!: string | null;
 
-  @Column({ type: "enum", enum: UserRole, default: UserRole.USER })
-  role!: UserRole;
+  @Column({ name: "role_id", type: "int", default: CatalogIds.userRole.user })
+  roleId!: number;
 
   @Column({ type: "boolean", default: false })
   adopter!: boolean;

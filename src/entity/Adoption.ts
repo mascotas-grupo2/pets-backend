@@ -11,8 +11,8 @@ export class Adoption {
   @Column({ type: "uuid", nullable: true })
   petId!: string | null;
 
-  @Column({ type: "varchar", length: 20, nullable: true })
-  preferredAnimal!: string | null;
+  @Column({ type: "int", nullable: true })
+  preferredAnimalTypeId!: number | null;
 
   @Column({ type: "varchar", length: 120 })
   firstName!: string;
@@ -38,18 +38,17 @@ export class Adoption {
   @Column({ type: "varchar", length: 120 })
   town!: string;
 
-  // store yes/no/empty as small varchar to preserve frontend values
-  @Column({ type: "varchar", length: 4, nullable: true })
-  hasGarden!: string | null;
+  @Column({ type: "int", nullable: true })
+  hasGardenId!: number | null;
 
-  @Column({ type: "varchar", length: 40, nullable: true })
-  livingSituation!: string | null;
+  @Column({ type: "int", nullable: true })
+  livingSituationId!: number | null;
 
-  @Column({ type: "varchar", length: 40, nullable: true })
-  householdSetting!: string | null;
+  @Column({ type: "int", nullable: true })
+  householdSettingId!: number | null;
 
-  @Column({ type: "varchar", length: 40, nullable: true })
-  activityLevel!: string | null;
+  @Column({ type: "int", nullable: true })
+  activityLevelId!: number | null;
 
   @Column({ type: "int", nullable: true })
   adults!: number | null;
@@ -57,26 +56,26 @@ export class Adoption {
   @Column({ type: "int", nullable: true })
   children!: number | null;
 
-  @Column({ type: "varchar", length: 4, nullable: true })
-  visitingChildren!: string | null;
+  @Column({ type: "int", nullable: true })
+  visitingChildrenId!: number | null;
 
-  @Column({ type: "varchar", length: 4, nullable: true })
-  hasFlatmates!: string | null;
+  @Column({ type: "int", nullable: true })
+  hasFlatmatesId!: number | null;
 
   @Column({ type: "text", nullable: true })
   allergies!: string | null;
 
-  @Column({ type: "varchar", length: 4, nullable: true })
-  otherAnimals!: string | null;
+  @Column({ type: "int", nullable: true })
+  otherAnimalsId!: number | null;
 
   @Column({ type: "text", nullable: true })
   otherAnimalsDetail!: string | null;
 
-  @Column({ type: "varchar", length: 4, nullable: true })
-  neutered!: string | null;
+  @Column({ type: "int", nullable: true })
+  neuteredId!: number | null;
 
-  @Column({ type: "varchar", length: 4, nullable: true })
-  vaccinated!: string | null;
+  @Column({ type: "int", nullable: true })
+  vaccinatedId!: number | null;
 
   @Column({ type: "text", nullable: true })
   experience!: string | null;

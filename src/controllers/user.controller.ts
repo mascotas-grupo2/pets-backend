@@ -2,19 +2,46 @@ import { Request, Response } from "express";
 import { ILike } from "typeorm";
 import { z } from "zod";
 import { AppDataSource } from "../data-source.js";
+import { Adoption } from "../entity/Adoption.js";
 import { Pet } from "../entity/Pet.js";
-import { User, UserRole } from "../entity/User.js";
+import { User } from "../entity/User.js";
+import { Catalog, CatalogIds, CatalogName, catalogItemForId } from "../lib/catalog-constants.js";
+import {
+  CatalogValidationError,
+  getCatalogValuesById,
+  resolveCatalogValueId,
+} from "../lib/catalog-values.js";
 import { uploadFileToMinio } from "../lib/minio.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
-import { Adoption } from "../entity/Adoption.js";
+
+const optionalPositiveInt = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce.number().int().positive().optional(),
+);
+
+const catalogReference = z.preprocess(
+  (value) => {
+    if (value === "" || value === null) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return value;
+  },
+  z
+    .union([
+      z.string().trim().min(1).max(80),
+      z.number().int().positive(),
+    ])
+    .optional(),
+);
 
 const adminUserRoleSchema = z.object({
-  role: z.nativeEnum(UserRole),
+  roleId: optionalPositiveInt,
+  role: catalogReference.optional(),
 });
 
 const adminListQuerySchema = z.object({
   search: z.string().trim().min(1).max(120).optional(),
-  role: z.nativeEnum(UserRole).optional(),
+  roleId: optionalPositiveInt,
+  role: catalogReference.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -30,6 +57,76 @@ function petRepo() {
 function splitName(name: string) {
   const [firstName, ...rest] = (name || "").trim().split(/\s+/);
   return { firstName: firstName || name, lastName: rest.join(" ") || "" };
+}
+
+function catalogCode(id: number | null | undefined) {
+  return catalogItemForId(id)?.code ?? null;
+}
+
+function catalogLabel(id: number | null | undefined) {
+  return catalogItemForId(id)?.label ?? null;
+}
+
+function handleCatalogError(error: unknown, res: Response) {
+  if (error instanceof CatalogValidationError) {
+    res.status(400).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+async function resolveCatalogId(
+  catalog: CatalogName,
+  id: number | null | undefined,
+  code: string | number | null | undefined,
+  required: boolean,
+) {
+  return resolveCatalogValueId(catalog, { id, code }, required);
+}
+
+async function resolveAdoptionCatalogIds(values: AdoptionInput) {
+  return {
+    preferredAnimalTypeId: await resolveCatalogId(
+      Catalog.ANIMAL_TYPE,
+      values.preferredAnimalTypeId,
+      values.preferredAnimal,
+      false,
+    ),
+    hasGardenId: await resolveCatalogId(Catalog.YES_NO, values.hasGardenId, values.hasGarden, true),
+    livingSituationId: await resolveCatalogId(
+      Catalog.LIVING_SITUATION,
+      values.livingSituationId,
+      values.livingSituation,
+      true,
+    ),
+    householdSettingId: await resolveCatalogId(
+      Catalog.HOUSEHOLD_SETTING,
+      values.householdSettingId,
+      values.householdSetting,
+      true,
+    ),
+    activityLevelId: await resolveCatalogId(
+      Catalog.ACTIVITY_LEVEL,
+      values.activityLevelId,
+      values.activityLevel,
+      true,
+    ),
+    visitingChildrenId: await resolveCatalogId(
+      Catalog.YES_NO,
+      values.visitingChildrenId,
+      values.visitingChildren,
+      true,
+    ),
+    hasFlatmatesId: await resolveCatalogId(
+      Catalog.YES_NO,
+      values.hasFlatmatesId,
+      values.hasFlatmates,
+      true,
+    ),
+    otherAnimalsId: await resolveCatalogId(Catalog.YES_NO, values.otherAnimalsId, values.otherAnimals, true),
+    neuteredId: await resolveCatalogId(Catalog.YES_NO_NA, values.neuteredId, values.neutered, true),
+    vaccinatedId: await resolveCatalogId(Catalog.YES_NO_NA, values.vaccinatedId, values.vaccinated, true),
+  };
 }
 
 export function publicUser(user: User) {
@@ -50,8 +147,15 @@ export function publicUser(user: User) {
     passwordResetExpiresAt?: Date | null;
   };
 
+  const role = catalogCode(safe.roleId) ?? "user";
+  const ssoProvider = catalogCode(safe.ssoProviderId);
+
   return {
     ...safe,
+    role,
+    roleLabel: catalogLabel(safe.roleId),
+    ssoProvider,
+    ssoProviderLabel: catalogLabel(safe.ssoProviderId),
     firstName: (safe as any).firstName ?? splitName(safe.name).firstName,
     lastName: (safe as any).lastName ?? splitName(safe.name).lastName,
   } as any;
@@ -88,9 +192,21 @@ export async function getUserDetails(req: Request, res: Response) {
   const latest = await adoptionRepo.findOne({ where: { userId: id }, order: { createdAt: "DESC" } });
 
   const safe = publicUser(user);
+  const catalogValuesById = await getCatalogValuesById();
+  const item = (valueId: number | null | undefined) =>
+    valueId ? catalogValuesById.get(valueId) ?? null : null;
 
   res.json({
-    reports: reports.map((pet) => ({ id: pet.id, title: pet.name ?? pet.animalType, description: pet.description, status: "perdido", created_at: pet.createdAt.toISOString() })),
+    reports: reports.map((pet) => ({
+      id: pet.id,
+      title: pet.name ?? item(pet.animalTypeId)?.label ?? "Mascota",
+      description: pet.description,
+      status: item(pet.statusId)?.code ?? null,
+      statusId: pet.statusId,
+      reportStatus: item((pet as any).reportStatusId)?.code ?? null,
+      reportStatusId: (pet as any).reportStatusId,
+      created_at: pet.createdAt.toISOString(),
+    })),
     photo: safe.photo,
     email: safe.email,
     messages: [],
@@ -103,19 +219,30 @@ export async function getUserDetails(req: Request, res: Response) {
     phone: latest?.phone ?? null,
     postcode: latest?.postcode ?? null,
     town: latest?.town ?? null,
-    hasGarden: latest?.hasGarden ?? null,
-    livingSituation: latest?.livingSituation ?? null,
-    householdSetting: latest?.householdSetting ?? null,
-    activityLevel: latest?.activityLevel ?? null,
+    preferredAnimal: item(latest?.preferredAnimalTypeId)?.code ?? null,
+    preferredAnimalTypeId: latest?.preferredAnimalTypeId ?? null,
+    hasGarden: item(latest?.hasGardenId)?.code ?? null,
+    hasGardenId: latest?.hasGardenId ?? null,
+    livingSituation: item(latest?.livingSituationId)?.code ?? null,
+    livingSituationId: latest?.livingSituationId ?? null,
+    householdSetting: item(latest?.householdSettingId)?.code ?? null,
+    householdSettingId: latest?.householdSettingId ?? null,
+    activityLevel: item(latest?.activityLevelId)?.code ?? null,
+    activityLevelId: latest?.activityLevelId ?? null,
     adults: latest?.adults ?? null,
     children: latest?.children ?? null,
-    visitingChildren: latest?.visitingChildren ?? null,
-    hasFlatmates: latest?.hasFlatmates ?? null,
+    visitingChildren: item(latest?.visitingChildrenId)?.code ?? null,
+    visitingChildrenId: latest?.visitingChildrenId ?? null,
+    hasFlatmates: item(latest?.hasFlatmatesId)?.code ?? null,
+    hasFlatmatesId: latest?.hasFlatmatesId ?? null,
     allergies: latest?.allergies ?? null,
-    otherAnimals: latest?.otherAnimals ?? null,
+    otherAnimals: item(latest?.otherAnimalsId)?.code ?? null,
+    otherAnimalsId: latest?.otherAnimalsId ?? null,
     otherAnimalsDetail: latest?.otherAnimalsDetail ?? null,
-    neutered: latest?.neutered ?? null,
-    vaccinated: latest?.vaccinated ?? null,
+    neutered: item(latest?.neuteredId)?.code ?? null,
+    neuteredId: latest?.neuteredId ?? null,
+    vaccinated: item(latest?.vaccinatedId)?.code ?? null,
+    vaccinatedId: latest?.vaccinatedId ?? null,
   });
 }
 
@@ -130,13 +257,20 @@ export async function submitAdoption(req: Request, res: Response) {
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  // store adoption record
+  let catalogIds: Awaited<ReturnType<typeof resolveAdoptionCatalogIds>>;
+  try {
+    catalogIds = await resolveAdoptionCatalogIds(values);
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
+
   try {
     const adoptionRepo = AppDataSource.getRepository(Adoption);
     const adoption = adoptionRepo.create({
       userId: id,
       petId: values.petId ?? null,
-      preferredAnimal: values.preferredAnimal || null,
+      ...catalogIds,
       firstName: values.firstName,
       lastName: values.lastName,
       email: values.email,
@@ -145,19 +279,10 @@ export async function submitAdoption(req: Request, res: Response) {
       addressLine2: values.addressLine2 || null,
       postcode: values.postcode,
       town: values.town,
-      hasGarden: values.hasGarden,
-      livingSituation: values.livingSituation || null,
-      householdSetting: values.householdSetting || null,
-      activityLevel: values.activityLevel || null,
       adults: values.adults,
       children: values.children,
-      visitingChildren: values.visitingChildren,
-      hasFlatmates: values.hasFlatmates,
       allergies: values.allergies || null,
-      otherAnimals: values.otherAnimals,
       otherAnimalsDetail: values.otherAnimalsDetail || null,
-      neutered: values.neutered,
-      vaccinated: values.vaccinated,
       experience: values.experience || null,
       acceptsTerms: values.acceptsTerms,
     });
@@ -166,7 +291,6 @@ export async function submitAdoption(req: Request, res: Response) {
     console.warn("No se pudo guardar registro de adoption:", e);
   }
 
-  // mark user as adopter
   const updated = await userRepo().save({ ...user, adopter: true });
 
   res.status(201).json(publicUser(updated));
@@ -199,7 +323,19 @@ export async function adminListUsers(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { search, role, page, pageSize } = parsed.data;
+  const { search, role, roleId: inputRoleId, page, pageSize } = parsed.data;
+
+  let roleId: number | null = null;
+  try {
+    roleId = await resolveCatalogValueId(
+      Catalog.USER_ROLE,
+      { id: inputRoleId, code: role },
+      false,
+    );
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
 
   const where = [] as Record<string, unknown>[];
   if (search) {
@@ -207,7 +343,7 @@ export async function adminListUsers(req: Request, res: Response) {
     where.push({ email: like });
     where.push({ name: like });
   }
-  const baseWhere = role ? { role } : {};
+  const baseWhere = roleId ? { roleId } : {};
   const finalWhere =
     where.length > 0
       ? where.map((w) => ({ ...baseWhere, ...w }))
@@ -231,9 +367,11 @@ export async function adminListUsers(req: Request, res: Response) {
         name: safe.name,
         email: safe.email,
         role: safe.role,
+        roleId: safe.roleId,
         adopter: safe.adopter,
         emailVerified: safe.emailVerified,
         ssoProvider: safe.ssoProvider,
+        ssoProviderId: safe.ssoProviderId,
         photo: safe.photo,
         createdAt: u.createdAt,
       };
@@ -251,30 +389,40 @@ export async function adminUpdateUserRole(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { role: newRole } = parsed.data;
+
+  let newRoleId: number | null;
+  try {
+    newRoleId = await resolveCatalogValueId(
+      Catalog.USER_ROLE,
+      { id: parsed.data.roleId, code: parsed.data.role },
+      true,
+    );
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
+  if (!newRoleId) return res.status(400).json({ error: "Rol requerido" });
 
   const target = await userRepo().findOneBy({ id: targetId });
   if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  if (target.role === newRole) {
+  if (target.roleId === newRoleId) {
     return res.json(publicUser(target));
   }
 
-  // No permitir auto-degradación: un admin no puede quitarse el rol a sí mismo.
   if (
     req.authUser?.id === target.id &&
-    target.role === UserRole.ADMIN &&
-    newRole !== UserRole.ADMIN
+    target.roleId === CatalogIds.userRole.admin &&
+    newRoleId !== CatalogIds.userRole.admin
   ) {
     return res
       .status(400)
       .json({ error: "No podés quitarte el rol de admin a vos mismo" });
   }
 
-  // No permitir dejar al sistema sin admins.
-  if (target.role === UserRole.ADMIN && newRole !== UserRole.ADMIN) {
+  if (target.roleId === CatalogIds.userRole.admin && newRoleId !== CatalogIds.userRole.admin) {
     const adminCount = await userRepo().count({
-      where: { role: UserRole.ADMIN },
+      where: { roleId: CatalogIds.userRole.admin },
     });
     if (adminCount <= 1) {
       return res
@@ -283,7 +431,7 @@ export async function adminUpdateUserRole(req: Request, res: Response) {
     }
   }
 
-  target.role = newRole;
+  target.roleId = newRoleId;
   const saved = await userRepo().save(target);
   res.json(publicUser(saved));
 }
@@ -298,9 +446,9 @@ export async function uploadProfilePhoto(req: Request, res: Response) {
   const file = (req as any).file as Express.Multer.File | undefined;
   if (!file) return res.status(400).json({ error: "No se subió ningún archivo" });
 
-  const bucket = process.env.MINIO_PROFILE_BUCKET ?? process.env.MINIO_BUCKET ?? "profile";
+  const bucket = process.env.MINIO_PROFILE_BUCKET ?? "profile";
   try {
-    const url = await uploadFileToMinio(bucket, "profile", file.originalname, file.buffer, file.mimetype);
+    const url = await uploadFileToMinio(bucket, String(id), file.originalname, file.buffer, file.mimetype);
     const merged = await userRepo().save({ ...user, photo: url });
     res.json(publicUser(merged));
   } catch (e: any) {

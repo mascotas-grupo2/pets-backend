@@ -4,35 +4,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
 } from "typeorm";
-
-export enum AnimalType {
-  PERRO = "perro",
-  GATO = "gato",
-  OTRO = "otro",
-}
-
-export enum PetSex {
-  MACHO = "macho",
-  HEMBRA = "hembra",
-}
-
-export enum PetStatus {
-  PERDIDO = "perdido",
-  ENCONTRADO = "encontrado",
-  TRANSITO = "en tránsito",
-  MEDICO = "en tratamiento médico",
-  ADOPCION = "en adopción",
-  ADOPTADO = "adoptado",
-}
-
-export enum PetMedicalStatus {
-  SANO = "sano",
-  EVALUACION = "en evaluación",
-  TRATAMIENTO = "en tratamiento",
-  POST_OPERATORIO = "post-operatorio",
-  RECUPERANDOSE = "recuperándose",
-  CRITICO = "crítico",
-}
+import { CatalogIds } from "../lib/catalog-constants.js";
 
 @Entity("pet")
 export class Pet {
@@ -51,8 +23,8 @@ export class Pet {
   @Column({ type: "text" })
   description: string;
 
-  @Column({ type: "enum", enum: AnimalType })
-  animalType: AnimalType;
+  @Column({ type: "int" })
+  animalTypeId: number;
 
   @Column({ type: "varchar", length: 200 })
   date: string;
@@ -75,8 +47,8 @@ export class Pet {
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column({ nullable: true, type: "enum", enum: PetSex })
-  sex: PetSex | null;
+  @Column({ nullable: true, type: "int" })
+  sexId: number | null;
 
   @Column({ nullable: true, type: "varchar", length: 120 })
   breed: string | null;
@@ -120,13 +92,12 @@ export class Pet {
   @Column({ nullable: true, type: "int" })
   userId: number | null;
 
-  @Column({ type: "enum", enum: PetStatus, default: PetStatus.PERDIDO })
-  status: PetStatus;
+  @Column({ type: "int", default: CatalogIds.petStatus.perdido })
+  statusId: number;
 
-  @Column({
-    type: "enum",
-    enum: PetMedicalStatus,
-    default: PetMedicalStatus.SANO,
-  })
-  medicalStatus: PetMedicalStatus;
+  @Column({ type: "int", default: CatalogIds.petMedicalStatus.sano })
+  medicalStatusId: number;
+
+  @Column({ type: "int", default: CatalogIds.petReportStatus.pendiente })
+  reportStatusId: number;
 }

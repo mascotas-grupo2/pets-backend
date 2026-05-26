@@ -1,7 +1,8 @@
 import "dotenv/config";
 import crypto from "crypto";
 import { AppDataSource } from "./data-source.js";
-import { User, UserRole } from "./entity/User.js";
+import { User } from "./entity/User.js";
+import { CatalogIds } from "./lib/catalog-constants.js";
 
 /**
  * Alta manual de un usuario (sin pasar por el flujo de verificación por email).
@@ -15,7 +16,8 @@ async function main() {
     process.exit(1);
   }
 
-  const role = roleArg === "admin" ? UserRole.ADMIN : UserRole.USER;
+  const roleId =
+    roleArg === "admin" ? CatalogIds.userRole.admin : CatalogIds.userRole.user;
 
   await AppDataSource.initialize();
   const repo = AppDataSource.getRepository(User);
@@ -31,11 +33,11 @@ async function main() {
     existing.name = name;
     existing.passwordHash = passwordHash;
     existing.passwordSalt = salt;
-    existing.role = role;
+    existing.roleId = roleId;
     existing.emailVerified = true;
     const user = await repo.save(existing);
     console.log(
-      `Usuario actualizado: ${user.email} (id=${user.id}, role=${user.role}, emailVerified=${user.emailVerified}) — contraseña reseteada.`,
+      `Usuario actualizado: ${user.email} (id=${user.id}, roleId=${user.roleId}, emailVerified=${user.emailVerified}) — contraseña reseteada.`,
     );
   } else {
     const user = await repo.save(
@@ -44,12 +46,12 @@ async function main() {
         email,
         passwordHash,
         passwordSalt: salt,
-        role,
+        roleId,
         emailVerified: true,
       }),
     );
     console.log(
-      `Usuario creado: ${user.email} (id=${user.id}, role=${user.role}, emailVerified=${user.emailVerified})`,
+      `Usuario creado: ${user.email} (id=${user.id}, roleId=${user.roleId}, emailVerified=${user.emailVerified})`,
     );
   }
 
