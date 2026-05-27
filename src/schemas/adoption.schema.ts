@@ -1,11 +1,34 @@
 import { z } from "zod";
 
-const yesNo = z.enum(["si", "no", ""]);
-const yesNoNA = z.enum(["si", "no", "na", ""]);
+const optionalPositiveInt = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce.number().int().positive().optional(),
+);
+
+const catalogReference = z.preprocess(
+  (value) => {
+    if (value === "" || value === null) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return value;
+  },
+  z
+    .union([
+      z.string().trim().min(1).max(80),
+      z.number().int().positive(),
+    ])
+    .optional(),
+);
+
+const optionalUuid = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.string().uuid().optional(),
+);
 
 export const adoptionSchema = z.object({
-  userId: z.number().int().positive(),
-  preferredAnimal: z.enum(["perro", "gato", "otro", ""]),
+  userId: z.number().int().positive().optional(),
+  petId: optionalUuid,
+  preferredAnimalTypeId: optionalPositiveInt,
+  preferredAnimal: catalogReference,
   firstName: z.string().min(1).max(120),
   lastName: z.string().min(1).max(120),
   email: z.string().email().max(200),
@@ -14,19 +37,28 @@ export const adoptionSchema = z.object({
   addressLine2: z.string().max(200).optional().default(""),
   postcode: z.string().min(1).max(20),
   town: z.string().min(1).max(120),
-  hasGarden: yesNo,
-  livingSituation: z.enum(["", "casa", "departamento", "phd", "quinta", "otro"]),
-  householdSetting: z.enum(["", "urbano", "suburbano", "rural"]),
-  activityLevel: z.enum(["", "tranquilo", "moderado", "activo"]),
+  hasGardenId: optionalPositiveInt,
+  hasGarden: catalogReference,
+  livingSituationId: optionalPositiveInt,
+  livingSituation: catalogReference,
+  householdSettingId: optionalPositiveInt,
+  householdSetting: catalogReference,
+  activityLevelId: optionalPositiveInt,
+  activityLevel: catalogReference,
   adults: z.number().int().nonnegative(),
   children: z.number().int().nonnegative(),
-  visitingChildren: yesNo,
-  hasFlatmates: yesNo,
+  visitingChildrenId: optionalPositiveInt,
+  visitingChildren: catalogReference,
+  hasFlatmatesId: optionalPositiveInt,
+  hasFlatmates: catalogReference,
   allergies: z.string().max(2000).optional().default(""),
-  otherAnimals: yesNo,
+  otherAnimalsId: optionalPositiveInt,
+  otherAnimals: catalogReference,
   otherAnimalsDetail: z.string().max(2000).optional().default(""),
-  neutered: yesNoNA,
-  vaccinated: yesNoNA,
+  neuteredId: optionalPositiveInt,
+  neutered: catalogReference,
+  vaccinatedId: optionalPositiveInt,
+  vaccinated: catalogReference,
   experience: z.string().max(2000).optional().default(""),
   acceptsTerms: z.boolean(),
 });

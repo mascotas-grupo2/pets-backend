@@ -1,14 +1,42 @@
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { Pet } from "./entity/Pet.js";
+import { PetNote } from "./entity/PetNote.js";
 import { User } from "./entity/User.js";
+import { Adoption } from "./entity/Adoption.js";
+import { CatalogValue } from "./entity/CatalogValue.js";
 import { InitPetTable1744402212000 } from "./migration/1744402212000-Init.js";
 import { AddUser1744402213000 } from "./migration/1744402213000-AddUser.js";
+import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTokens.js";
+import { AddPetCoordinates1744402215000 } from "./migration/1744402215000-AddPetCoordinates.js";
+import { AddAdoption1744402216000 } from "./migration/1744402216000-AddAdoption.js";
+import { WidenUserPhoto1744402216001 } from "./migration/1744402216001-WidenUserPhoto.js";
+import { RemoveUserAdoptionFields1744402217001 } from "./migration/1744402217001-RemoveUserAdoptionFields.js";
+import { AddPetStatusAndNotes1744402217002 } from "./migration/1744402217002-AddPetStatusAndNotes.js";
+import { AddMedicalStatusAndNoteKind1744402218000 } from "./migration/1744402218000-AddMedicalStatusAndNoteKind.js";
+import { AddPasswordReset1744402219000 } from "./migration/1744402219000-AddPasswordReset.js";
+import { AddAdoptionPetId1744402220000 } from "./migration/1744402220000-AddAdoptionPetId.js";
+import { NormalizeCatalogValues1744402222000 } from "./migration/1744402222000-NormalizeCatalogValues.js";
+import { AddReportStatus1744402223000 } from "./migration/1744402223000-AddReportStatus.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.DATABASE_URL,
-  entities: [Pet, User],
-  migrations: [InitPetTable1744402212000, AddUser1744402213000],
+  entities: [Pet, User, Adoption, PetNote, CatalogValue],
+  migrations: [
+    InitPetTable1744402212000,
+    AddUser1744402213000,
+    AddAuthTokens1744402214000,
+    AddPetCoordinates1744402215000,
+    AddAdoption1744402216000,
+    WidenUserPhoto1744402216001,
+    RemoveUserAdoptionFields1744402217001,
+    AddPetStatusAndNotes1744402217002,
+    AddMedicalStatusAndNoteKind1744402218000,
+    AddPasswordReset1744402219000,
+    AddAdoptionPetId1744402220000,
+    NormalizeCatalogValues1744402222000,
+    AddReportStatus1744402223000,
+  ],
   synchronize: false,
 });

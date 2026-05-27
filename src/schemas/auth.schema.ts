@@ -14,3 +14,36 @@ export const loginSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(20).optional(),
+});
+
+export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(20),
+});
+
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email().max(200),
+});
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(20),
+  newPassword: z.string().min(8).max(128),
+});
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+export const googleSsoSchema = z.object({
+  idToken: z.string().min(20).optional(),
+  token: z.string().min(20).optional(),
+  accessToken: z.string().min(20).optional(),
+});
+
+export type GoogleSsoInput = z.infer<typeof googleSsoSchema>;

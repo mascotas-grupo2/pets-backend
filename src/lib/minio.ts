@@ -22,7 +22,12 @@ function parseEndpoint(endpoint: string) {
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT ?? "http://localhost:9000";
 const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? process.env.MINIO_ROOT_USER ?? "minioadmin";
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? process.env.MINIO_ROOT_PASSWORD ?? "minioadmin";
+const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const { host, port, useSSL } = parseEndpoint(MINIO_ENDPOINT);
+
+// Tamaño máximo por archivo (bytes). Por defecto 5MB, puede sobrescribirse con MINIO_MAX_FILE_BYTES
+const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_BYTES = Number(process.env.MINIO_MAX_FILE_BYTES ?? DEFAULT_MAX_FILE_BYTES);
 
 const client = new Client({
   endPoint: host,
@@ -49,7 +54,8 @@ function getFallbackEndpoint() {
 }
 
 function getBackendPublicUrl() {
-  return (process.env.BACKEND_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 3001}`).replace(/\/$/, "");
+  const url = (!IS_DEVELOPMENT && process.env.FRONTEND_URL) || `http://localhost:${process.env.PORT || 3001}`;
+  return url.replace(/\/$/, "");
 }
 
 function getStorageUrl(bucket: string, objectName: string) {
@@ -122,6 +128,13 @@ export async function uploadBufferToMinio(
 ) {
   if (!bucket) throw new Error("MINIO bucket not specified");
 
+  // Validación de tamaño: rechazar archivos mayores al límite configurado
+  if (buffer && buffer.length > MAX_FILE_BYTES) {
+    const err = new Error(`File too large: ${buffer.length} bytes (max ${MAX_FILE_BYTES})`);
+    (err as any).code = "LIMIT_FILE_SIZE";
+    throw err;
+  }
+
   async function uploadWith(targetClient: Client) {
     await ensureBucketPublic(bucket, targetClient);
     await targetClient.putObject(bucket, objectName, buffer, buffer.length, {
@@ -141,6 +154,35 @@ export async function uploadBufferToMinio(
   }
 
   return getStorageUrl(bucket, objectName);
+}
+
+export function generateUniqueObjectName(folder: string, originalName?: string, contentType?: string) {
+  // Prefer the `report-{timestamp}-{rand}` naming convention to keep files uniform
+  const timestamp = Date.now();
+  const rand = Math.floor(Math.random() * 10000);
+  // try to preserve extension from originalName, otherwise infer from contentType
+  let ext = "";
+  if (originalName) {
+    const m = originalName.match(/(\.[a-z0-9]+)$/i);
+    if (m) ext = m[1].toLowerCase();
+  }
+  if (!ext) {
+    ext = extensionFromContentType(contentType) || "";
+  }
+  const filename = `report-${timestamp}-${rand}${ext}`;
+  if (folder) return `${folder.replace(/\/$/, "")}/${filename}`;
+  return filename;
+}
+
+export async function uploadFileToMinio(
+  bucket: string,
+  folder: string,
+  originalName: string | undefined,
+  buffer: Buffer,
+  contentType?: string
+) {
+  const objectName = generateUniqueObjectName(folder, originalName, contentType);
+  return uploadBufferToMinio(bucket, objectName, buffer, contentType);
 }
 
 export async function uploadDataUrlToMinio(
@@ -167,6 +209,29 @@ export async function uploadSeedImageToMinio(
     buffer,
     contentType
   );
+}
+
+export async function createFolderInBucket(bucket: string, folderName: string) {
+  if (!bucket) throw new Error("MINIO bucket not specified");
+  const objectName = `${folderName}/.keep`;
+  const buffer = Buffer.from("");
+
+  async function putWith(targetClient: Client) {
+    await ensureBucketPublic(bucket, targetClient);
+    await targetClient.putObject(bucket, objectName, buffer, 0);
+  }
+
+  try {
+    await putWith(client);
+  } catch (err: any) {
+    const fallbackEndpoint = getFallbackEndpoint();
+    if (err?.code === "ENOTFOUND" && fallbackEndpoint && fallbackEndpoint !== MINIO_ENDPOINT) {
+      await putWith(createClient(fallbackEndpoint));
+    } else {
+      // no bloquear la operación si falla la creación del placeholder
+      console.warn("No se pudo crear carpeta en bucket:", err);
+    }
+  }
 }
 
 export default client;

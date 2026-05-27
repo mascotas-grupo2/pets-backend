@@ -53,8 +53,16 @@ Servicios expuestos:
 
 Corre migraciones pendientes, limpia datos de prueba e inserta mascotas y un usuario admin. Requiere que Postgres este corriendo.
 
+Para ejecutarlo desde tu máquina local (requiere Node.js y acceso al puerto de DB):
+
 ```bash
 npm run seed
+```
+
+Para ejecutarlo **dentro de Docker** (recomendado):
+
+```bash
+docker compose exec backend npm run seed
 ```
 
 Usuario creado por seed:
@@ -130,6 +138,8 @@ Base URL: `http://localhost:3001`
 | POST | `/api/pet/reportar` | No | Alias compatible con front para reportar mascota |
 | POST | `/api/pet/adoptar` | No | Guarda perfil adoptante y marca `adopter: true` |
 | GET | `/api/pets/userPetsById?id=:id` | No | Alias compatible con front para reportes por usuario |
+| POST | `/api/mascotas/:id/approve` | Admin | Marca un reporte como `activo` |
+| POST | `/api/mascotas/:id/finalize` | Admin | Marca un reporte como `finalizado` |
 
 Tambien existen aliases:
 

@@ -1,14 +1,14 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: pets-postgres
+    container_name: pets-postgres-local
     restart: unless-stopped
     environment:
       POSTGRES_USER: pets
       POSTGRES_PASSWORD: pets
       POSTGRES_DB: pets_db
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - pets_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -19,30 +19,31 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
-    container_name: pets-keycloak
+    container_name: pets-keycloak-local
     restart: unless-stopped
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HTTP_PORT: "8080"
+      GOOGLE_CLIENT_SECRET: ${KEYCLOAK_GOOGLE_CLIENT_SECRET}
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
       - pets_kcdata:/opt/keycloak/data
       - ./keycloak/import:/opt/keycloak/data/import:ro
 
   minio:
     image: minio/minio:latest
-    container_name: pets-minio
+    container_name: pets-minio-local
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9002:9000"
+      - "9003:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -56,14 +57,14 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: /bin/sh -c "sleep 5; mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; mc mb --ignore-existing myminio/report-images; mc policy set download myminio/report-images || true; exit 0"
+    entrypoint: /bin/sh -c "sleep 5; mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; mc mb --ignore-existing myminio/report-images; mc policy set download myminio/report-images || true; mc mb --ignore-existing myminio/profile; mc policy set download myminio/profile || true; exit 0"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
 
   backend:
     build: .
-    container_name: pets-backend
+    container_name: pets-backend-local
     restart: unless-stopped
     depends_on:
       postgres:
@@ -72,18 +73,31 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: "postgresql://pets:pets@postgres:5432/pets_db"
-      PORT: "3001"
+      PORT: ${PORT}
       KEYCLOAK_ISSUER: "http://keycloak:8080/realms/pets"
       KEYCLOAK_AUDIENCE: "pets-backend"
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      COOKIE_SECURE: ${COOKIE_SECURE}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_PROFILE_BUCKET: profile
+      FRONTEND_URL: ${FRONTEND_URL}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_SECURE: ${SMTP_SECURE}
     ports:
-      - "3001:3001"
+      - "3002:3002"
 
 volumes:
   pets_pgdata:
   pets_kcdata:
   minio_data:
-

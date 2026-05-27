@@ -1,9 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from "typeorm";
-
-export enum UserRole {
-  USER = "user",
-  ADMIN = "admin",
-}
+import { CatalogIds } from "../lib/catalog-constants.js";
 
 @Entity()
 export class User {
@@ -22,80 +18,35 @@ export class User {
   @Column({ name: "password_salt", type: "varchar" })
   passwordSalt!: string;
 
-  @Column({ type: "enum", enum: UserRole, default: UserRole.USER })
-  role!: UserRole;
+  @Column({ name: "refresh_token_hash", nullable: true, type: "varchar", length: 128 })
+  refreshTokenHash!: string | null;
+
+  @Column({ name: "email_verified", type: "boolean", default: false })
+  emailVerified!: boolean;
+
+  @Column({ name: "email_verification_token_hash", nullable: true, type: "varchar", length: 128 })
+  emailVerificationTokenHash!: string | null;
+
+  @Column({ name: "password_reset_token_hash", nullable: true, type: "varchar", length: 128 })
+  passwordResetTokenHash!: string | null;
+
+  @Column({ name: "password_reset_expires_at", nullable: true, type: "timestamp" })
+  passwordResetExpiresAt!: Date | null;
+
+  @Column({ name: "sso_provider_id", nullable: true, type: "int" })
+  ssoProviderId!: number | null;
+
+  @Column({ name: "sso_subject", nullable: true, type: "varchar", length: 200 })
+  ssoSubject!: string | null;
+
+  @Column({ name: "role_id", type: "int", default: CatalogIds.userRole.user })
+  roleId!: number;
 
   @Column({ type: "boolean", default: false })
   adopter!: boolean;
 
-  @Column({ nullable: true, type: "varchar", length: 500 })
+  @Column({ nullable: true, type: "text" })
   photo!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 120 })
-  firstName!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 120 })
-  lastName!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 30 })
-  phone!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 200 })
-  addressLine1!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 200 })
-  addressLine2!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 20 })
-  postcode!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 120 })
-  town!: string | null;
-
-  @Column({ nullable: true, type: "boolean" })
-  hasGarden!: boolean | null;
-
-  @Column({ nullable: true, type: "varchar", length: 40 })
-  livingSituation!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 40 })
-  householdSetting!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 40 })
-  activityLevel!: string | null;
-
-  @Column({ nullable: true, type: "int" })
-  adults!: number | null;
-
-  @Column({ nullable: true, type: "int" })
-  children!: number | null;
-
-  @Column({ nullable: true, type: "boolean" })
-  visitingChildren!: boolean | null;
-
-  @Column({ nullable: true, type: "boolean" })
-  hasFlatmates!: boolean | null;
-
-  @Column({ nullable: true, type: "text" })
-  allergies!: string | null;
-
-  @Column({ nullable: true, type: "boolean" })
-  otherAnimals!: boolean | null;
-
-  @Column({ nullable: true, type: "text" })
-  otherAnimalsDetail!: string | null;
-
-  @Column({ nullable: true, type: "boolean" })
-  neutered!: boolean | null;
-
-  @Column({ nullable: true, type: "boolean" })
-  vaccinated!: boolean | null;
-
-  @Column({ nullable: true, type: "text" })
-  experience!: string | null;
-
-  @Column({ nullable: true, type: "varchar", length: 20 })
-  preferredAnimal!: string | null;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
