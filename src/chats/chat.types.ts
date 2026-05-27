@@ -1,12 +1,10 @@
-export type ChatRole = "user" | "assistant";
+import type OpenAI from "openai";
+
+export type ChatRole = "user" | "assistant" | "system" | "tool";
 
 export type QuickReply = {
   label: string;
   value: string;
-  action?: {
-    type: "message" | "start_flow" | "submit_flow";
-    flowId?: string;
-  };
 };
 
 export type ChatMessageRequest = {
@@ -20,17 +18,31 @@ export type ChatBotMessage = {
   text: string;
 };
 
+export type ToolCallTrace = {
+  toolName: string;
+  arguments: unknown;
+  result: unknown;
+  durationMs: number;
+};
+
 export type ChatResponse = {
   sessionId: string;
   messages: ChatBotMessage[];
   quickReplies?: QuickReply[];
+  debug?: {
+    detectedIntent?: string | null;
+    toolCalls: ToolCallTrace[];
+    model: string;
+    iterations: number;
+  };
 };
 
-export type ChatIntent = {
+export type SessionMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+
+export type ChatSession = {
   id: string;
-  triggers: string[];
-  response: {
-    text: string;
-    quickReplies?: QuickReply[];
-  };
+  createdAt: number;
+  updatedAt: number;
+  messages: SessionMessage[];
+  lastIntent: string | null;
 };
