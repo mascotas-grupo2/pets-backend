@@ -19,9 +19,6 @@ export async function sendChatMessage(req: Request, res: Response) {
     });
   }
 
-  // Pre-filtro heurístico: si matchea un patrón de inyección conocido,
-  // rechazamos antes de llamar al LLM (ahorra tokens y bloquea casos
-  // obvios sin depender del comportamiento del modelo).
   const guard = inspectUserMessage(message);
   if (!guard.ok) {
     const session = getOrCreateSession(sessionId);

@@ -16,12 +16,6 @@ function ttlMs() {
   return minutes * 60 * 1000;
 }
 
-/**
- * Store de sesiones en memoria. Suficiente para la demo por API; al reiniciar
- * el proceso las sesiones se pierden. Si se quisiera persistir, basta con
- * reemplazar este módulo por uno que use TypeORM (entidad ChatSession +
- * ChatMessage) sin tocar el engine.
- */
 const sessions = new Map<string, ChatSession>();
 
 function purgeExpired() {
@@ -81,7 +75,6 @@ export function setLastIntent(session: ChatSession, intent: string | null) {
   session.lastIntent = intent;
 }
 
-/** Útil para tests o un endpoint debug. */
 export function debugListSessions() {
   return Array.from(sessions.values()).map((s) => ({
     id: s.id,

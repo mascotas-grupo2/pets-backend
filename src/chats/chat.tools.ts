@@ -5,19 +5,10 @@ import { Pet } from "../entity/Pet.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import { getCatalogValuesById } from "../lib/catalog-values.js";
 
-/**
- * Definición de una tool: el schema que se manda a OpenAI + la función que
- * realmente la ejecuta contra el dominio.
- *
- * Mantener las tools acá (en vez de exponer los controllers de Express)
- * permite separar la "interfaz HTTP" de la "interfaz LLM": cada una valida
- * y maneja errores como conviene a su superficie.
- */
 export type ToolHandler = (args: any) => Promise<unknown>;
 
 export type ToolDefinition = {
   schema: OpenAI.Chat.Completions.ChatCompletionTool;
-  /** Etiqueta de "intent" inferida cuando esta tool se ejecuta. */
   intent: string;
   handler: ToolHandler;
 };

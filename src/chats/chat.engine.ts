@@ -16,19 +16,6 @@ const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 const DEFAULT_MAX_ITERATIONS = 5;
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 
-/**
- * Cliente para Groq.
- *
- * Groq hostea modelos open source (Llama, Mixtral, etc.) con inferencia
- * muy rápida y un free tier generoso. Su API es compatible con OpenAI,
- * por eso reutilizamos el SDK `openai` apuntando al baseURL de Groq.
- *
- * Motivos de la elección:
- *  - Free tier sin tarjeta de crédito (~30 req/min, ~14k req/día).
- *  - Tool calling soportado nativamente.
- *  - Ideal para un proyecto open source: cualquiera puede correrlo
- *    generando su propia API key en https://console.groq.com/keys.
- */
 let cachedClient: OpenAI | null = null;
 function getClient(): OpenAI {
   if (cachedClient) return cachedClient;
@@ -52,15 +39,6 @@ function maxIterations() {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_ITERATIONS;
 }
 
-/**
- * Limpia residuos técnicos que algunos modelos open source (Llama, Mixtral)
- * a veces filtran en el texto user-facing en vez de invocar la tool a través
- * del mecanismo formal de tool_calls. Por ejemplo:
- *   "Probemos con <function=draftLostPetReport>{...}</function>"
- *
- * El system prompt ya prohibe este formato, pero esto es defensa en
- * profundidad por si el modelo se desvía.
- */
 function sanitizeAssistantText(text: string): string {
   let out = text;
   // Tags estilo Hermes: <function=name>{...}</function>

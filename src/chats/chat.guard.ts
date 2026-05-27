@@ -1,16 +1,3 @@
-/**
- * Pre-filtro heurístico contra prompt injection y abusos obvios.
- *
- * Es una primera línea de defensa "barata" (no consume tokens del LLM):
- * detectamos patrones conocidos de jailbreak / inyección antes de
- * invocar al modelo. No es exhaustiva — el system prompt hardened es
- * la segunda línea — pero filtra los intentos más comunes.
- *
- * Nota sobre `\b`: en JavaScript regex el word boundary no funciona bien
- * con caracteres acentuados (á, é, ñ...). Por eso usamos lookarounds o
- * límites laxos en lugar de \b después de tokens con acentos.
- */
-
 const INJECTION_PATTERNS: { pattern: RegExp; reason: string }[] = [
   // Ignorar / sobrescribir instrucciones (ES)
   {
@@ -64,10 +51,6 @@ export type GuardResult =
   | { ok: true }
   | { ok: false; reason: string };
 
-/**
- * Inspecciona el mensaje del usuario.
- * Devuelve `ok: false` si matchea algún patrón de inyección conocido.
- */
 export function inspectUserMessage(message: string): GuardResult {
   for (const { pattern, reason } of INJECTION_PATTERNS) {
     if (pattern.test(message)) {
