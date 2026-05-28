@@ -85,6 +85,18 @@ function serializePetNote(note: PetNote, catalogValuesById: CatalogValueMap) {
   };
 }
 
+/**
+ * ¿Puede el solicitante ver esta mascota? Los reportes públicos (activo) son
+ * visibles para todos; los demás estados (pendiente/rechazado/finalizado) solo
+ * para el dueño o un admin. Evita IDOR en los endpoints sin filtro de estado.
+ */
+function canViewPet(mascota: Pet, authUser?: { id: number; role?: string }) {
+  if (mascota.reportStatusId === CatalogIds.petReportStatus.activo) return true;
+  if (!authUser) return false;
+  if (authUser.role === "admin") return true;
+  return mascota.userId === authUser.id;
+}
+
 function handleCatalogError(error: unknown, res: Response) {
   if (error instanceof CatalogValidationError) {
     res.status(400).json({ error: error.message });
@@ -225,6 +237,10 @@ export async function getMascota(req: Request, res: Response) {
   const id = req.params.id;
   const mascota = await repo().findOneBy({ id });
   if (!mascota) return res.status(404).json({ error: "Pet no encontrada" });
+  // No revelamos la existencia de reportes no-públicos a terceros.
+  if (!canViewPet(mascota, req.authUser)) {
+    return res.status(404).json({ error: "Pet no encontrada" });
+  }
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(mascota, catalogValuesById));
 }
@@ -348,11 +364,10 @@ export async function createMascota(req: Request, res: Response) {
     medicalStatusId: _inputMedicalStatusId,
     ...petData
   } = data;
-  const userId =
-    req.authUser?.id ??
-    petData.userId ??
-    (await userRepo().findOneBy({ email: petData.contactEmail }))?.id ??
-    null;
+  // Solo el usuario autenticado es dueño del reporte. NO confiamos en un
+  // `userId` del body ni asociamos por contactEmail: ambos permitirían
+  // asignar un reporte a la cuenta de otra persona (spoofing de propiedad).
+  const userId = req.authUser?.id ?? null;
   const mascota = repo().create({
     ...petData,
     animalTypeId: catalogIds.animalTypeId,
@@ -478,9 +493,11 @@ export async function listMascotasByIds(req: Request, res: Response) {
   if (ids.length === 0) return res.json([]);
 
   const mascotas = await repo().findBy({ id: In(ids) });
+  // Solo devolvemos los visibles para el solicitante (evita IDOR por id).
+  const visibles = mascotas.filter((m) => canViewPet(m, req.authUser));
   const catalogValuesById = await getCatalogValuesById();
   res.json(
-    mascotas.map((mascota) => serializeMascota(mascota, catalogValuesById)),
+    visibles.map((mascota) => serializeMascota(mascota, catalogValuesById)),
   );
 }
 

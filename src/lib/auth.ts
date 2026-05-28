@@ -68,7 +68,7 @@ export function setAuthCookies(res: Response, token: string, refreshToken: strin
   const secure = process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production";
   const sameSite = secure ? "none" : "lax";
   res.cookie("auth_token", token, {
-    httpOnly: false,
+    httpOnly: true,
     sameSite,
     secure,
     path: "/",
