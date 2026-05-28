@@ -18,6 +18,7 @@ import { AddPasswordReset1744402219000 } from "./migration/1744402219000-AddPass
 import { AddAdoptionPetId1744402220000 } from "./migration/1744402220000-AddAdoptionPetId.js";
 import { NormalizeCatalogValues1744402222000 } from "./migration/1744402222000-NormalizeCatalogValues.js";
 import { AddReportStatus1744402223000 } from "./migration/1744402223000-AddReportStatus.js";
+import { AddRejectedReportStatus1744402224000 } from "./migration/1744402224000-AddRejectedReportStatus.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -37,6 +38,7 @@ export const AppDataSource = new DataSource({
     AddAdoptionPetId1744402220000,
     NormalizeCatalogValues1744402222000,
     AddReportStatus1744402223000,
+    AddRejectedReportStatus1744402224000,
   ],
   synchronize: false,
 });
