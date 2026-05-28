@@ -82,6 +82,7 @@ export const CatalogIds = {
     pendiente: 1101,
     activo: 1102,
     finalizado: 1103,
+    rechazado: 1104,
   },
 } as const;
 
@@ -148,6 +149,7 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 1101, catalog: Catalog.PET_REPORT_STATUS, code: "pendiente", label: "Pendiente" },
   { id: 1102, catalog: Catalog.PET_REPORT_STATUS, code: "activo", label: "Activo" },
   { id: 1103, catalog: Catalog.PET_REPORT_STATUS, code: "finalizado", label: "Finalizado" },
+  { id: 1104, catalog: Catalog.PET_REPORT_STATUS, code: "rechazado", label: "Rechazado" },
 ];
 
 const byId = new Map(CatalogSeed.map((item) => [item.id, item]));
