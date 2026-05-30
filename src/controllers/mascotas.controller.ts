@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { In } from "typeorm";
+import { ILike, In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
@@ -175,6 +175,25 @@ function buildAdminPetQuery(reportStatusId?: number | null) {
   return undefined;
 }
 
+function parseOptionalInt(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
+  return numeric;
+}
+
+function buildAdminFilters(req: Request) {
+  const animalTypeId = parseOptionalInt(req.query.animalTypeId);
+  const statusId = parseOptionalInt(req.query.statusId);
+  const name = typeof req.query.name === "string" ? req.query.name.trim() : "";
+  const nameFilter = name.length > 0 ? ILike(`%${name}%`) : undefined;
+
+  return {
+    ...(animalTypeId ? { animalTypeId } : {}),
+    ...(statusId ? { statusId } : {}),
+    ...(nameFilter ? { name: nameFilter } : {}),
+  };
+}
+
 function parsePagination(req: Request) {
   const page = Math.max(1, Number(req.query.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
@@ -267,8 +286,12 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
     throw error;
   }
 
+  const filters = buildAdminFilters(req);
+  const baseQuery = buildAdminPetQuery(reportStatusId);
+  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+
   const [mascotas, total] = await repo().findAndCount({
-    where: buildAdminPetQuery(reportStatusId),
+    where,
     order: { createdAt: "DESC" },
     take: pageSize,
     skip,
@@ -292,8 +315,12 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
     throw error;
   }
 
+  const filters = buildAdminFilters(req);
+  const baseQuery = buildAdminPetQuery(reportStatusId);
+  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+
   const [mascotas, total] = await repo().findAndCount({
-    where: buildAdminPetQuery(reportStatusId),
+    where,
     order: { createdAt: "DESC" },
     take: pageSize,
     skip,

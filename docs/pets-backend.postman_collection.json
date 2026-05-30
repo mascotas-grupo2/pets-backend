@@ -216,34 +216,40 @@
           }
         },
         {
-          "name": "GET /api/mascotas/admin/paged (admin, reportStatusId)",
+          "name": "GET /api/mascotas/admin/paged (admin, filters)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
             "url": {
-              "raw": "{{baseUrl}}/api/mascotas/admin/paged?page=1&pageSize=20&reportStatusId=1101",
+              "raw": "{{baseUrl}}/api/mascotas/admin/paged?page=1&pageSize=20&reportStatusId=1101&animalTypeId=1&statusId=201&name=Toby",
               "host": ["{{baseUrl}}"],
               "path": ["api", "mascotas", "admin", "paged"],
               "query": [
                 { "key": "page", "value": "1" },
                 { "key": "pageSize", "value": "20" },
-                { "key": "reportStatusId", "value": "1101" }
+                { "key": "reportStatusId", "value": "1101" },
+                { "key": "animalTypeId", "value": "1" },
+                { "key": "statusId", "value": "201" },
+                { "key": "name", "value": "Toby" }
               ]
             }
           }
         },
         {
-          "name": "GET /api/mascotas/admin/status/:status (admin)",
+          "name": "GET /api/mascotas/admin/status/:status (admin, filters)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
             "url": {
-              "raw": "{{baseUrl}}/api/mascotas/admin/status/activo?page=1&pageSize=20",
+              "raw": "{{baseUrl}}/api/mascotas/admin/status/1102?page=1&pageSize=20&animalTypeId=1&statusId=201&name=Toby",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "mascotas", "admin", "status", "activo"],
+              "path": ["api", "mascotas", "admin", "status", "1102"],
               "query": [
                 { "key": "page", "value": "1" },
-                { "key": "pageSize", "value": "20" }
+                { "key": "pageSize", "value": "20" },
+                { "key": "animalTypeId", "value": "1" },
+                { "key": "statusId", "value": "201" },
+                { "key": "name", "value": "Toby" }
               ]
             }
           }
