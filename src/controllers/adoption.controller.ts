@@ -1,7 +1,10 @@
 import { Request, Response } from "express";
+import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Adoption } from "../entity/Adoption.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
+import { Pet } from "../entity/Pet.js";
+import { User } from "../entity/User.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
 import {
   CatalogValidationError,
@@ -14,7 +17,24 @@ function adoptionRepo() {
   return AppDataSource.getRepository(Adoption);
 }
 
+function userRepo() {
+  return AppDataSource.getRepository(User);
+}
+
+function petRepo() {
+  return AppDataSource.getRepository(Pet);
+}
+
 type CatalogValueMap = Map<number, CatalogValue>;
+
+const adoptionStatuses = [
+  "NUEVA",
+  "EN_EVALUACION",
+  "ENTREVISTA_PENDIENTE",
+  "ACEPTADA_CON_SEGUIMIENTO",
+  "ACEPTADA",
+  "DESCARTADA",
+] as const;
 
 function catalogInfo(catalogValuesById: CatalogValueMap, id: number | null | undefined) {
   const item = id ? catalogValuesById.get(id) ?? null : null;
@@ -35,6 +55,8 @@ function serializeAdoption(adoption: Adoption, catalogValuesById: CatalogValueMa
 
   return {
     ...adoption,
+    status: adoption.status ?? "NUEVA",
+    compatibilityScore: adoption.compatibilityScore ?? null,
     preferredAnimal: preferredAnimalType?.code ?? null,
     preferredAnimalLabel: preferredAnimalType?.label ?? null,
     preferredAnimalType,
@@ -57,6 +79,82 @@ function serializeAdoption(adoption: Adoption, catalogValuesById: CatalogValueMa
     vaccinated: vaccinated?.code ?? null,
     vaccinatedLabel: vaccinated?.label ?? null,
   };
+}
+
+function parseOptionalInt(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
+  return numeric;
+}
+
+function parseOptionalNumber(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  return numeric;
+}
+
+function parseStatus(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return adoptionStatuses.includes(trimmed as (typeof adoptionStatuses)[number])
+    ? trimmed
+    : undefined;
+}
+
+function parsePagination(req: Request) {
+  const page = Math.max(1, Number(req.query.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
+  return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+function buildAdoptionFilters(req: Request) {
+  const userId = parseOptionalInt(req.query.userId);
+  const petId = typeof req.query.petId === "string" ? req.query.petId.trim() : "";
+  const status = parseStatus(req.query.status);
+  const compatibilityMin = parseOptionalNumber(req.query.compatibilityMin);
+  const compatibilityMax = parseOptionalNumber(req.query.compatibilityMax);
+
+  return {
+    userId,
+    petId: petId.length > 0 ? petId : undefined,
+    status,
+    compatibilityMin,
+    compatibilityMax,
+  };
+}
+
+async function mapAdoptionSummaries(items: Adoption[]) {
+  if (items.length === 0) return [];
+
+  const userIds = [...new Set(items.map((i) => i.userId).filter((id): id is number => Number.isInteger(id)))];
+  const petIds = [...new Set(items.map((i) => i.petId).filter((id): id is string => typeof id === "string"))];
+
+  const users = userIds.length ? await userRepo().findBy({ id: In(userIds) }) : [];
+  const pets = petIds.length ? await petRepo().findBy({ id: In(petIds) }) : [];
+  const usersById = new Map(users.map((u) => [u.id, u]));
+  const petsById = new Map(pets.map((p) => [p.id, p]));
+
+  return items.map((item) => {
+    const user = item.userId != null ? usersById.get(item.userId) : undefined;
+    const pet = item.petId ? petsById.get(item.petId) : undefined;
+    return {
+      id: item.id,
+      userId: item.userId,
+      petId: item.petId,
+      status: item.status ?? "NUEVA",
+      compatibilityScore: item.compatibilityScore ?? null,
+      createdAt: item.createdAt,
+      applicantName: `${item.firstName} ${item.lastName}`.trim(),
+      applicantEmail: item.email,
+      userName: user?.name ?? null,
+      userEmail: user?.email ?? null,
+      userPhoto: user?.photo ?? null,
+      petName: pet?.name ?? null,
+      petPhoto: pet?.photo ?? null,
+      petAnimalTypeId: pet?.animalTypeId ?? null,
+    };
+  });
 }
 
 function handleCatalogError(error: unknown, res: Response) {
@@ -138,6 +236,8 @@ export async function createAdoption(req: Request, res: Response) {
   const adoption = adoptionRepo().create({
     userId: userIdFromReq ?? values.userId ?? null,
     petId: values.petId ?? null,
+    status: "NUEVA",
+    compatibilityScore: null,
     ...catalogIds,
     firstName: values.firstName,
     lastName: values.lastName,
@@ -174,4 +274,116 @@ export async function listAdoptions(req: Request, res: Response) {
   const items = await repo.find({ where: { userId }, order: { createdAt: "DESC" } });
   const catalogValuesById = await getCatalogValuesById();
   res.json(items.map((item) => serializeAdoption(item, catalogValuesById)));
+}
+
+export async function adminListAdoptionsPaged(req: Request, res: Response) {
+  const { page, pageSize, skip } = parsePagination(req);
+  const filters = buildAdoptionFilters(req);
+
+  const qb = adoptionRepo().createQueryBuilder("adoption");
+  if (filters.userId) qb.andWhere("adoption.userId = :userId", { userId: filters.userId });
+  if (filters.petId) qb.andWhere("adoption.petId = :petId", { petId: filters.petId });
+  if (filters.status) qb.andWhere("adoption.status = :status", { status: filters.status });
+  if (filters.compatibilityMin !== undefined) {
+    qb.andWhere("adoption.compatibilityScore >= :compatibilityMin", {
+      compatibilityMin: filters.compatibilityMin,
+    });
+  }
+  if (filters.compatibilityMax !== undefined) {
+    qb.andWhere("adoption.compatibilityScore <= :compatibilityMax", {
+      compatibilityMax: filters.compatibilityMax,
+    });
+  }
+
+  const [items, total] = await qb
+    .orderBy("adoption.createdAt", "DESC")
+    .skip(skip)
+    .take(pageSize)
+    .getManyAndCount();
+
+  const summaryQb = adoptionRepo().createQueryBuilder("adoption");
+  if (filters.userId) summaryQb.andWhere("adoption.userId = :userId", { userId: filters.userId });
+  if (filters.petId) summaryQb.andWhere("adoption.petId = :petId", { petId: filters.petId });
+  if (filters.compatibilityMin !== undefined) {
+    summaryQb.andWhere("adoption.compatibilityScore >= :compatibilityMin", {
+      compatibilityMin: filters.compatibilityMin,
+    });
+  }
+  if (filters.compatibilityMax !== undefined) {
+    summaryQb.andWhere("adoption.compatibilityScore <= :compatibilityMax", {
+      compatibilityMax: filters.compatibilityMax,
+    });
+  }
+
+  const rawSummary = await summaryQb
+    .select("adoption.status", "status")
+    .addSelect("COUNT(*)", "count")
+    .groupBy("adoption.status")
+    .getRawMany<{ status: string; count: string }>();
+
+  const statusTotals = adoptionStatuses.reduce<Record<string, number>>((acc, status) => {
+    acc[status] = 0;
+    return acc;
+  }, {});
+  for (const row of rawSummary) {
+    statusTotals[row.status] = Number(row.count) || 0;
+  }
+
+  res.json({
+    page,
+    pageSize,
+    total,
+    statusTotals,
+    items: await mapAdoptionSummaries(items),
+  });
+}
+
+export async function getAdoptionById(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const adoption = await adoptionRepo().findOneBy({ id });
+  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+
+  const isAdmin = req.authUser?.role === "admin";
+  if (!isAdmin) {
+    const userId = req.authUser?.id;
+    if (!Number.isInteger(userId) || adoption.userId !== userId) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+  }
+
+  const catalogValuesById = await getCatalogValuesById();
+  const user = adoption.userId ? await userRepo().findOneBy({ id: adoption.userId }) : null;
+  const pet = adoption.petId ? await petRepo().findOneBy({ id: adoption.petId }) : null;
+
+  res.json({
+    ...serializeAdoption(adoption, catalogValuesById),
+    applicant: {
+      firstName: adoption.firstName,
+      lastName: adoption.lastName,
+      email: adoption.email,
+      phone: adoption.phone,
+    },
+    user: user
+      ? {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          photo: user.photo,
+        }
+      : null,
+    pet: pet
+      ? {
+          id: pet.id,
+          name: pet.name,
+          photo: pet.photo,
+          animalTypeId: pet.animalTypeId,
+          statusId: pet.statusId,
+          reportStatusId: pet.reportStatusId,
+        }
+      : null,
+    messages: [],
+    history: [],
+  });
 }
