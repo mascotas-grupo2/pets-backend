@@ -19,6 +19,18 @@ const optionalPositiveInt = z.preprocess(
   z.coerce.number().int().positive().optional(),
 );
 
+const optionalBoolean = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1 ? true : value === 0 ? false : undefined;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "si"].includes(normalized)) return true;
+    if (["false", "0", "no"].includes(normalized)) return false;
+  }
+  return undefined;
+}, z.boolean().optional());
+
 const catalogReference = z.preprocess(
   (value) => {
     if (value === "" || value === null) return undefined;
@@ -40,8 +52,10 @@ const adminUserRoleSchema = z.object({
 
 const adminListQuerySchema = z.object({
   search: z.string().trim().min(1).max(120).optional(),
+  name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().min(1).max(120).optional(),
+  adopter: optionalBoolean,
   roleId: optionalPositiveInt,
-  role: catalogReference.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -323,30 +337,21 @@ export async function adminListUsers(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { search, role, roleId: inputRoleId, page, pageSize } = parsed.data;
+  const { search, name, email, adopter, roleId, page, pageSize } = parsed.data;
 
-  let roleId: number | null = null;
-  try {
-    roleId = await resolveCatalogValueId(
-      Catalog.USER_ROLE,
-      { id: inputRoleId, code: role },
-      false,
-    );
-  } catch (error) {
-    if (handleCatalogError(error, res)) return;
-    throw error;
-  }
+  const baseWhere: Record<string, unknown> = {};
+  if (roleId) baseWhere.roleId = roleId;
+  if (typeof adopter === "boolean") baseWhere.adopter = adopter;
+  if (name) baseWhere.name = ILike(`%${name}%`);
+  if (email) baseWhere.email = ILike(`%${email}%`);
 
-  const where = [] as Record<string, unknown>[];
-  if (search) {
-    const like = ILike(`%${search}%`);
-    where.push({ email: like });
-    where.push({ name: like });
-  }
-  const baseWhere = roleId ? { roleId } : {};
+  const hasSpecificFilters = Boolean(name || email);
   const finalWhere =
-    where.length > 0
-      ? where.map((w) => ({ ...baseWhere, ...w }))
+    search && !hasSpecificFilters
+      ? [
+          { ...baseWhere, name: ILike(`%${search}%`) },
+          { ...baseWhere, email: ILike(`%${search}%`) },
+        ]
       : baseWhere;
 
   const [users, total] = await userRepo().findAndCount({
