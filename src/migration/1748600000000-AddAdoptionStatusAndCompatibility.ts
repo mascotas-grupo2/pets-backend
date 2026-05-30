@@ -17,9 +17,6 @@ export class AddAdoptionStatusAndCompatibility1748600000000 implements Migration
       `CREATE INDEX "IDX_adoption_userId" ON "adoption" ("userId")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_adoption_petId" ON "adoption" ("petId")`,
-    );
-    await queryRunner.query(
       `CREATE INDEX "IDX_adoption_compatibilityScore" ON "adoption" ("compatibilityScore")`,
     );
   }
@@ -28,7 +25,6 @@ export class AddAdoptionStatusAndCompatibility1748600000000 implements Migration
     await queryRunner.query(
       `DROP INDEX "public"."IDX_adoption_compatibilityScore"`,
     );
-    await queryRunner.query(`DROP INDEX "public"."IDX_adoption_petId"`);
     await queryRunner.query(`DROP INDEX "public"."IDX_adoption_userId"`);
     await queryRunner.query(`DROP INDEX "public"."IDX_adoption_status"`);
     await queryRunner.query(
