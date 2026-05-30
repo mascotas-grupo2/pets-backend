@@ -1,0 +1,654 @@
+{
+  "info": {
+    "name": "pets-backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "token", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "userId", "value": "1" },
+    { "key": "petId", "value": "1" },
+    { "key": "catalog", "value": "" },
+    { "key": "bucket", "value": "report-images" },
+    { "key": "object", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /api/auth/register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"pass1234\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          }
+        },
+        {
+          "name": "POST /api/auth/login (sets token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json && json.token) { pm.collectionVariables.set(\"token\", json.token); }",
+                  "if (json && json.refreshToken) { pm.collectionVariables.set(\"refreshToken\", json.refreshToken); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@admin.com\",\n  \"password\": \"adminadmin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "POST /api/auth/refresh-token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/refresh-token"
+          }
+        },
+        {
+          "name": "POST /api/auth/refresh",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/refresh"
+          }
+        },
+        {
+          "name": "POST /api/auth/logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        },
+        {
+          "name": "POST /api/auth/verify-email",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/verify-email"
+          }
+        },
+        {
+          "name": "GET /api/auth/verify-email",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/verify-email?token=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "verify-email"],
+              "query": [{ "key": "token", "value": "" }]
+            }
+          }
+        },
+        {
+          "name": "POST /api/auth/forgot-password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password"
+          }
+        },
+        {
+          "name": "POST /api/auth/reset-password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\",\n  \"newPassword\": \"pass1234\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/reset-password"
+          }
+        },
+        {
+          "name": "POST /api/auth/sso-sync",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/sso-sync"
+          }
+        },
+        {
+          "name": "POST /api/auth/sso/google",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/sso/google"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog",
+      "item": [
+        {
+          "name": "GET /api/animal-types",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/animal-types"
+          }
+        },
+        {
+          "name": "GET /api/catalog-values",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/catalog-values"
+          }
+        },
+        {
+          "name": "GET /api/catalog-values/:catalog",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/catalog-values/{{catalog}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mascotas",
+      "item": [
+        {
+          "name": "GET /api/mascotas",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/mascotas"
+          }
+        },
+        {
+          "name": "GET /api/mascotas/admin/list (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/mascotas/admin/list"
+          }
+        },
+        {
+          "name": "GET /api/mascotas/admin/paged (admin, reportStatusId)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/mascotas/admin/paged?page=1&pageSize=20&reportStatusId=1101",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mascotas", "admin", "paged"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" },
+                { "key": "reportStatusId", "value": "1101" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /api/mascotas/admin/status/:status (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/mascotas/admin/status/activo?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mascotas", "admin", "status", "activo"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /api/mascotas/animal-types",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/mascotas/animal-types"
+          }
+        },
+        {
+          "name": "GET /api/mascotas/userPetsById (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/mascotas/userPetsById?id={{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mascotas", "userPetsById"],
+              "query": [{ "key": "id", "value": "{{userId}}" }]
+            }
+          }
+        },
+        {
+          "name": "GET /api/mascotas/user/:id (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/mascotas/user/{{userId}}"
+          }
+        },
+        {
+          "name": "POST /api/mascotas/petsByIds",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [1, 2, 3]\n}"
+            },
+            "url": "{{baseUrl}}/api/mascotas/petsByIds"
+          }
+        },
+        {
+          "name": "GET /api/mascotas/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}"
+          }
+        },
+        {
+          "name": "POST /api/mascotas (multipart)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photo", "type": "file", "src": "" },
+                { "key": "name", "type": "text", "value": "Toby" },
+                { "key": "animalType", "type": "text", "value": "perro" },
+                { "key": "description", "type": "text", "value": "Perro perdido con collar rojo" },
+                { "key": "date", "type": "text", "value": "2026-04-26" },
+                { "key": "location", "type": "text", "value": "CABA" },
+                { "key": "contactPhone", "type": "text", "value": "1122334455" },
+                { "key": "contactEmail", "type": "text", "value": "test@example.com" },
+                { "key": "userId", "type": "text", "value": "{{userId}}" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/mascotas"
+          }
+        },
+        {
+          "name": "PUT /api/mascotas/:id (auth)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Toby\",\n  \"description\": \"Perro perdido con collar rojo\"\n}"
+            },
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}"
+          }
+        },
+        {
+          "name": "DELETE /api/mascotas/:id (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}"
+          }
+        },
+        {
+          "name": "POST /api/mascotas/:id/approve (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}/approve"
+          }
+        },
+        {
+          "name": "POST /api/mascotas/:id/finalize (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}/finalize"
+          }
+        },
+        {
+          "name": "POST /api/mascotas/:id/reject (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}/reject"
+          }
+        },
+        {
+          "name": "GET /api/mascotas/:id/notes (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}/notes"
+          }
+        },
+        {
+          "name": "POST /api/mascotas/:id/notes (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Revision ok\"\n}"
+            },
+            "url": "{{baseUrl}}/api/mascotas/{{petId}}/notes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "item": [
+        {
+          "name": "GET /api/user/commonInfo/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/user/commonInfo/{{userId}}"
+          }
+        },
+        {
+          "name": "GET /api/user/commonInfo (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/user/commonInfo"
+          }
+        },
+        {
+          "name": "GET /api/user/me (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/user/me"
+          }
+        },
+        {
+          "name": "GET /api/user/detailsUser (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/detailsUser?id={{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "detailsUser"],
+              "query": [{ "key": "id", "value": "{{userId}}" }]
+            }
+          }
+        },
+        {
+          "name": "PUT /api/user/update (auth)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/update"
+          }
+        },
+        {
+          "name": "PATCH /api/user/update (auth)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/update"
+          }
+        },
+        {
+          "name": "POST /api/user/photo (auth, multipart)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photo", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/user/photo"
+          }
+        },
+        {
+          "name": "GET /api/user/admin/list (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/user/admin/list"
+          }
+        },
+        {
+          "name": "PATCH /api/user/admin/:id/role (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/admin/{{userId}}/role"
+          }
+        },
+        {
+          "name": "GET /api/user/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/user/{{userId}}"
+          }
+        },
+        {
+          "name": "GET /api/user/:id/details (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/user/{{userId}}/details"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Adoptions",
+      "item": [
+        {
+          "name": "POST /api/adoptions (auth)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"petId\": {{petId}}\n}"
+            },
+            "url": "{{baseUrl}}/api/adoptions"
+          }
+        },
+        {
+          "name": "GET /api/adoptions (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/adoptions"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pets aliases",
+      "item": [
+        {
+          "name": "GET /api/pets",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/pets"
+          }
+        },
+        {
+          "name": "GET /api/pets/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/pets/{{petId}}"
+          }
+        },
+        {
+          "name": "POST /api/pets/petsByIds",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [1, 2, 3]\n}"
+            },
+            "url": "{{baseUrl}}/api/pets/petsByIds"
+          }
+        },
+        {
+          "name": "GET /api/pets/userPetsById (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/pets/userPetsById?id={{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "pets", "userPetsById"],
+              "query": [{ "key": "id", "value": "{{userId}}" }]
+            }
+          }
+        },
+        {
+          "name": "POST /api/pet/reportar (multipart)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photo", "type": "file", "src": "" },
+                { "key": "name", "type": "text", "value": "Toby" },
+                { "key": "animalType", "type": "text", "value": "perro" },
+                { "key": "description", "type": "text", "value": "Perro perdido con collar rojo" },
+                { "key": "date", "type": "text", "value": "2026-04-26" },
+                { "key": "location", "type": "text", "value": "CABA" },
+                { "key": "contactPhone", "type": "text", "value": "1122334455" },
+                { "key": "contactEmail", "type": "text", "value": "test@example.com" },
+                { "key": "userId", "type": "text", "value": "{{userId}}" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/pet/reportar"
+          }
+        },
+        {
+          "name": "POST /api/pet/adoptar (auth)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": {{userId}},\n  \"preferredAnimal\": \"perro\",\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\",\n  \"email\": \"test@example.com\",\n  \"phone\": \"1122334455\",\n  \"addressLine1\": \"Av Corrientes 123\",\n  \"addressLine2\": \"\",\n  \"postcode\": \"1000\",\n  \"town\": \"CABA\",\n  \"hasGarden\": \"si\",\n  \"livingSituation\": \"departamento\",\n  \"householdSetting\": \"urbano\",\n  \"activityLevel\": \"moderado\",\n  \"adults\": 1,\n  \"children\": 0,\n  \"visitingChildren\": \"no\",\n  \"hasFlatmates\": \"no\",\n  \"allergies\": \"\",\n  \"otherAnimals\": \"no\",\n  \"otherAnimalsDetail\": \"\",\n  \"neutered\": \"na\",\n  \"vaccinated\": \"na\",\n  \"experience\": \"Tuve mascotas antes\",\n  \"acceptsTerms\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/pet/adoptar"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users alias",
+      "item": [
+        {
+          "name": "GET /api/users/commonInfo/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users/commonInfo/{{userId}}"
+          }
+        },
+        {
+          "name": "GET /api/users/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Storage",
+      "item": [
+        {
+          "name": "GET /api/storage/:bucket/:object",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/storage/{{bucket}}/{{object}}"
+          }
+        }
+      ]
+    }
+  ]
+}
