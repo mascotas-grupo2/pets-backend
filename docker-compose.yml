@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: pets
       POSTGRES_DB: pets_db
     ports:
-      - "5434:5432"
+      - "5433:5432"
     volumes:
       - pets_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -42,8 +42,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9002:9000"
-      - "9003:9001"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio_data:/data
     healthcheck:

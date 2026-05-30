@@ -5,6 +5,9 @@ import path from "node:path";
 import { AppDataSource } from "./data-source.js";
 import { Pet } from "./entity/Pet.js";
 import { User } from "./entity/User.js";
+import { Conversation } from "./chat/conversation.entity.js";
+import { ConversationParticipant } from "./chat/participant.entity.js";
+import { Message } from "./chat/message.entity.js";
 import { CatalogIds } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 
@@ -95,23 +98,143 @@ async function seed() {
   console.log(`Seed completed: ${petsData.length} pets inserted.`);
 
   const repoUsers = AppDataSource.getRepository(User);
-  repoUsers.clear();
-  const password = "Admin1234!";
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
-  await repoUsers.save(
+  await repoUsers.clear();
+
+  const hashPassword = (password: string) => {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
+    return { salt, hash };
+  };
+
+  const adminPwd = hashPassword("Admin1234!");
+  const admin = await repoUsers.save(
     repoUsers.create({
       name: "Admin",
       email: "admin@admin.com",
-      passwordHash: hash,
-      passwordSalt: salt,
+      passwordHash: adminPwd.hash,
+      passwordSalt: adminPwd.salt,
       roleId: CatalogIds.userRole.admin,
       emailVerified: true,
     })
   );
-  console.log("Seed completed: Admin user inserted (role=admin).");
+
+  const operadorPwd = hashPassword("Operador1234!");
+  const operador = await repoUsers.save(
+    repoUsers.create({
+      name: "Operador",
+      email: "operador@admin.com",
+      passwordHash: operadorPwd.hash,
+      passwordSalt: operadorPwd.salt,
+      roleId: CatalogIds.userRole.admin,
+      emailVerified: true,
+    })
+  );
+  console.log("Seed completed: usuarios admin y operador insertados.");
+
+  await seedChat(admin.id, operador.id);
 
   await AppDataSource.destroy();
+}
+
+/**
+ * Conversaciones de ejemplo. Cada una tiene un miembro del staff (usuario real)
+ * y una contraparte invitada (sin usuario). El admin participa de las primeras y
+ * el operador de la última: así se ve la membresía en acción.
+ */
+async function seedChat(adminId: number, operadorId: number) {
+  const convRepo = AppDataSource.getRepository(Conversation);
+  const partRepo = AppDataSource.getRepository(ConversationParticipant);
+  const msgRepo = AppDataSource.getRepository(Message);
+
+  // DELETE (no TRUNCATE) para respetar los FK: primero hijos, luego la conversación.
+  await msgRepo.createQueryBuilder().delete().execute();
+  await partRepo.createQueryBuilder().delete().execute();
+  await convRepo.createQueryBuilder().delete().execute();
+
+  const data = [
+    {
+      subject: "Solicitud de adopción de Luna",
+      context: "Solicitud de Luna",
+      channel: "usuario" as const,
+      petName: "Luna",
+      staffId: adminId,
+      member: { name: "María Gómez", email: "maria@email.com", phone: "11 2233-4455" },
+      msgs: [
+        { staff: false, text: "Hola! Me gustaría saber más sobre Luna y coordinar una entrevista." },
+        { staff: true, text: "¡Hola María! Claro, Luna está disponible. Podemos coordinar una entrevista 😊" },
+        { staff: false, text: "Perfecto, tengo disponibilidad mañana a las 16 hs." },
+      ],
+    },
+    {
+      subject: "Seguimiento de Toby",
+      context: "Seguimiento de Toby",
+      channel: "usuario" as const,
+      petName: "Toby",
+      staffId: adminId,
+      member: { name: "Juan Pérez", email: "jperez@email.com", phone: "11 3344-5566" },
+      msgs: [
+        { staff: false, text: "Toby se está adaptando muy bien a la casa." },
+        { staff: true, text: "¡Qué buena noticia! Gracias por el update." },
+      ],
+    },
+    {
+      subject: "Caso clínico de Nina",
+      context: "Caso de Nina",
+      channel: "interno" as const,
+      petName: "Nina",
+      staffId: adminId,
+      member: { name: "Equipo Veterinario", email: "vet@refugio.org", phone: "Interno" },
+      msgs: [
+        { staff: false, text: "Nina necesita control post-operatorio esta semana." },
+        { staff: false, text: "¿Coordinamos para el jueves?" },
+      ],
+    },
+    {
+      subject: "Consulta general",
+      context: "Consulta general",
+      channel: "usuario" as const,
+      petName: null,
+      staffId: operadorId,
+      member: { name: "Ana López", email: "ana@email.com", phone: "11 5566-7788" },
+      msgs: [{ staff: false, text: "¿Cómo es el proceso de adopción?" }],
+    },
+  ];
+
+  for (const c of data) {
+    const conv = await convRepo.save(
+      convRepo.create({
+        subject: c.subject,
+        context: c.context,
+        channel: c.channel,
+        petName: c.petName,
+        lastMessageAt: new Date(),
+      }),
+    );
+    await partRepo.save(
+      partRepo.create({ conversationId: conv.id, userId: c.staffId, displayName: "Refugio", role: "admin" }),
+    );
+    await partRepo.save(
+      partRepo.create({
+        conversationId: conv.id,
+        userId: null,
+        displayName: c.member.name,
+        email: c.member.email,
+        phone: c.member.phone,
+        role: "member",
+      }),
+    );
+    for (const m of c.msgs) {
+      await msgRepo.save(
+        msgRepo.create({
+          conversationId: conv.id,
+          senderUserId: m.staff ? c.staffId : null,
+          senderName: m.staff ? "Refugio" : c.member.name,
+          text: m.text,
+        }),
+      );
+    }
+  }
+  console.log(`Seed completed: ${data.length} conversaciones con participantes y mensajes.`);
 }
 
 seed().catch((err) => {

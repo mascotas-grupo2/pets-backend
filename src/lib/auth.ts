@@ -155,6 +155,21 @@ export async function verifyKeycloakToken(token: string) {
   return payload;
 }
 
+/**
+ * Verifica un token y resuelve el usuario. Pensado para contextos sin `Request`
+ * (ej. el handshake de WebSocket). Devuelve null si el token es inválido.
+ */
+export async function authenticateToken(
+  token: string,
+): Promise<AuthUser | null> {
+  try {
+    const payload = await verifyToken(token);
+    return await authUserFromPayload(payload);
+  } catch {
+    return null;
+  }
+}
+
 export async function optionalAuth(
   req: Request,
   _res: Response,
