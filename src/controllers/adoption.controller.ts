@@ -99,7 +99,10 @@ function parseOptionalNumber(value: unknown) {
   return numeric;
 }
 
-function parseStatusId(value: unknown) {
+function parseStatusId(value: unknown, statusIdValue: unknown) {
+  const numericStatusId = parseOptionalInt(statusIdValue);
+  if (numericStatusId && adoptionStatusById.has(numericStatusId)) return numericStatusId;
+
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -115,7 +118,7 @@ function parsePagination(req: Request) {
 function buildAdoptionFilters(req: Request) {
   const userId = parseOptionalInt(req.query.userId);
   const petId = typeof req.query.petId === "string" ? req.query.petId.trim() : "";
-  const statusId = parseStatusId(req.query.status);
+  const statusId = parseStatusId(req.query.status, req.query.statusId);
   const compatibilityMin = parseOptionalNumber(req.query.compatibilityMin);
   const compatibilityMax = parseOptionalNumber(req.query.compatibilityMax);
 
