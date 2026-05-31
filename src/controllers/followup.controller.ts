@@ -25,7 +25,7 @@ export async function createFollowup(req: Request, res: Response) {
     userId: values.userId,
     typeId: values.typeId,
     statusId: 1311,
-    appointmentAt: new Date(values.appointmentAt),
+    appointmentAt: values.appointmentAt,
   });
   const saved = await repo().save(followup);
   const catalogValuesById = await getCatalogValuesById();

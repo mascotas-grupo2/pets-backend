@@ -4,7 +4,9 @@ export const followupCreateSchema = z.object({
   petId: z.string().uuid(),
   userId: z.number().int().positive(),
   typeId: z.number().int().positive(),
-  appointmentAt: z.string(),
+  appointmentAt: z.coerce.date().refine((date) => date > new Date(), {
+    message: "La fecha de seguimiento debe ser mayor a la actual",
+  }),
 });
 
 export const followupListQuerySchema = z.object({
