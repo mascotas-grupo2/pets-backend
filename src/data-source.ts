@@ -5,6 +5,7 @@ import { PetNote } from "./entity/PetNote.js";
 import { User } from "./entity/User.js";
 import { Adoption } from "./entity/Adoption.js";
 import { CatalogValue } from "./entity/CatalogValue.js";
+import { Followup } from "./entity/Followup.js";
 import { InitPetTable1744402212000 } from "./migration/1744402212000-Init.js";
 import { AddUser1744402213000 } from "./migration/1744402213000-AddUser.js";
 import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTokens.js";
@@ -22,11 +23,13 @@ import { AddRejectedReportStatus1744402224000 } from "./migration/1744402224000-
 import { AddAdoptionStatusAndCompatibility1748600000000 } from "./migration/1748600000000-AddAdoptionStatusAndCompatibility.js";
 import { AddAdoptionStatusCatalog1748600001000 } from "./migration/1748600001000-AddAdoptionStatusCatalog.js";
 import { AddAdoptionStatusFk1748600002000 } from "./migration/1748600002000-AddAdoptionStatusFk.js";
+import { AddFollowupCatalog1748600100000 } from "./migration/1748600100000-AddFollowupCatalog.js";
+import { AddSeguimientos1748600101000 } from "./migration/1748600101000-AddSeguimientos.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.DATABASE_URL,
-  entities: [Pet, User, Adoption, PetNote, CatalogValue],
+  entities: [Pet, User, Adoption, PetNote, CatalogValue, Followup],
   migrations: [
     InitPetTable1744402212000,
     AddUser1744402213000,
@@ -45,6 +48,9 @@ export const AppDataSource = new DataSource({
     AddAdoptionStatusAndCompatibility1748600000000,
     AddAdoptionStatusCatalog1748600001000,
     AddAdoptionStatusFk1748600002000,
+    // followups
+    AddFollowupCatalog1748600100000,
+    AddSeguimientos1748600101000,
   ],
   synchronize: false,
 });
