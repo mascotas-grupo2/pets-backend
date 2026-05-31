@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { In } from "typeorm";
+import { ILike, In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
@@ -158,9 +158,50 @@ export async function listMascotas(req: Request, res: Response) {
   );
 }
 
-export async function adminListMascotas(_req: Request, res: Response) {
-  const mascotas = await repo().find({ order: { createdAt: "DESC" } });
-  if (mascotas.length === 0) return res.json([]);
+async function resolveReportStatusId(input: unknown) {
+  if (input === undefined || input === null) return undefined;
+  const numeric = Number(input);
+  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
+  const id = await resolveCatalogValueId(
+    Catalog.PET_REPORT_STATUS,
+    { id: numeric },
+    true,
+  );
+  return id ?? undefined;
+}
+
+function buildAdminPetQuery(reportStatusId?: number | null) {
+  if (reportStatusId) return { reportStatusId };
+  return undefined;
+}
+
+function parseOptionalInt(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
+  return numeric;
+}
+
+function buildAdminFilters(req: Request) {
+  const animalTypeId = parseOptionalInt(req.query.animalTypeId);
+  const statusId = parseOptionalInt(req.query.statusId);
+  const name = typeof req.query.name === "string" ? req.query.name.trim() : "";
+  const nameFilter = name.length > 0 ? ILike(`%${name}%`) : undefined;
+
+  return {
+    ...(animalTypeId ? { animalTypeId } : {}),
+    ...(statusId ? { statusId } : {}),
+    ...(nameFilter ? { name: nameFilter } : {}),
+  };
+}
+
+function parsePagination(req: Request) {
+  const page = Math.max(1, Number(req.query.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
+  return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+async function serializeAdminPets(mascotas: Pet[]) {
+  if (mascotas.length === 0) return [];
   const catalogValuesById = await getCatalogValuesById();
 
   const ids = mascotas.map((m) => m.id);
@@ -203,7 +244,6 @@ export async function adminListMascotas(_req: Request, res: Response) {
     }
   }
 
-  // Datos del creador (usuario registrado) para mostrar quién publicó.
   const userIds = [
     ...new Set(
       mascotas
@@ -216,21 +256,82 @@ export async function adminListMascotas(_req: Request, res: Response) {
     : [];
   const ownerById = new Map(owners.map((u) => [u.id, u]));
 
-  res.json(
-    mascotas.map((m) => {
-      const s = byPet.get(m.id)!;
-      const owner = m.userId != null ? ownerById.get(m.userId) : null;
-      return {
-        ...serializeMascota(m, catalogValuesById),
-        ownerName: owner?.name ?? null,
-        ownerEmail: owner?.email ?? null,
-        adoptionInterestCount: s.adoption,
-        medicalNoteCount: s.medical,
-        generalNoteCount: s.general,
-        lastNoteAt: s.lastNoteAt,
-      };
-    }),
-  );
+  return mascotas.map((m) => {
+    const s = byPet.get(m.id)!;
+    const owner = m.userId != null ? ownerById.get(m.userId) : null;
+    return {
+      ...serializeMascota(m, catalogValuesById),
+      ownerName: owner?.name ?? null,
+      ownerEmail: owner?.email ?? null,
+      adoptionInterestCount: s.adoption,
+      medicalNoteCount: s.medical,
+      generalNoteCount: s.general,
+      lastNoteAt: s.lastNoteAt,
+    };
+  });
+}
+
+export async function adminListMascotas(_req: Request, res: Response) {
+  const mascotas = await repo().find({ order: { createdAt: "DESC" } });
+  res.json(await serializeAdminPets(mascotas));
+}
+
+export async function adminListMascotasPaged(req: Request, res: Response) {
+  const { page, pageSize, skip } = parsePagination(req);
+  let reportStatusId: number | undefined;
+  try {
+    reportStatusId = await resolveReportStatusId(req.query.reportStatusId);
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
+
+  const filters = buildAdminFilters(req);
+  const baseQuery = buildAdminPetQuery(reportStatusId);
+  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+
+  const [mascotas, total] = await repo().findAndCount({
+    where,
+    order: { createdAt: "DESC" },
+    take: pageSize,
+    skip,
+  });
+
+  res.json({
+    items: await serializeAdminPets(mascotas),
+    total,
+    page,
+    pageSize,
+  });
+}
+
+export async function adminListMascotasByStatus(req: Request, res: Response) {
+  const { page, pageSize, skip } = parsePagination(req);
+  let reportStatusId: number | undefined;
+  try {
+    reportStatusId = await resolveReportStatusId(req.params.status);
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
+
+  const filters = buildAdminFilters(req);
+  const baseQuery = buildAdminPetQuery(reportStatusId);
+  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+
+  const [mascotas, total] = await repo().findAndCount({
+    where,
+    order: { createdAt: "DESC" },
+    take: pageSize,
+    skip,
+  });
+
+  res.json({
+    items: await serializeAdminPets(mascotas),
+    total,
+    page,
+    pageSize,
+  });
 }
 
 export async function getMascota(req: Request, res: Response) {

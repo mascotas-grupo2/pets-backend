@@ -2,6 +2,8 @@ import { Router } from "express";
 import { multiple, multerErrorHandler } from "../middleware/upload.js";
 import {
   adminListMascotas,
+  adminListMascotasByStatus,
+  adminListMascotasPaged,
   createMascota,
   createPetNote,
   deleteMascota,
@@ -23,6 +25,8 @@ export const mascotasRouter = Router();
 
 mascotasRouter.get("/", optionalAuth, listMascotas);
 mascotasRouter.get("/admin/list", requireAdmin, adminListMascotas);
+mascotasRouter.get("/admin/paged", requireAdmin, adminListMascotasPaged);
+mascotasRouter.get("/admin/status/:status", requireAdmin, adminListMascotasByStatus);
 mascotasRouter.get("/animal-types", listAnimalTypeCatalog);
 mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
 mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);

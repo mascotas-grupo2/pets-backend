@@ -44,5 +44,4 @@ app.use("/api/users", userRouter);
 app.use("/api/adoptions", adoptionRouter);
 app.post("/api/pet/reportar", optionalAuth, multiple("photo", 10), multerErrorHandler, createMascota);
 app.post("/api/pet/adoptar", requireAuth, submitAdoption);
-// Proxy para servir objetos desde MinIO sin exponer el bucket directamente.
 app.get("/api/storage/:bucket/:object", storageProxyHandler);
