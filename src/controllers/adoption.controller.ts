@@ -36,8 +36,15 @@ const adoptionStatusEntries = [
   { code: "DESCARTADA", id: CatalogIds.adoptionStatus.descartada },
 ] as const;
 
-const adoptionStatusById = new Map(adoptionStatusEntries.map((entry) => [entry.id, entry.code]));
-const adoptionStatusByCode = new Map(adoptionStatusEntries.map((entry) => [entry.code, entry.id]));
+type AdoptionStatusId = (typeof adoptionStatusEntries)[number]["id"];
+type AdoptionStatusCode = (typeof adoptionStatusEntries)[number]["code"];
+
+const adoptionStatusById: Map<number, AdoptionStatusCode> = new Map(
+  adoptionStatusEntries.map((entry) => [entry.id, entry.code]),
+);
+const adoptionStatusByCode: Map<string, AdoptionStatusId> = new Map(
+  adoptionStatusEntries.map((entry) => [entry.code, entry.id]),
+);
 
 function catalogInfo(catalogValuesById: CatalogValueMap, id: number | null | undefined) {
   const item = id ? catalogValuesById.get(id) ?? null : null;
