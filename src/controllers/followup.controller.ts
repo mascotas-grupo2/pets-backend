@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
 import { Followup } from "../entity/Followup.js";
+import { CatalogIds } from "../lib/catalog-constants.js";
 import { FollowupCreateInput, followupCreateSchema, followupListQuerySchema } from "../schemas/followup.schema.js";
 import { getCatalogValuesById } from "../lib/catalog-values.js";
 import { parseOptionalInt } from "../controllers/_shared_parsers.js";
@@ -24,7 +25,7 @@ export async function createFollowup(req: Request, res: Response) {
     petId: values.petId,
     userId: values.userId,
     typeId: values.typeId,
-    statusId: 1311,
+    statusId: CatalogIds.followupStatus.pendiente,
     appointmentAt: values.appointmentAt,
   });
   const saved = await repo().save(followup);
