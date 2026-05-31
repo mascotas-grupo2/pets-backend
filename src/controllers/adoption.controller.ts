@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Adoption } from "../entity/Adoption.js";
-import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
@@ -12,6 +11,17 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
+import {
+  getAdoptionStatusCode,
+  parseStatusId,
+  adoptionStatusEntries,
+} from "../lib/adoption-status.js";
+import {
+  parseOptionalInt,
+  parseOptionalNumber,
+  parsePagination,
+} from "../lib/query-utils.js";
+import { serializeAdoption } from "../lib/serializers.js";
 
 function adoptionRepo() {
   return AppDataSource.getRepository(Adoption);
@@ -23,112 +33,6 @@ function userRepo() {
 
 function petRepo() {
   return AppDataSource.getRepository(Pet);
-}
-
-type CatalogValueMap = Map<number, CatalogValue>;
-
-const adoptionStatusEntries = [
-  { code: "NUEVA", id: CatalogIds.adoptionStatus.nueva },
-  { code: "EN_EVALUACION", id: CatalogIds.adoptionStatus.enEvaluacion },
-  { code: "ENTREVISTA_PENDIENTE", id: CatalogIds.adoptionStatus.entrevistaPendiente },
-  { code: "ACEPTADA_CON_SEGUIMIENTO", id: CatalogIds.adoptionStatus.aceptadaConSeguimiento },
-  { code: "ACEPTADA", id: CatalogIds.adoptionStatus.aceptada },
-  { code: "DESCARTADA", id: CatalogIds.adoptionStatus.descartada },
-] as const;
-
-type AdoptionStatusId = (typeof adoptionStatusEntries)[number]["id"];
-type AdoptionStatusCode = (typeof adoptionStatusEntries)[number]["code"];
-
-const adoptionStatusById: Map<AdoptionStatusId, AdoptionStatusCode> = new Map(
-  adoptionStatusEntries.map((entry) => [entry.id, entry.code]),
-);
-const adoptionStatusByCode: Map<AdoptionStatusCode, AdoptionStatusId> = new Map(
-  adoptionStatusEntries.map((entry) => [entry.code, entry.id]),
-);
-
-function isAdoptionStatusId(value: number): value is AdoptionStatusId {
-  return adoptionStatusById.has(value as AdoptionStatusId);
-}
-
-function getAdoptionStatusCode(id: number | null | undefined) {
-  if (typeof id !== "number" || !Number.isInteger(id)) return undefined;
-  return isAdoptionStatusId(id) ? adoptionStatusById.get(id) : undefined;
-}
-
-function catalogInfo(catalogValuesById: CatalogValueMap, id: number | null | undefined) {
-  const item = id ? catalogValuesById.get(id) ?? null : null;
-  return item ? { id: item.id, code: item.code, label: item.label } : null;
-}
-
-function serializeAdoption(adoption: Adoption, catalogValuesById: CatalogValueMap) {
-  const status = catalogInfo(catalogValuesById, adoption.statusId);
-  const preferredAnimalType = catalogInfo(catalogValuesById, adoption.preferredAnimalTypeId);
-  const hasGarden = catalogInfo(catalogValuesById, adoption.hasGardenId);
-  const livingSituation = catalogInfo(catalogValuesById, adoption.livingSituationId);
-  const householdSetting = catalogInfo(catalogValuesById, adoption.householdSettingId);
-  const activityLevel = catalogInfo(catalogValuesById, adoption.activityLevelId);
-  const visitingChildren = catalogInfo(catalogValuesById, adoption.visitingChildrenId);
-  const hasFlatmates = catalogInfo(catalogValuesById, adoption.hasFlatmatesId);
-  const otherAnimals = catalogInfo(catalogValuesById, adoption.otherAnimalsId);
-  const neutered = catalogInfo(catalogValuesById, adoption.neuteredId);
-  const vaccinated = catalogInfo(catalogValuesById, adoption.vaccinatedId);
-
-  return {
-    ...adoption,
-    statusId: adoption.statusId,
-    status: status?.code ?? "NUEVA",
-    statusLabel: status?.label ?? "Nueva",
-    compatibilityScore: adoption.compatibilityScore ?? null,
-    preferredAnimal: preferredAnimalType?.code ?? null,
-    preferredAnimalLabel: preferredAnimalType?.label ?? null,
-    preferredAnimalType,
-    hasGarden: hasGarden?.code ?? null,
-    hasGardenLabel: hasGarden?.label ?? null,
-    livingSituation: livingSituation?.code ?? null,
-    livingSituationLabel: livingSituation?.label ?? null,
-    householdSetting: householdSetting?.code ?? null,
-    householdSettingLabel: householdSetting?.label ?? null,
-    activityLevel: activityLevel?.code ?? null,
-    activityLevelLabel: activityLevel?.label ?? null,
-    visitingChildren: visitingChildren?.code ?? null,
-    visitingChildrenLabel: visitingChildren?.label ?? null,
-    hasFlatmates: hasFlatmates?.code ?? null,
-    hasFlatmatesLabel: hasFlatmates?.label ?? null,
-    otherAnimals: otherAnimals?.code ?? null,
-    otherAnimalsLabel: otherAnimals?.label ?? null,
-    neutered: neutered?.code ?? null,
-    neuteredLabel: neutered?.label ?? null,
-    vaccinated: vaccinated?.code ?? null,
-    vaccinatedLabel: vaccinated?.label ?? null,
-  };
-}
-
-function parseOptionalInt(value: unknown) {
-  const numeric = Number(value);
-  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
-  return numeric;
-}
-
-function parseOptionalNumber(value: unknown) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return undefined;
-  return numeric;
-}
-
-function parseStatusId(value: unknown, statusIdValue: unknown) {
-  const numericStatusId = parseOptionalInt(statusIdValue);
-  if (numericStatusId && isAdoptionStatusId(numericStatusId)) return numericStatusId;
-
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  return adoptionStatusByCode.get(trimmed as AdoptionStatusCode) ?? undefined;
-}
-
-function parsePagination(req: Request) {
-  const page = Math.max(1, Number(req.query.page ?? 1));
-  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
-  return { page, pageSize, skip: (page - 1) * pageSize };
 }
 
 function buildAdoptionFilters(req: Request) {
@@ -301,7 +205,7 @@ export async function listAdoptions(req: Request, res: Response) {
 }
 
 export async function adminListAdoptionsPaged(req: Request, res: Response) {
-  const { page, pageSize, skip } = parsePagination(req);
+  const { page, pageSize, skip } = parsePagination(req.query);
   const filters = buildAdoptionFilters(req);
 
   const qb = adoptionRepo().createQueryBuilder("adoption");

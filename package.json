@@ -2,7 +2,7 @@
   "name": "pets-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Backend para gestión de mascotas (Tesina)",
+  "description": "Backend para gestion de mascotas (Tesina)",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -11,7 +11,10 @@
     "migration:generate": "typeorm-ts-node-esm migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-esm migration:run -d src/data-source.ts",
     "migration:revert": "typeorm-ts-node-esm migration:revert -d src/data-source.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
@@ -35,8 +38,12 @@
     "@types/node": "^22.9.0",
     "@types/nodemailer": "^6.4.15",
     "@types/pg": "^8.11.10",
+    "@types/supertest": "^6.0.2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "supertest": "^7.0.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
   }
 }
