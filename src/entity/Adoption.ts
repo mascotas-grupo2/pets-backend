@@ -83,8 +83,8 @@ export class Adoption {
   @Column({ type: "boolean", default: false })
   acceptsTerms!: boolean;
 
-  @Column({ type: "varchar", length: 40, default: "NUEVA" })
-  status!: string;
+  @Column({ type: "int", default: 1201 })
+  statusId!: number;
 
   @Column({ type: "int", nullable: true })
   compatibilityScore!: number | null;

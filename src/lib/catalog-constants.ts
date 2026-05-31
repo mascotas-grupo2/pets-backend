@@ -5,6 +5,7 @@ export const Catalog = {
   PET_MEDICAL_STATUS: "pet_medical_status",
   PET_NOTE_KIND: "pet_note_kind",
   PET_REPORT_STATUS: "pet_report_status",
+  ADOPTION_STATUS: "adoption_status",
   USER_ROLE: "user_role",
   SSO_PROVIDER: "sso_provider",
   YES_NO: "yes_no",
@@ -84,6 +85,14 @@ export const CatalogIds = {
     finalizado: 1103,
     rechazado: 1104,
   },
+  adoptionStatus: {
+    nueva: 1201,
+    enEvaluacion: 1202,
+    entrevistaPendiente: 1203,
+    aceptadaConSeguimiento: 1204,
+    aceptada: 1205,
+    descartada: 1206,
+  },
 } as const;
 
 export type CatalogName = (typeof Catalog)[keyof typeof Catalog];
@@ -150,6 +159,13 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 1102, catalog: Catalog.PET_REPORT_STATUS, code: "activo", label: "Activo" },
   { id: 1103, catalog: Catalog.PET_REPORT_STATUS, code: "finalizado", label: "Finalizado" },
   { id: 1104, catalog: Catalog.PET_REPORT_STATUS, code: "rechazado", label: "Rechazado" },
+
+  { id: 1201, catalog: Catalog.ADOPTION_STATUS, code: "NUEVA", label: "Nueva" },
+  { id: 1202, catalog: Catalog.ADOPTION_STATUS, code: "EN_EVALUACION", label: "En evaluacion" },
+  { id: 1203, catalog: Catalog.ADOPTION_STATUS, code: "ENTREVISTA_PENDIENTE", label: "Entrevista pendiente" },
+  { id: 1204, catalog: Catalog.ADOPTION_STATUS, code: "ACEPTADA_CON_SEGUIMIENTO", label: "Aceptada con seguimiento" },
+  { id: 1205, catalog: Catalog.ADOPTION_STATUS, code: "ACEPTADA", label: "Aceptada" },
+  { id: 1206, catalog: Catalog.ADOPTION_STATUS, code: "DESCARTADA", label: "Descartada" },
 ];
 
 const byId = new Map(CatalogSeed.map((item) => [item.id, item]));

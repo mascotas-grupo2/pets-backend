@@ -20,6 +20,8 @@ import { NormalizeCatalogValues1744402222000 } from "./migration/1744402222000-N
 import { AddReportStatus1744402223000 } from "./migration/1744402223000-AddReportStatus.js";
 import { AddRejectedReportStatus1744402224000 } from "./migration/1744402224000-AddRejectedReportStatus.js";
 import { AddAdoptionStatusAndCompatibility1748600000000 } from "./migration/1748600000000-AddAdoptionStatusAndCompatibility.js";
+import { AddAdoptionStatusCatalog1748600001000 } from "./migration/1748600001000-AddAdoptionStatusCatalog.js";
+import { AddAdoptionStatusFk1748600002000 } from "./migration/1748600002000-AddAdoptionStatusFk.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -41,6 +43,8 @@ export const AppDataSource = new DataSource({
     AddReportStatus1744402223000,
     AddRejectedReportStatus1744402224000,
     AddAdoptionStatusAndCompatibility1748600000000,
+    AddAdoptionStatusCatalog1748600001000,
+    AddAdoptionStatusFk1748600002000,
   ],
   synchronize: false,
 });

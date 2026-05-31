@@ -11,7 +11,7 @@ import {
   getCatalogValuesById,
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
-import { Catalog, CatalogName } from "../lib/catalog-constants.js";
+import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
 
 function adoptionRepo() {
   return AppDataSource.getRepository(Adoption);
@@ -27,14 +27,17 @@ function petRepo() {
 
 type CatalogValueMap = Map<number, CatalogValue>;
 
-const adoptionStatuses = [
-  "NUEVA",
-  "EN_EVALUACION",
-  "ENTREVISTA_PENDIENTE",
-  "ACEPTADA_CON_SEGUIMIENTO",
-  "ACEPTADA",
-  "DESCARTADA",
+const adoptionStatusEntries = [
+  { code: "NUEVA", id: CatalogIds.adoptionStatus.nueva },
+  { code: "EN_EVALUACION", id: CatalogIds.adoptionStatus.enEvaluacion },
+  { code: "ENTREVISTA_PENDIENTE", id: CatalogIds.adoptionStatus.entrevistaPendiente },
+  { code: "ACEPTADA_CON_SEGUIMIENTO", id: CatalogIds.adoptionStatus.aceptadaConSeguimiento },
+  { code: "ACEPTADA", id: CatalogIds.adoptionStatus.aceptada },
+  { code: "DESCARTADA", id: CatalogIds.adoptionStatus.descartada },
 ] as const;
+
+const adoptionStatusById = new Map(adoptionStatusEntries.map((entry) => [entry.id, entry.code]));
+const adoptionStatusByCode = new Map(adoptionStatusEntries.map((entry) => [entry.code, entry.id]));
 
 function catalogInfo(catalogValuesById: CatalogValueMap, id: number | null | undefined) {
   const item = id ? catalogValuesById.get(id) ?? null : null;
@@ -42,6 +45,7 @@ function catalogInfo(catalogValuesById: CatalogValueMap, id: number | null | und
 }
 
 function serializeAdoption(adoption: Adoption, catalogValuesById: CatalogValueMap) {
+  const status = catalogInfo(catalogValuesById, adoption.statusId);
   const preferredAnimalType = catalogInfo(catalogValuesById, adoption.preferredAnimalTypeId);
   const hasGarden = catalogInfo(catalogValuesById, adoption.hasGardenId);
   const livingSituation = catalogInfo(catalogValuesById, adoption.livingSituationId);
@@ -55,7 +59,9 @@ function serializeAdoption(adoption: Adoption, catalogValuesById: CatalogValueMa
 
   return {
     ...adoption,
-    status: adoption.status ?? "NUEVA",
+    statusId: adoption.statusId,
+    status: status?.code ?? "NUEVA",
+    statusLabel: status?.label ?? "Nueva",
     compatibilityScore: adoption.compatibilityScore ?? null,
     preferredAnimal: preferredAnimalType?.code ?? null,
     preferredAnimalLabel: preferredAnimalType?.label ?? null,
@@ -93,13 +99,11 @@ function parseOptionalNumber(value: unknown) {
   return numeric;
 }
 
-function parseStatus(value: unknown) {
+function parseStatusId(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  return adoptionStatuses.includes(trimmed as (typeof adoptionStatuses)[number])
-    ? trimmed
-    : undefined;
+  return adoptionStatusByCode.get(trimmed) ?? undefined;
 }
 
 function parsePagination(req: Request) {
@@ -111,14 +115,14 @@ function parsePagination(req: Request) {
 function buildAdoptionFilters(req: Request) {
   const userId = parseOptionalInt(req.query.userId);
   const petId = typeof req.query.petId === "string" ? req.query.petId.trim() : "";
-  const status = parseStatus(req.query.status);
+  const statusId = parseStatusId(req.query.status);
   const compatibilityMin = parseOptionalNumber(req.query.compatibilityMin);
   const compatibilityMax = parseOptionalNumber(req.query.compatibilityMax);
 
   return {
     userId,
     petId: petId.length > 0 ? petId : undefined,
-    status,
+    statusId,
     compatibilityMin,
     compatibilityMax,
   };
@@ -142,7 +146,8 @@ async function mapAdoptionSummaries(items: Adoption[]) {
       id: item.id,
       userId: item.userId,
       petId: item.petId,
-      status: item.status ?? "NUEVA",
+      statusId: item.statusId,
+      status: adoptionStatusById.get(item.statusId) ?? "NUEVA",
       compatibilityScore: item.compatibilityScore ?? null,
       createdAt: item.createdAt,
       applicantName: `${item.firstName} ${item.lastName}`.trim(),
@@ -236,7 +241,7 @@ export async function createAdoption(req: Request, res: Response) {
   const adoption = adoptionRepo().create({
     userId: userIdFromReq ?? values.userId ?? null,
     petId: values.petId ?? null,
-    status: "NUEVA",
+    statusId: CatalogIds.adoptionStatus.nueva,
     compatibilityScore: null,
     ...catalogIds,
     firstName: values.firstName,
@@ -283,7 +288,7 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   const qb = adoptionRepo().createQueryBuilder("adoption");
   if (filters.userId) qb.andWhere("adoption.userId = :userId", { userId: filters.userId });
   if (filters.petId) qb.andWhere("adoption.petId = :petId", { petId: filters.petId });
-  if (filters.status) qb.andWhere("adoption.status = :status", { status: filters.status });
+  if (filters.statusId) qb.andWhere("adoption.statusId = :statusId", { statusId: filters.statusId });
   if (filters.compatibilityMin !== undefined) {
     qb.andWhere("adoption.compatibilityScore >= :compatibilityMin", {
       compatibilityMin: filters.compatibilityMin,
@@ -316,17 +321,19 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   }
 
   const rawSummary = await summaryQb
-    .select("adoption.status", "status")
+    .select("adoption.statusId", "statusId")
     .addSelect("COUNT(*)", "count")
-    .groupBy("adoption.status")
-    .getRawMany<{ status: string; count: string }>();
+    .groupBy("adoption.statusId")
+    .getRawMany<{ statusId: string; count: string }>();
 
-  const statusTotals = adoptionStatuses.reduce<Record<string, number>>((acc, status) => {
-    acc[status] = 0;
+  const statusTotals = adoptionStatusEntries.reduce<Record<string, number>>((acc, entry) => {
+    acc[entry.code] = 0;
     return acc;
   }, {});
   for (const row of rawSummary) {
-    statusTotals[row.status] = Number(row.count) || 0;
+    const statusId = Number(row.statusId);
+    const statusCode = adoptionStatusById.get(statusId);
+    if (statusCode) statusTotals[statusCode] = Number(row.count) || 0;
   }
 
   res.json({
