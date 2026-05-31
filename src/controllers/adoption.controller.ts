@@ -39,12 +39,21 @@ const adoptionStatusEntries = [
 type AdoptionStatusId = (typeof adoptionStatusEntries)[number]["id"];
 type AdoptionStatusCode = (typeof adoptionStatusEntries)[number]["code"];
 
-const adoptionStatusById: Map<number, AdoptionStatusCode> = new Map(
+const adoptionStatusById: Map<AdoptionStatusId, AdoptionStatusCode> = new Map(
   adoptionStatusEntries.map((entry) => [entry.id, entry.code]),
 );
-const adoptionStatusByCode: Map<string, AdoptionStatusId> = new Map(
+const adoptionStatusByCode: Map<AdoptionStatusCode, AdoptionStatusId> = new Map(
   adoptionStatusEntries.map((entry) => [entry.code, entry.id]),
 );
+
+function isAdoptionStatusId(value: number): value is AdoptionStatusId {
+  return adoptionStatusById.has(value as AdoptionStatusId);
+}
+
+function getAdoptionStatusCode(id: number | null | undefined) {
+  if (typeof id !== "number" || !Number.isInteger(id)) return undefined;
+  return isAdoptionStatusId(id) ? adoptionStatusById.get(id) : undefined;
+}
 
 function catalogInfo(catalogValuesById: CatalogValueMap, id: number | null | undefined) {
   const item = id ? catalogValuesById.get(id) ?? null : null;
@@ -108,12 +117,12 @@ function parseOptionalNumber(value: unknown) {
 
 function parseStatusId(value: unknown, statusIdValue: unknown) {
   const numericStatusId = parseOptionalInt(statusIdValue);
-  if (numericStatusId && adoptionStatusById.has(numericStatusId)) return numericStatusId;
+  if (numericStatusId && isAdoptionStatusId(numericStatusId)) return numericStatusId;
 
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  return adoptionStatusByCode.get(trimmed) ?? undefined;
+  return adoptionStatusByCode.get(trimmed as AdoptionStatusCode) ?? undefined;
 }
 
 function parsePagination(req: Request) {
@@ -157,7 +166,7 @@ async function mapAdoptionSummaries(items: Adoption[]) {
       userId: item.userId,
       petId: item.petId,
       statusId: item.statusId,
-      status: adoptionStatusById.get(item.statusId) ?? "NUEVA",
+      status: getAdoptionStatusCode(item.statusId) ?? "NUEVA",
       compatibilityScore: item.compatibilityScore ?? null,
       createdAt: item.createdAt,
       applicantName: `${item.firstName} ${item.lastName}`.trim(),
@@ -342,7 +351,7 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   }, {});
   for (const row of rawSummary) {
     const statusId = Number(row.statusId);
-    const statusCode = adoptionStatusById.get(statusId);
+    const statusCode = getAdoptionStatusCode(statusId);
     if (statusCode) statusTotals[statusCode] = Number(row.count) || 0;
   }
 
