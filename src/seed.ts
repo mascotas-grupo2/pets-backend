@@ -5,6 +5,8 @@ import path from "node:path";
 import { AppDataSource } from "./data-source.js";
 import { Pet } from "./entity/Pet.js";
 import { User } from "./entity/User.js";
+import { Followup } from "./entity/Followup.js";
+import { Adoption } from "./entity/Adoption.js";
 import { CatalogIds } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 
@@ -33,6 +35,14 @@ async function seed() {
   await AppDataSource.initialize();
   await AppDataSource.runMigrations();
 
+  // Clear dependent tables first (those with foreign keys to pet)
+  const repoFollowup = AppDataSource.getRepository(Followup);
+  await repoFollowup.clear();
+
+  const repoAdoption = AppDataSource.getRepository(Adoption);
+  await repoAdoption.clear();
+
+  // Now clear the pet table
   const repoPets = AppDataSource.getRepository(Pet);
   await repoPets.clear();
 
@@ -95,7 +105,7 @@ async function seed() {
   console.log(`Seed completed: ${petsData.length} pets inserted.`);
 
   const repoUsers = AppDataSource.getRepository(User);
-  repoUsers.clear();
+  await repoUsers.clear();
   const password = "Admin1234!";
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
