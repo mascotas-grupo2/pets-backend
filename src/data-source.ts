@@ -5,6 +5,8 @@ import { PetNote } from "./entity/PetNote.js";
 import { User } from "./entity/User.js";
 import { Adoption } from "./entity/Adoption.js";
 import { CatalogValue } from "./entity/CatalogValue.js";
+import { ChatSession } from "./entity/ChatSession.js";
+import { ChatMessage } from "./entity/ChatMessage.js";
 import { InitPetTable1744402212000 } from "./migration/1744402212000-Init.js";
 import { AddUser1744402213000 } from "./migration/1744402213000-AddUser.js";
 import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTokens.js";
@@ -18,11 +20,12 @@ import { AddPasswordReset1744402219000 } from "./migration/1744402219000-AddPass
 import { AddAdoptionPetId1744402220000 } from "./migration/1744402220000-AddAdoptionPetId.js";
 import { NormalizeCatalogValues1744402222000 } from "./migration/1744402222000-NormalizeCatalogValues.js";
 import { AddReportStatus1744402223000 } from "./migration/1744402223000-AddReportStatus.js";
+import { AddChatSession1748800000000 } from "./migration/1748800000000-AddChatSession.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.DATABASE_URL,
-  entities: [Pet, User, Adoption, PetNote, CatalogValue],
+  entities: [Pet, User, Adoption, PetNote, CatalogValue, ChatSession, ChatMessage],
   migrations: [
     InitPetTable1744402212000,
     AddUser1744402213000,
@@ -37,6 +40,7 @@ export const AppDataSource = new DataSource({
     AddAdoptionPetId1744402220000,
     NormalizeCatalogValues1744402222000,
     AddReportStatus1744402223000,
+    AddChatSession1748800000000,
   ],
   synchronize: false,
 });

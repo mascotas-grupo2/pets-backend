@@ -1,16 +1,17 @@
 import OpenAI from "openai";
-import { SYSTEM_PROMPT, WELCOME_QUICK_REPLIES } from "./chat.intents.js";
+import { SYSTEM_PROMPT } from "./chatbot.intents.js";
 import {
   appendMessages,
   getOrCreateSession,
   setLastIntent,
-} from "./chat.session.js";
-import { openaiTools, toolsByName } from "./chat.tools.js";
+} from "./chatbot.session.js";
+import { openaiTools, toolsByName } from "./chatbot.tools.js";
 import {
   ChatResponse,
   SessionMessage,
   ToolCallTrace,
-} from "./chat.types.js";
+  UserContext,
+} from "./chatbot.types.js";
 
 const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 const DEFAULT_MAX_ITERATIONS = 5;
@@ -46,33 +47,50 @@ function sanitizeAssistantText(text: string): string {
   // Apertura sin cierre
   out = out.replace(/<function[^>]*>[\s\S]*$/gi, "").trim();
   // Llamadas tipo Python que algunos modelos sueltan: tool_name({...})
-  out = out.replace(/\b(listLostPets|listFoundPets|listAdoptablePets|getPetDetails|getAdoptionInfo|draftLostPetReport)\s*\([^)]*\)/g, "").trim();
+  out = out.replace(/\b(listLostPets|listFoundPets|listAdoptablePets|getPetDetails|getAdoptionInfo|createLostPetReport|createFoundPetReport|createAdoptionRequest)\s*\([^)]*\)/g, "").trim();
   // Espacios sobrantes
   out = out.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   return out;
+}
+
+/**
+ * Arma un fragmento de system message adicional cuando hay usuario autenticado.
+ * Le da al modelo el contexto mínimo necesario sin filtrar datos sensibles
+ * (no se le pasa rol completo ni IDs internos).
+ */
+function buildUserContextPrompt(userContext?: UserContext): string | null {
+  if (!userContext) return null;
+  const parts = [
+    `El usuario está autenticado.`,
+    userContext.email ? `Su email es ${userContext.email}.` : null,
+    `Podés personalizar el saludo y mencionar que está logueado si es natural en la conversación, pero NO menciones su email ni datos personales a menos que él los pida explícitamente.`,
+  ].filter(Boolean);
+  return parts.join(" ");
 }
 
 export type HandleChatParams = {
   sessionId?: string;
   message: string;
   debug?: boolean;
+  /** Si se provee, las tools que necesiten user lo reciben como segundo argumento. */
+  userContext?: UserContext;
 };
 
 export async function handleChatMessage(
   params: HandleChatParams,
 ): Promise<ChatResponse> {
-  const session = getOrCreateSession(params.sessionId);
-  const wasEmpty = session.messages.length === 0;
+  const session = await getOrCreateSession(
+    params.sessionId,
+    params.userContext?.userId,
+  );
   const debugEnabled =
     params.debug === true || process.env.CHAT_DEBUG === "true";
 
-  // El system prompt no se persiste — se inyecta en cada call para que el
-  // modelo siempre lo vea aunque se trunque el historial.
   const userMessage: SessionMessage = {
     role: "user",
     content: params.message,
   };
-  appendMessages(session, [userMessage]);
+  await appendMessages(session, [userMessage]);
 
   const client = getClient();
   const tracedToolCalls: ToolCallTrace[] = [];
@@ -80,26 +98,31 @@ export async function handleChatMessage(
   let iterations = 0;
   let finalAssistantText = "";
 
+  // System messages: el prompt principal + (opcional) el contexto del usuario.
+  // Se inyectan en cada call para que no se trunquen junto con el historial.
+  const userContextPrompt = buildUserContextPrompt(params.userContext);
+  const systemMessages: SessionMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...(userContextPrompt
+      ? ([{ role: "system", content: userContextPrompt }] as SessionMessage[])
+      : []),
+  ];
+
   while (iterations < maxIterations()) {
     iterations += 1;
 
     const completion = await client.chat.completions.create({
       model: model(),
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        ...session.messages,
-      ],
+      messages: [...systemMessages, ...session.messages],
       tools: openaiTools,
       tool_choice: "auto",
-      // Temperatura baja: queremos comportamiento estable y predecible
-      // para una demo, no creatividad.
       temperature: 0.3,
     });
 
     const choice = completion.choices[0];
     const assistantMsg = choice.message;
 
-    appendMessages(session, [assistantMsg as unknown as SessionMessage]);
+    await appendMessages(session, [assistantMsg as unknown as SessionMessage]);
 
     const toolCalls = assistantMsg.tool_calls ?? [];
     if (toolCalls.length === 0) {
@@ -107,7 +130,6 @@ export async function handleChatMessage(
       break;
     }
 
-    // Ejecutamos cada tool call y agregamos su resultado al historial
     for (const call of toolCalls) {
       if (call.type !== "function") continue;
       const def = toolsByName[call.function.name];
@@ -125,9 +147,18 @@ export async function handleChatMessage(
       let result: unknown;
       if (!def) {
         result = { error: `Tool desconocida: ${call.function.name}` };
+      } else if (def.requiresAuth && !params.userContext) {
+        // Tool de escritura sin usuario logueado: rechazamos sin ejecutar.
+        // Le decimos al modelo qué pasó para que se lo comunique al usuario
+        // en lenguaje natural y le sugiera loguearse.
+        result = {
+          error: "auth_required",
+          message:
+            "Esta acción requiere que el usuario esté autenticado. Pedile que inicie sesión y vuelva a intentar.",
+        };
       } else {
         try {
-          result = await def.handler(parsedArgs);
+          result = await def.handler(parsedArgs, params.userContext);
           lastIntent = def.intent;
         } catch (err) {
           result = {
@@ -143,7 +174,7 @@ export async function handleChatMessage(
         durationMs: Date.now() - started,
       });
 
-      appendMessages(session, [
+      await appendMessages(session, [
         {
           role: "tool",
           tool_call_id: call.id,
@@ -159,18 +190,12 @@ export async function handleChatMessage(
       "Disculpá, no pude completar la respuesta. ¿Podés reformular?";
   }
 
-  setLastIntent(session, lastIntent);
+  await setLastIntent(session, lastIntent);
 
   const response: ChatResponse = {
     sessionId: session.id,
     messages: [{ role: "assistant", type: "text", text: finalAssistantText }],
   };
-
-  // En la primera interacción, ofrecemos quick replies de bienvenida
-  // (útil para que la demo por API tenga "botones" obvios para probar).
-  if (wasEmpty) {
-    response.quickReplies = WELCOME_QUICK_REPLIES;
-  }
 
   if (debugEnabled) {
     response.debug = {
@@ -178,6 +203,7 @@ export async function handleChatMessage(
       toolCalls: tracedToolCalls,
       model: model(),
       iterations,
+      authenticated: Boolean(params.userContext),
     };
   }
 

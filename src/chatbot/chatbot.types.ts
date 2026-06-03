@@ -25,6 +25,18 @@ export type ToolCallTrace = {
   durationMs: number;
 };
 
+/**
+ * Contexto del usuario autenticado que se propaga al engine y a las tools.
+ * Las tools que necesiten saber quién es el usuario (típicamente las de
+ * escritura: crear reporte, solicitar adopción) lo reciben como segundo
+ * argumento de su handler.
+ */
+export type UserContext = {
+  userId: number;
+  email?: string;
+  role?: string;
+};
+
 export type ChatResponse = {
   sessionId: string;
   messages: ChatBotMessage[];
@@ -34,6 +46,7 @@ export type ChatResponse = {
     toolCalls: ToolCallTrace[];
     model: string;
     iterations: number;
+    authenticated: boolean;
   };
 };
 

@@ -24,6 +24,7 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
+import { createPet } from "../lib/pet-service.js";
 
 function repo() {
   return AppDataSource.getRepository(Pet);
@@ -266,79 +267,78 @@ export async function createMascota(req: Request, res: Response) {
         },
       });
   }
-  let data = { ...parsed.data };
-  let catalogIds: {
-    animalTypeId: number;
-    sexId: number | null | undefined;
-    statusId: number | null | undefined;
-    medicalStatusId: number | null | undefined;
-  };
+  const data = { ...parsed.data };
+
+  // Helper para convertir IDs de catálogo a codes (el body puede traer
+  // animalTypeId/sexId/statusId/medicalStatusId en vez de los campos string).
+  const catalogValues = await getCatalogValuesById();
+  const idToCode = (id: number | undefined | null) =>
+    id ? catalogValues.get(id)?.code : undefined;
+
+  // Resolución del userId con el orden de prioridad histórico:
+  // 1) usuario autenticado, 2) userId del body, 3) lookup por contactEmail.
+  const resolvedUserId =
+    req.authUser?.id ??
+    data.userId ??
+    (await userRepo().findOneBy({ email: data.contactEmail }))?.id ??
+    undefined;
+
+  // Llamada al servicio compartido (mismo que usa la tool del chatbot).
+  // Resuelve catálogos, geocodifica y persiste el Pet.
+  let saved;
   try {
-    const animalTypeId = await resolveCatalogValueId(
-      Catalog.ANIMAL_TYPE,
-      { id: data.animalTypeId, code: data.animalType },
-      true,
+    saved = await createPet(
+      {
+        name: data.name ?? null,
+        description: data.description,
+        animalType:
+          (typeof data.animalType === "string" ? data.animalType : undefined) ??
+          idToCode(data.animalTypeId) ??
+          "",
+        date: data.date,
+        location: data.location,
+        contactPhone: data.contactPhone,
+        contactEmail: data.contactEmail,
+        sex:
+          (typeof data.sex === "string" ? data.sex : undefined) ??
+          idToCode(data.sexId),
+        breed: data.breed,
+        color: data.color,
+        ageMonths: data.ageMonths,
+        weightKg: data.weightKg,
+        heightCm: data.heightCm,
+        hasCollar: data.hasCollar,
+        hasTag: data.hasTag,
+        microchipped: data.microchipped,
+        neutered: data.neutered,
+        vaccinated: data.vaccinated,
+        friendlyWithKids: data.friendlyWithKids,
+        trained: data.trained,
+        reward: data.reward,
+        status:
+          (typeof data.status === "string" ? data.status : undefined) ??
+          idToCode(data.statusId),
+        medicalStatus:
+          (typeof data.medicalStatus === "string"
+            ? data.medicalStatus
+            : undefined) ?? idToCode(data.medicalStatusId),
+      },
+      { userId: resolvedUserId },
     );
-    if (!animalTypeId)
-      return res.status(400).json({ error: "El tipo de animal es requerido" });
-    catalogIds = {
-      animalTypeId,
-      sexId: await resolveOptionalCatalogId(
-        Catalog.PET_SEX,
-        data.sexId,
-        data.sex,
-      ),
-      statusId: await resolveOptionalCatalogId(
-        Catalog.PET_STATUS,
-        data.statusId,
-        data.status,
-      ),
-      medicalStatusId: await resolveOptionalCatalogId(
-        Catalog.PET_MEDICAL_STATUS,
-        data.medicalStatusId,
-        data.medicalStatus,
-      ),
-    };
   } catch (error) {
     if (handleCatalogError(error, res)) return;
     throw error;
   }
-  // No subimos aún; creamos el registro primero para obtener el id del reporte
 
-  const coords = await resolverCoordenadas(data.location);
-  const {
-    id: _id,
-    createdAt: _createdAt,
-    animalType: _animalType,
-    animalTypeId: _inputAnimalTypeId,
-    sex: _sex,
-    sexId: _inputSexId,
-    status: _status,
-    statusId: _inputStatusId,
-    medicalStatus: _medicalStatus,
-    medicalStatusId: _inputMedicalStatusId,
-    ...petData
-  } = data;
-  const userId =
-    req.authUser?.id ??
-    petData.userId ??
-    (await userRepo().findOneBy({ email: petData.contactEmail }))?.id ??
-    null;
-  const mascota = repo().create({
-    ...petData,
-    animalTypeId: catalogIds.animalTypeId,
-    ...(catalogIds.sexId !== undefined ? { sexId: catalogIds.sexId } : {}),
-    ...(catalogIds.statusId !== undefined && catalogIds.statusId !== null
-      ? { statusId: catalogIds.statusId }
-      : {}),
-    ...(catalogIds.medicalStatusId !== undefined &&
-    catalogIds.medicalStatusId !== null
-      ? { medicalStatusId: catalogIds.medicalStatusId }
-      : {}),
-    userId,
-    ...coords,
-  });
-  const saved = await repo().save(mascota);
+  // Si el body trajo una URL ya subida en `photo`, la guardamos en el Pet.
+  // Las data URLs y los multipart files se procesan más abajo.
+  if (
+    typeof data.photo === "string" &&
+    !data.photo.startsWith("data:image/")
+  ) {
+    saved.photo = data.photo;
+    saved = await repo().save(saved);
+  }
 
   // ahora procesamos imágenes (si las hay) y las subimos dentro de una "carpeta" con el id del reporte
   const bucket = process.env.MINIO_BUCKET ?? "report-images";

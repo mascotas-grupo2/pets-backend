@@ -1,13 +1,14 @@
 import { Request, Response } from "express";
-import { handleChatMessage } from "../chats/chat.engine.js";
-import { REFUSAL_MESSAGE } from "../chats/chat.intents.js";
+import { handleChatMessage } from "../chatbot/chatbot.engine.js";
+import { REFUSAL_MESSAGE } from "../chatbot/chatbot.intents.js";
 import {
   inspectUserMessage,
   MAX_MESSAGE_LENGTH,
-} from "../chats/chat.guard.js";
-import { getOrCreateSession } from "../chats/chat.session.js";
+} from "../chatbot/chatbot.guard.js";
+import { getOrCreateSession } from "../chatbot/chatbot.session.js";
+import type { UserContext } from "../chatbot/chatbot.types.js";
 
-export async function sendChatMessage(req: Request, res: Response) {
+export async function sendChatbotMessage(req: Request, res: Response) {
   const { sessionId, message } = req.body ?? {};
 
   if (typeof message !== "string" || message.trim().length === 0) {
@@ -21,12 +22,10 @@ export async function sendChatMessage(req: Request, res: Response) {
 
   const guard = inspectUserMessage(message);
   if (!guard.ok) {
-    const session = getOrCreateSession(sessionId);
+    const session = await getOrCreateSession(sessionId, req.authUser?.id);
     return res.json({
       sessionId: session.id,
-      messages: [
-        { role: "assistant", type: "text", text: REFUSAL_MESSAGE },
-      ],
+      messages: [{ role: "assistant", type: "text", text: REFUSAL_MESSAGE }],
       blocked: { reason: guard.reason },
     });
   }
@@ -34,11 +33,20 @@ export async function sendChatMessage(req: Request, res: Response) {
   const debug =
     req.header("x-chat-debug") === "true" || req.body?.debug === true;
 
+  const userContext: UserContext | undefined = req.authUser
+    ? {
+        userId: req.authUser.id,
+        email: req.authUser.email,
+        role: req.authUser.role,
+      }
+    : undefined;
+
   try {
     const response = await handleChatMessage({
       sessionId,
       message,
       debug,
+      userContext,
     });
     res.json(response);
   } catch (err) {
