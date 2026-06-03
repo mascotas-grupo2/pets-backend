@@ -398,6 +398,7 @@ const createAdoption: ToolDefinition = {
   },
 };
 
+
 export const allTools: ToolDefinition[] = [
   listLostPets,
   listFoundPets,
