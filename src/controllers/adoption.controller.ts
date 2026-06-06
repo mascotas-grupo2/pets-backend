@@ -325,21 +325,10 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
     .take(pageSize)
     .getManyAndCount();
 
-  const summaryQb = adoptionRepo().createQueryBuilder("adoption");
-  if (filters.userId) summaryQb.andWhere("adoption.userId = :userId", { userId: filters.userId });
-  if (filters.petId) summaryQb.andWhere("adoption.petId = :petId", { petId: filters.petId });
-  if (filters.compatibilityMin !== undefined) {
-    summaryQb.andWhere("adoption.compatibilityScore >= :compatibilityMin", {
-      compatibilityMin: filters.compatibilityMin,
-    });
-  }
-  if (filters.compatibilityMax !== undefined) {
-    summaryQb.andWhere("adoption.compatibilityScore <= :compatibilityMax", {
-      compatibilityMax: filters.compatibilityMax,
-    });
-  }
-
-  const rawSummary = await summaryQb
+  // Los cards deben mostrar los totales por estado del conjunto completo,
+  // mientras que la lista paginada aplica los filtros del query.
+  const rawSummary = await adoptionRepo()
+    .createQueryBuilder("adoption")
     .select("adoption.statusId", "statusId")
     .addSelect("COUNT(*)", "count")
     .groupBy("adoption.statusId")
@@ -411,5 +400,7 @@ export async function getAdoptionById(req: Request, res: Response) {
       : null,
     messages: [],
     history: [],
+    files: [],
+    // TODO: implementar mensajes, historial y archivos reales en backend
   });
 }

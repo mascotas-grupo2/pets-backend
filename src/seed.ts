@@ -37,14 +37,15 @@ async function seed() {
 
   // Clear dependent tables first (those with foreign keys to pet)
   const repoFollowup = AppDataSource.getRepository(Followup);
-  await repoFollowup.clear();
+  await repoFollowup.createQueryBuilder().delete().execute();
 
   const repoAdoption = AppDataSource.getRepository(Adoption);
-  await repoAdoption.clear();
+  await repoAdoption.createQueryBuilder().delete().execute();
 
   // Now clear the pet table
   const repoPets = AppDataSource.getRepository(Pet);
-  await repoPets.clear();
+  // Use DELETE instead of TRUNCATE on Postgres when pet is referenced by foreign keys.
+  await repoPets.createQueryBuilder().delete().execute();
 
   const bucket = process.env.MINIO_BUCKET ?? "report-images";
 
@@ -105,7 +106,7 @@ async function seed() {
   console.log(`Seed completed: ${petsData.length} pets inserted.`);
 
   const repoUsers = AppDataSource.getRepository(User);
-  await repoUsers.clear();
+  await repoUsers.createQueryBuilder().delete().execute();
   const password = "Admin1234!";
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
