@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
-import { In } from "typeorm";
+import { In, SelectQueryBuilder } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Adoption } from "../entity/Adoption.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
+import { Followup } from "../entity/Followup.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
-import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
+import { adoptionSchema, AdoptionInput, adoptionStatusUpdateSchema, AdoptionStatusUpdateInput } from "../schemas/adoption.schema.js";
 import {
   CatalogValidationError,
   getCatalogValuesById,
@@ -23,6 +24,33 @@ function userRepo() {
 
 function petRepo() {
   return AppDataSource.getRepository(Pet);
+}
+
+function followupRepo() {
+  return AppDataSource.getRepository(Followup);
+}
+
+function createFollowupsForAdoption(adoption: Adoption) {
+  const petId = adoption.petId;
+  const userId = adoption.userId;
+  if (!petId || typeof userId !== "number" || !Number.isInteger(userId)) return;
+
+  const baseDate = new Date();
+  const offsets = [7, 30, 90];
+  const followups = offsets.map((days) => {
+    const appointmentAt = new Date(baseDate);
+    appointmentAt.setDate(appointmentAt.getDate() + days);
+
+    const followup = new Followup();
+    followup.petId = petId;
+    followup.userId = userId;
+    followup.typeId = CatalogIds.followupType.programado;
+    followup.statusId = CatalogIds.followupStatus.pendiente;
+    followup.appointmentAt = appointmentAt;
+    return followup;
+  });
+
+  return followupRepo().save(followups);
 }
 
 type CatalogValueMap = Map<number, CatalogValue>;
@@ -103,6 +131,44 @@ function serializeAdoption(adoption: Adoption, catalogValuesById: CatalogValueMa
   };
 }
 
+async function serializeAdoptionDetail(adoption: Adoption) {
+  const catalogValuesById = await getCatalogValuesById();
+  const adopted = serializeAdoption(adoption, catalogValuesById);
+  const user = adoption.userId ? await userRepo().findOneBy({ id: adoption.userId }) : null;
+  const pet = adoption.petId ? await petRepo().findOneBy({ id: adoption.petId }) : null;
+
+  return {
+    ...adopted,
+    applicant: {
+      firstName: adoption.firstName,
+      lastName: adoption.lastName,
+      email: adoption.email,
+      phone: adoption.phone,
+    },
+    user: user
+      ? {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          photo: user.photo,
+        }
+      : null,
+    pet: pet
+      ? {
+          id: pet.id,
+          name: pet.name,
+          photo: pet.photo,
+          animalTypeId: pet.animalTypeId,
+          statusId: pet.statusId,
+          reportStatusId: pet.reportStatusId,
+        }
+      : null,
+    messages: [],
+    history: [],
+    files: [],
+  };
+}
+
 function parseOptionalInt(value: unknown) {
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
@@ -125,10 +191,86 @@ function parseStatusId(value: unknown, statusIdValue: unknown) {
   return adoptionStatusByCode.get(trimmed as AdoptionStatusCode) ?? undefined;
 }
 
+type AdoptionSortField =
+  | "createdAt"
+  | "compatibilityScore"
+  | "statusId"
+  | "firstName"
+  | "lastName"
+  | "town"
+  | "adults"
+  | "children";
+
+type SortDirection = "ASC" | "DESC";
+
+type SortOrder = {
+  column: string;
+  direction: SortDirection;
+};
+
+const adoptionSortFieldMap: Record<AdoptionSortField, string> = {
+  createdAt: "adoption.createdAt",
+  compatibilityScore: "adoption.compatibilityScore",
+  statusId: "adoption.statusId",
+  firstName: "adoption.firstName",
+  lastName: "adoption.lastName",
+  town: "adoption.town",
+  adults: "adoption.adults",
+  children: "adoption.children",
+};
+
 function parsePagination(req: Request) {
   const page = Math.max(1, Number(req.query.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
   return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+function normalizeSortDirection(value: unknown): SortDirection {
+  if (typeof value !== "string") return "DESC";
+  const normalized = value.trim().toUpperCase();
+  return normalized === "ASC" ? "ASC" : "DESC";
+}
+
+function parseSort(req: Request): SortOrder[] {
+  const sortParam = req.query.sort;
+  let raw: string;
+
+  if (Array.isArray(sortParam)) {
+    raw = typeof sortParam[0] === "string" ? sortParam[0] : "";
+  } else if (typeof sortParam === "string") {
+    raw = sortParam;
+  } else {
+    raw = "";
+  }
+
+  if (!raw.trim()) {
+    return [{ column: adoptionSortFieldMap.createdAt, direction: "DESC" }];
+  }
+
+  const orders = raw
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => {
+      const [field, direction] = segment.split(":").map((part) => part.trim());
+      const column = adoptionSortFieldMap[field as AdoptionSortField];
+      if (!column) return null;
+      return { column, direction: normalizeSortDirection(direction) };
+    })
+    .filter((value): value is SortOrder => value !== null);
+
+  return orders.length > 0
+    ? orders
+    : [{ column: adoptionSortFieldMap.createdAt, direction: "DESC" }];
+}
+
+function applySort(qb: SelectQueryBuilder<any>, orders: SortOrder[]) {
+  const [first, ...rest] = orders;
+  let ordered = qb.orderBy(first.column, first.direction);
+  for (const order of rest) {
+    ordered = ordered.addOrderBy(order.column, order.direction);
+  }
+  return ordered;
 }
 
 function buildAdoptionFilters(req: Request) {
@@ -303,6 +445,7 @@ export async function listAdoptions(req: Request, res: Response) {
 export async function adminListAdoptionsPaged(req: Request, res: Response) {
   const { page, pageSize, skip } = parsePagination(req);
   const filters = buildAdoptionFilters(req);
+  const sortOrders = parseSort(req);
 
   const qb = adoptionRepo().createQueryBuilder("adoption");
   if (filters.userId) qb.andWhere("adoption.userId = :userId", { userId: filters.userId });
@@ -319,11 +462,8 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
     });
   }
 
-  const [items, total] = await qb
-    .orderBy("adoption.createdAt", "DESC")
-    .skip(skip)
-    .take(pageSize)
-    .getManyAndCount();
+  const ordered = applySort(qb, sortOrders);
+  const [items, total] = await ordered.skip(skip).take(pageSize).getManyAndCount();
 
   // Los cards deben mostrar los totales por estado del conjunto completo,
   // mientras que la lista paginada aplica los filtros del query.
@@ -368,39 +508,44 @@ export async function getAdoptionById(req: Request, res: Response) {
     }
   }
 
-  const catalogValuesById = await getCatalogValuesById();
-  const user = adoption.userId ? await userRepo().findOneBy({ id: adoption.userId }) : null;
-  const pet = adoption.petId ? await petRepo().findOneBy({ id: adoption.petId }) : null;
+  res.json(await serializeAdoptionDetail(adoption));
+}
 
-  res.json({
-    ...serializeAdoption(adoption, catalogValuesById),
-    applicant: {
-      firstName: adoption.firstName,
-      lastName: adoption.lastName,
-      email: adoption.email,
-      phone: adoption.phone,
-    },
-    user: user
-      ? {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          photo: user.photo,
-        }
-      : null,
-    pet: pet
-      ? {
-          id: pet.id,
-          name: pet.name,
-          photo: pet.photo,
-          animalTypeId: pet.animalTypeId,
-          statusId: pet.statusId,
-          reportStatusId: pet.reportStatusId,
-        }
-      : null,
-    messages: [],
-    history: [],
-    files: [],
-    // TODO: implementar mensajes, historial y archivos reales en backend
-  });
+export async function updateAdoptionStatus(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const parsed = adoptionStatusUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const values: AdoptionStatusUpdateInput = parsed.data;
+  const statusCode = values.status.trim().toUpperCase() as AdoptionStatusCode;
+  const statusId = adoptionStatusByCode.get(statusCode);
+  if (!statusId) return res.status(400).json({ error: "Estado invalido" });
+
+  const adoption = await adoptionRepo().findOneBy({ id });
+  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+
+  const previousStatusId = adoption.statusId;
+  adoption.statusId = statusId;
+  const saved = await adoptionRepo().save(adoption);
+
+  if (
+    statusId === CatalogIds.adoptionStatus.aceptadaConSeguimiento &&
+    previousStatusId !== statusId
+  ) {
+    await createFollowupsForAdoption(saved);
+  }
+
+  res.json(await serializeAdoptionDetail(saved));
+}
+
+export async function deleteAdoption(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const result = await adoptionRepo().delete({ id });
+  if (result.affected === 0) return res.status(404).json({ error: "Solicitud no encontrada" });
+
+  res.status(204).send();
 }
