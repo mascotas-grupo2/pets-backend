@@ -15,6 +15,7 @@ export const Catalog = {
   LIVING_SITUATION: "living_situation",
   HOUSEHOLD_SETTING: "household_setting",
   ACTIVITY_LEVEL: "activity_level",
+  USER_STATUS: "user_status",
 } as const;
 
 export const CatalogIds = {
@@ -51,6 +52,11 @@ export const CatalogIds = {
   userRole: {
     user: 501,
     admin: 502,
+  },
+  userStatus: {
+    activo: 511,
+    enEvaluacion: 512,
+    bloqueado: 513,
   },
   ssoProvider: {
     keycloak: 601,
@@ -146,6 +152,10 @@ export const CatalogSeed: CatalogSeedItem[] = [
 
   { id: 501, catalog: Catalog.USER_ROLE, code: "user", label: "Usuario" },
   { id: 502, catalog: Catalog.USER_ROLE, code: "admin", label: "Administrador" },
+
+  { id: 511, catalog: Catalog.USER_STATUS, code: "activo", label: "Activo" },
+  { id: 512, catalog: Catalog.USER_STATUS, code: "evaluacion", label: "En evaluación" },
+  { id: 513, catalog: Catalog.USER_STATUS, code: "bloqueado", label: "Bloqueado" },
 
   { id: 601, catalog: Catalog.SSO_PROVIDER, code: "keycloak", label: "Keycloak" },
 

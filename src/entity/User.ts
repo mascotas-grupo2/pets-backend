@@ -48,6 +48,12 @@ export class User {
   @Column({ nullable: true, type: "text" })
   photo!: string | null;
 
+  @Column({ name: "status_id", type: "int", default: CatalogIds.userStatus?.activo ?? 0 })
+  statusId!: number;
+
+  @Column({ name: "evaluation_note", type: "text", nullable: true })
+  evaluationNote!: string | null;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 }
