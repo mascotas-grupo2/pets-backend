@@ -97,7 +97,6 @@ async function seed() {
       ageMonths: 36,
       color: "Atigrado",
       weightKg: 20,
-      reportStatusId: CatalogIds.petReportStatus.activo,
     },
     {
       name: "Misi",
@@ -112,7 +111,6 @@ async function seed() {
       ageMonths: 8,
       color: "Blanca",
       weightKg: 3.5,
-      reportStatusId: CatalogIds.petReportStatus.activo,
     },
     // Additional seed pets (~10)
     { name: "Rex", animalTypeId: 1, description: "Perro en adopción, juguetón", date: "2026-05-01", location: "Recoleta", contactPhone: "1140000001", contactEmail: "rex@example.com", sexId: CatalogIds.petSex.macho, breed: "Labrador", ageMonths: 30, color: "Negro", weightKg: 25, reportStatusId: CatalogIds.petReportStatus.activo },
@@ -212,7 +210,7 @@ async function seed() {
   const usersCount = await repoUsers.count();
   console.log(`Seed completed: ${usersCount} usuarios en total.`);
 
-  
+
 
   // (removed duplicate extra user insertion to avoid unique email conflicts)
 

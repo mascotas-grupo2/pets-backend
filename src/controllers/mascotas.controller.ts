@@ -336,7 +336,12 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
 
 export async function getMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const mascota = await repo().findOneBy({ id });
+  let mascota;
+  try {
+    mascota = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!mascota) return res.status(404).json({ error: "Pet no encontrada" });
   // No revelamos la existencia de reportes no-públicos a terceros.
   if (!canViewPet(mascota, req.authUser)) {
@@ -623,7 +628,12 @@ export async function updateMascota(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   // permiso: admin puede editar cualquier reporte; usuario puede editar solo sus propios reportes
   const authUser = req.authUser;
@@ -736,7 +746,12 @@ export async function updateMascota(req: Request, res: Response) {
 
 export async function approveMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.activo;
   const saved = await repo().save(existing);
@@ -746,7 +761,12 @@ export async function approveMascota(req: Request, res: Response) {
 
 export async function finalizeMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
   const saved = await repo().save(existing);
@@ -756,7 +776,12 @@ export async function finalizeMascota(req: Request, res: Response) {
 
 export async function rejectMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.rechazado;
   const saved = await repo().save(existing);
@@ -766,7 +791,12 @@ export async function rejectMascota(req: Request, res: Response) {
 
 export async function deleteMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   await repo().remove(existing);
   res.status(204).send();
@@ -774,7 +804,12 @@ export async function deleteMascota(req: Request, res: Response) {
 
 export async function listPetNotes(req: Request, res: Response) {
   const petId = req.params.id;
-  const exists = await repo().findOneBy({ id: petId });
+  let exists;
+  try {
+    exists = await repo().findOneBy({ id: petId });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!exists) return res.status(404).json({ error: "Pet no encontrada" });
   const notes = await noteRepo().find({
     where: { petId },
@@ -790,7 +825,12 @@ export async function createPetNote(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const pet = await repo().findOneBy({ id: petId });
+  let pet;
+  try {
+    pet = await repo().findOneBy({ id: petId });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
 
   const authorId = req.authUser?.id ?? null;
