@@ -35,7 +35,9 @@ export async function createFollowup(req: Request, res: Response) {
 
 export async function listFollowups(req: Request, res: Response) {
   const { page, pageSize, skip } = parsePagination(req);
-  const filters = followupListQuerySchema.parse(req.query);
+  const parsed = followupListQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const filters = parsed.data;
 
   const qb = repo().createQueryBuilder("f");
   if (filters.petId) qb.andWhere("f.petId = :petId", { petId: filters.petId });
