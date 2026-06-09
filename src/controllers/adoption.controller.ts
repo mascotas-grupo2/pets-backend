@@ -13,6 +13,7 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
+import { calculateCompatibility } from "../lib/matching.js";
 
 function adoptionRepo() {
   return AppDataSource.getRepository(Adoption);
@@ -137,8 +138,14 @@ async function serializeAdoptionDetail(adoption: Adoption) {
   const user = adoption.userId ? await userRepo().findOneBy({ id: adoption.userId }) : null;
   const pet = adoption.petId ? await petRepo().findOneBy({ id: adoption.petId }) : null;
 
+  let compatibilityFactors: { label: string; isPositive: boolean }[] = [];
+  if (pet) {
+    compatibilityFactors = calculateCompatibility(adoption, pet).factors;
+  }
+
   return {
     ...adopted,
+    compatibilityFactors,
     applicant: {
       firstName: adoption.firstName,
       lastName: adoption.lastName,
@@ -420,6 +427,13 @@ export async function createAdoption(req: Request, res: Response) {
     experience: values.experience || null,
     acceptsTerms: values.acceptsTerms,
   });
+
+  if (adoption.petId) {
+    const pet = await petRepo().findOneBy({ id: adoption.petId });
+    if (pet) {
+      adoption.compatibilityScore = calculateCompatibility(adoption, pet).score;
+    }
+  }
 
   const saved = await adoptionRepo().save(adoption);
   const catalogValuesById = await getCatalogValuesById();

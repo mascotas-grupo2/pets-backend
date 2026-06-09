@@ -13,6 +13,7 @@ import {
 } from "../lib/catalog-values.js";
 import { uploadFileToMinio } from "../lib/minio.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
+import { calculateCompatibility } from "../lib/matching.js";
 
 const optionalPositiveInt = z.preprocess(
   (value) => (value === "" || value === null ? undefined : value),
@@ -299,7 +300,16 @@ export async function submitAdoption(req: Request, res: Response) {
       otherAnimalsDetail: values.otherAnimalsDetail || null,
       experience: values.experience || null,
       acceptsTerms: values.acceptsTerms,
+      statusId: CatalogIds.adoptionStatus.nueva,
     });
+
+    if (adoption.petId) {
+      const pet = await petRepo().findOneBy({ id: adoption.petId });
+      if (pet) {
+        adoption.compatibilityScore = calculateCompatibility(adoption, pet).score;
+      }
+    }
+
     await adoptionRepo.save(adoption);
   } catch (e) {
     console.warn("No se pudo guardar registro de adoption:", e);

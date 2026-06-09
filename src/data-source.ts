@@ -28,6 +28,7 @@ import { AddFollowupCatalog1748600100000 } from "./migration/1748600100000-AddFo
 import { AddSeguimientos1748600101000 } from "./migration/1748600101000-AddSeguimientos.js";
 import { AddMessageTable1748700000000 } from "./migration/1748700000000-AddMessageTable.js";
 import { AddUserStatusAndNote1748710000000 } from "./migration/1748710000000-AddUserStatusAndNote.js";
+import { AddPetCompatibilityFields1748800000000 } from "./migration/1748800000000-AddPetCompatibilityFields.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -56,6 +57,7 @@ export const AppDataSource = new DataSource({
     AddSeguimientos1748600101000,
     AddMessageTable1748700000000,
     AddUserStatusAndNote1748710000000,
+    AddPetCompatibilityFields1748800000000,
   ],
   synchronize: false,
 });

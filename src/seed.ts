@@ -7,8 +7,10 @@ import { Pet } from "./entity/Pet.js";
 import { User } from "./entity/User.js";
 import { Followup } from "./entity/Followup.js";
 import { Adoption } from "./entity/Adoption.js";
+import { Message } from "./entity/Message.js";
 import { CatalogIds } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
+import { calculateCompatibility } from "./lib/matching.js";
 
 const seedAssetsDir = path.join(process.cwd(), "src", "seed-assets");
 
@@ -52,9 +54,8 @@ async function seed() {
   const petsData = [
     {
       name: "Toby",
-      animalTypeId: 1,
-      // photos will be uploaded per-pet below
-      description: "Perro marron, amigable, llevaba collar azul cuando fue visto",
+      animalTypeId: CatalogIds.animalType.perro,
+      description: "Perro marron, amigable, ideal para departamento si sale a pasear.",
       date: "2026-04-22",
       location: "Vergara 2396, Villa Tesei",
       contactPhone: "1134567890",
@@ -68,12 +69,15 @@ async function seed() {
       hasCollar: true,
       vaccinated: true,
       friendlyWithKids: true,
+      friendlyWithPets: true,
+      activityLevelId: CatalogIds.activityLevel.moderado,
+      statusId: CatalogIds.petStatus.adopcion,
+      reportStatusId: CatalogIds.petReportStatus.activo,
     },
     {
       name: "Luna",
-      animalTypeId: 2,
-      // photos will be uploaded per-pet below
-      description: "Es una gata naranja, se la veia tranquila y podemos tenerla hasta nuevo aviso",
+      animalTypeId: CatalogIds.animalType.gato,
+      description: "Es una gata naranja, muy tranquila, duerme todo el día.",
       date: "2026-04-22",
       location: "Adolfo Alsina 2256, Florida, Buenos Aires",
       contactPhone: "1198765432",
@@ -83,11 +87,16 @@ async function seed() {
       ageMonths: 12,
       color: "Naranja",
       weightKg: 4.2,
+      friendlyWithKids: false,
+      friendlyWithPets: false,
+      activityLevelId: CatalogIds.activityLevel.tranquilo,
+      statusId: CatalogIds.petStatus.adopcion,
+      reportStatusId: CatalogIds.petReportStatus.activo,
     },
     {
       name: "Max",
-      animalTypeId: 1,
-      description: "Perro atigrado, encontrado cerca del parque, muy juguetón",
+      animalTypeId: CatalogIds.animalType.perro,
+      description: "Perro atigrado, encontrado cerca del parque, muy juguetón y activo.",
       date: "2026-05-10",
       location: "Parque Centenario, Buenos Aires",
       contactPhone: "1144455566",
@@ -97,11 +106,17 @@ async function seed() {
       ageMonths: 36,
       color: "Atigrado",
       weightKg: 20,
+      vaccinated: true,
+      friendlyWithKids: true,
+      friendlyWithPets: true,
+      activityLevelId: CatalogIds.activityLevel.activo,
+      statusId: CatalogIds.petStatus.adopcion,
+      reportStatusId: CatalogIds.petReportStatus.activo,
     },
     {
       name: "Misi",
-      animalTypeId: 2,
-      description: "Gata pequeña encontrada, muy cariñosa",
+      animalTypeId: CatalogIds.animalType.gato,
+      description: "Gata pequeña encontrada, muy cariñosa y activa.",
       date: "2026-05-12",
       location: "Palermo, Buenos Aires",
       contactPhone: "1145566677",
@@ -111,18 +126,17 @@ async function seed() {
       ageMonths: 8,
       color: "Blanca",
       weightKg: 3.5,
+      vaccinated: false,
+      friendlyWithKids: true,
+      friendlyWithPets: true,
+      activityLevelId: CatalogIds.activityLevel.activo,
+      statusId: CatalogIds.petStatus.adopcion,
+      reportStatusId: CatalogIds.petReportStatus.activo,
     },
-    // Additional seed pets (~10)
-    { name: "Rex", animalTypeId: 1, description: "Perro en adopción, juguetón", date: "2026-05-01", location: "Recoleta", contactPhone: "1140000001", contactEmail: "rex@example.com", sexId: CatalogIds.petSex.macho, breed: "Labrador", ageMonths: 30, color: "Negro", weightKg: 25, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Nina", animalTypeId: 2, description: "Gata casera, buena con niños", date: "2026-05-02", location: "Caballito", contactPhone: "1140000002", contactEmail: "nina@example.com", sexId: CatalogIds.petSex.hembra, breed: "Siames", ageMonths: 18, color: "Gris", weightKg: 4.0, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Oso", animalTypeId: 1, description: "Perro grande, protector", date: "2026-05-03", location: "Lanús", contactPhone: "1140000003", contactEmail: "oso@example.com", sexId: CatalogIds.petSex.macho, breed: "Mastín", ageMonths: 48, color: "Café", weightKg: 40, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Mora", animalTypeId: 2, description: "Gata tímida, necesita paciencia", date: "2026-05-04", location: "Belgrano", contactPhone: "1140000004", contactEmail: "mora@example.com", sexId: CatalogIds.petSex.hembra, breed: "Común", ageMonths: 14, color: "Atigrada", weightKg: 3.8, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Tito", animalTypeId: 1, description: "Perro mayor, tranquilo", date: "2026-05-05", location: "San Telmo", contactPhone: "1140000005", contactEmail: "tito@example.com", sexId: CatalogIds.petSex.macho, breed: "Beagle", ageMonths: 84, color: "Tricolor", weightKg: 12, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Coco", animalTypeId: 1, description: "Cachorro, necesita socialización", date: "2026-05-06", location: "Villa Crespo", contactPhone: "1140000006", contactEmail: "coco@example.com", sexId: CatalogIds.petSex.macho, breed: "Mix", ageMonths: 6, color: "Blanco", weightKg: 6, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Lola", animalTypeId: 2, description: "Gata mayor, cariñosa", date: "2026-05-07", location: "Constitución", contactPhone: "1140000007", contactEmail: "lola@example.com", sexId: CatalogIds.petSex.hembra, breed: "Común", ageMonths: 72, color: "Marrón", weightKg: 4.5, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Kilo", animalTypeId: 1, description: "Perro en tránsito, amistoso", date: "2026-05-08", location: "Florencio Varela", contactPhone: "1140000008", contactEmail: "kilo@example.com", sexId: CatalogIds.petSex.macho, breed: "Mix", ageMonths: 20, color: "Atigrado", weightKg: 16, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Michi", animalTypeId: 2, description: "Gatito rescatado, juguetón", date: "2026-05-09", location: "Morón", contactPhone: "1140000009", contactEmail: "michi@example.com", sexId: CatalogIds.petSex.hembra, breed: "Común", ageMonths: 4, color: "Negra", weightKg: 2.2, reportStatusId: CatalogIds.petReportStatus.activo },
-    { name: "Pepa", animalTypeId: 2, description: "Gata encontrada, sociable", date: "2026-05-11", location: "Olivos", contactPhone: "1140000010", contactEmail: "pepa@example.com", sexId: CatalogIds.petSex.hembra, breed: "Común", ageMonths: 10, color: "Blanca", weightKg: 3.1, reportStatusId: CatalogIds.petReportStatus.activo },
+    { name: "Rex", animalTypeId: CatalogIds.animalType.perro, description: "Perro joven, requiere mucho patio y ejercicios largos.", date: "2026-05-01", location: "Recoleta", contactPhone: "1140000001", contactEmail: "rex@example.com", sexId: CatalogIds.petSex.macho, breed: "Labrador", ageMonths: 30, color: "Negro", weightKg: 25, vaccinated: true, friendlyWithKids: true, friendlyWithPets: false, activityLevelId: CatalogIds.activityLevel.activo, statusId: CatalogIds.petStatus.adopcion, reportStatusId: CatalogIds.petReportStatus.activo },
+    { name: "Nina", animalTypeId: CatalogIds.animalType.gato, description: "Gata casera, buena con niños, pero asustadiza con otros gatos.", date: "2026-05-02", location: "Caballito", contactPhone: "1140000002", contactEmail: "nina@example.com", sexId: CatalogIds.petSex.hembra, breed: "Siames", ageMonths: 18, color: "Gris", weightKg: 4.0, vaccinated: true, friendlyWithKids: true, friendlyWithPets: false, activityLevelId: CatalogIds.activityLevel.moderado, statusId: CatalogIds.petStatus.adopcion, reportStatusId: CatalogIds.petReportStatus.activo },
+    { name: "Oso", animalTypeId: CatalogIds.animalType.perro, description: "Perro grande, protector, ideal para el campo o grandes jardines.", date: "2026-05-03", location: "Lanús", contactPhone: "1140000003", contactEmail: "oso@example.com", sexId: CatalogIds.petSex.macho, breed: "Mastín", ageMonths: 48, color: "Café", weightKg: 40, vaccinated: true, friendlyWithKids: false, friendlyWithPets: false, activityLevelId: CatalogIds.activityLevel.tranquilo, statusId: CatalogIds.petStatus.adopcion, reportStatusId: CatalogIds.petReportStatus.activo },
+    { name: "Mora", animalTypeId: CatalogIds.animalType.gato, description: "Gata tímida, necesita paciencia, no compatible con niños pequeños.", date: "2026-05-04", location: "Belgrano", contactPhone: "1140000004", contactEmail: "mora@example.com", sexId: CatalogIds.petSex.hembra, breed: "Común", ageMonths: 14, color: "Atigrada", weightKg: 3.8, vaccinated: true, friendlyWithKids: false, friendlyWithPets: true, activityLevelId: CatalogIds.activityLevel.tranquilo, statusId: CatalogIds.petStatus.adopcion, reportStatusId: CatalogIds.petReportStatus.activo },
   ];
 
   const createdPets: { id: string; name: string | null }[] = [];
@@ -145,6 +159,9 @@ async function seed() {
     }
   }
   console.log(`Seed completed: ${petsData.length} pets inserted.`);
+
+  const repoMessages = AppDataSource.getRepository(Message);
+  await repoMessages.createQueryBuilder().delete().execute();
 
   const repoUsers = AppDataSource.getRepository(User);
   await repoUsers.createQueryBuilder().delete().execute();
@@ -245,7 +262,7 @@ async function seed() {
     const name = extraPetNames[i];
     extraPets.push({
       name,
-      animalTypeId: i % 2 === 0 ? 1 : 2,
+      animalTypeId: i % 2 === 0 ? CatalogIds.animalType.perro : CatalogIds.animalType.gato,
       description: extraPetDescriptions[i],
       date: "2026-05-01",
       location: `Barrio ${i + 1}, Ciudad`,
@@ -256,6 +273,11 @@ async function seed() {
       ageMonths: 6 + i,
       color: "Mixto",
       weightKg: 3 + i,
+      vaccinated: i % 3 !== 0,
+      friendlyWithKids: i % 2 === 0,
+      friendlyWithPets: i % 4 !== 0,
+      activityLevelId: i % 3 === 0 ? CatalogIds.activityLevel.tranquilo : (i % 3 === 1 ? CatalogIds.activityLevel.moderado : CatalogIds.activityLevel.activo),
+      statusId: CatalogIds.petStatus.adopcion,
       reportStatusId: CatalogIds.petReportStatus.activo,
     });
   }
@@ -277,6 +299,9 @@ async function seed() {
   // Create ~10 adoption requests
   const repoAdopt = repoAdoption; // already defined above
   const adoptionSamples = [] as Adoption[];
+  const firstNames = ["Juan", "Maria", "Carlos", "Ana", "Laura", "Ricardo", "Pedro", "Lucia", "Sofia", "Diego"];
+  const lastNames = ["Perez", "Gomez", "Ruiz", "Lopez", "Martinez", "Silva", "Gonzalez", "Rodriguez", "Fernandez", "Diaz"];
+
   for (let i = 1; i <= 10; i++) {
     const user = allUsers[i % allUsers.length];
     const pet = allPets[i % allPets.length];
@@ -284,32 +309,38 @@ async function seed() {
       userId: user?.id ?? null,
       petId: pet?.id ?? null,
       preferredAnimalTypeId: pet?.animalTypeId ?? null,
-      firstName: `Adoptante${i}`,
-      lastName: `Apellido${i}`,
-      email: `adoptante${i}@example.com`,
+      firstName: firstNames[i % firstNames.length],
+      lastName: lastNames[i % lastNames.length],
+      email: `${firstNames[i % firstNames.length].toLowerCase()}.${lastNames[i % lastNames.length].toLowerCase()}@example.com`,
       phone: `11600000${i}`,
-      addressLine1: `Calle ${i} #${i}`,
+      addressLine1: `Calle ${i * 10} #${i * 100}`,
       addressLine2: null,
       postcode: `C100${i}`,
-      town: `Ciudad${i}`,
-      hasGardenId: null,
-      livingSituationId: null,
-      householdSettingId: null,
-      activityLevelId: null,
-      adults: 2,
-      children: 0,
-      visitingChildrenId: null,
-      hasFlatmatesId: null,
-      allergies: null,
-      otherAnimalsId: null,
-      otherAnimalsDetail: null,
-      neuteredId: null,
-      vaccinatedId: null,
-      experience: "Tengo experiencia previa con mascotas",
+      town: "Ciudad Autónoma de Buenos Aires",
+      hasGardenId: i % 2 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
+      livingSituationId: i % 2 === 0 ? CatalogIds.livingSituation.casa : CatalogIds.livingSituation.departamento,
+      householdSettingId: CatalogIds.householdSetting.urbano,
+      activityLevelId: i % 3 === 0 ? CatalogIds.activityLevel.activo : (i % 3 === 1 ? CatalogIds.activityLevel.moderado : CatalogIds.activityLevel.tranquilo),
+      adults: (i % 3) + 1,
+      children: i % 4,
+      visitingChildrenId: i % 3 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
+      hasFlatmatesId: CatalogIds.yesNo.no,
+      allergies: i === 5 ? "Tengo alergia a los gatos" : null,
+      otherAnimalsId: i % 2 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
+      otherAnimalsDetail: i % 2 === 0 ? "Tengo un perro pequeño" : null,
+      neuteredId: CatalogIds.yesNo.si,
+      vaccinatedId: CatalogIds.yesNo.si,
+      experience: i % 2 === 0 ? "Tengo experiencia previa con mascotas rescatadas" : "Es mi primera mascota",
       acceptsTerms: true,
-      statusId: CatalogIds.adoptionStatus.nueva,
+      statusId: Object.values(CatalogIds.adoptionStatus)[i % Object.values(CatalogIds.adoptionStatus).length],
       compatibilityScore: null,
     });
+    
+    // Calculate compatibility score
+    if (pet) {
+      a.compatibilityScore = calculateCompatibility(a, pet).score;
+    }
+    
     adoptionSamples.push(a as any);
   }
   await repoAdopt.save(adoptionSamples);
