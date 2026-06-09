@@ -574,7 +574,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"receiverId\": 2,\n  \"content\": \"Hola! Tengo una consulta sobre la adopción...\"\n}"
+              "raw": "{\n  \"receiverId\": 1,\n  \"content\": \"Hola! Tengo una consulta sobre la adopción...\"\n}"
             },
             "url": "{{baseUrl}}/api/messages"
           }
