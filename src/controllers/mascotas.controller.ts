@@ -53,6 +53,7 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
   const status = catalogInfo(catalogValuesById, mascota.statusId);
   const reportStatus = catalogInfo(catalogValuesById, mascota.reportStatusId);
   const medicalStatus = catalogInfo(catalogValuesById, mascota.medicalStatusId);
+  const activityLevel = catalogInfo(catalogValuesById, mascota.activityLevelId);
   const payload = { ...(mascota as any) };
 
   return {
@@ -72,6 +73,9 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
     reportStatus: reportStatus?.code ?? null,
     reportStatusLabel: reportStatus?.label ?? null,
     reportStatusInfo: reportStatus,
+    activityLevel: activityLevel?.code ?? null,
+    activityLevelLabel: activityLevel?.label ?? null,
+    activityLevelInfo: activityLevel,
   };
 }
 
@@ -370,6 +374,7 @@ export async function createMascota(req: Request, res: Response) {
       sexId: maybeNumber(bodyForValidation.sexId),
       statusId: maybeNumber(bodyForValidation.statusId),
       medicalStatusId: maybeNumber(bodyForValidation.medicalStatusId),
+      activityLevelId: maybeNumber(bodyForValidation.activityLevelId),
     };
 
     // campos booleanos enviados como "true"/"false"
@@ -380,6 +385,7 @@ export async function createMascota(req: Request, res: Response) {
       "neutered",
       "vaccinated",
       "friendlyWithKids",
+      "friendlyWithPets",
       "trained",
     ];
     for (const f of booleanFields) {
@@ -423,6 +429,7 @@ export async function createMascota(req: Request, res: Response) {
     sexId: number | null | undefined;
     statusId: number | null | undefined;
     medicalStatusId: number | null | undefined;
+    activityLevelId: number | null | undefined;
   };
   try {
     const animalTypeId = await resolveCatalogValueId(
@@ -448,6 +455,11 @@ export async function createMascota(req: Request, res: Response) {
         Catalog.PET_MEDICAL_STATUS,
         data.medicalStatusId,
         data.medicalStatus,
+      ),
+      activityLevelId: await resolveOptionalCatalogId(
+        Catalog.ACTIVITY_LEVEL,
+        data.activityLevelId,
+        data.activityLevel,
       ),
     };
   } catch (error) {
@@ -484,6 +496,10 @@ export async function createMascota(req: Request, res: Response) {
     ...(catalogIds.medicalStatusId !== undefined &&
     catalogIds.medicalStatusId !== null
       ? { medicalStatusId: catalogIds.medicalStatusId }
+      : {}),
+    ...(catalogIds.activityLevelId !== undefined &&
+    catalogIds.activityLevelId !== null
+      ? { activityLevelId: catalogIds.activityLevelId }
       : {}),
     userId,
     ...coords,
@@ -651,6 +667,7 @@ export async function updateMascota(req: Request, res: Response) {
         statusId?: number | null;
         medicalStatusId?: number | null;
         reportStatusId?: number | null;
+        activityLevelId?: number | null;
       }
     | undefined;
   // si no es admin, evitamos que modifique el reportStatus
@@ -681,6 +698,11 @@ export async function updateMascota(req: Request, res: Response) {
         Catalog.PET_MEDICAL_STATUS,
         data.medicalStatusId,
         data.medicalStatus,
+      ),
+      activityLevelId: await resolveOptionalCatalogId(
+        Catalog.ACTIVITY_LEVEL,
+        data.activityLevelId,
+        data.activityLevel,
       ),
       // reportStatus only resolved for admins
       ...(isAdmin
@@ -726,6 +748,10 @@ export async function updateMascota(req: Request, res: Response) {
     ...(catalogIds?.medicalStatusId !== undefined &&
     catalogIds.medicalStatusId !== null
       ? { medicalStatusId: catalogIds.medicalStatusId }
+      : {}),
+    ...(catalogIds?.activityLevelId !== undefined &&
+    catalogIds.activityLevelId !== null
+      ? { activityLevelId: catalogIds.activityLevelId }
       : {}),
     ...(isAdmin &&
     catalogIds?.reportStatusId !== undefined &&
