@@ -5,7 +5,8 @@ import {
   getOrCreateSession,
   setLastIntent,
 } from "./chatbot.session.js";
-import { openaiTools, toolsByName } from "./chatbot.tools.js";
+import { findPetsByStatus, openaiTools, toolsByName } from "./chatbot.tools.js";
+import { CatalogIds } from "../lib/catalog-constants.js";
 import {
   ChatResponse,
   SessionMessage,
@@ -50,6 +51,171 @@ function maxIterations() {
  * cualquier "resultado" que el modelo escriba después es alucinación: la
  * tool nunca se ejecutó.
  */
+/**
+ * Detección heurística de intención de CREAR (reporte de mascota perdida,
+ * encontrada o adopción) basada en el mensaje del usuario.
+ *
+ * Se usa para aplicar el auth gate server-side: si el usuario está anónimo
+ * y su mensaje sugiere que quiere crear algo, devolvemos el mensaje canónico
+ * sin invocar al LLM. Esto es más confiable que esperar que el modelo
+ * respete la regla del system prompt (Llama a veces la ignora).
+ *
+ * Falsos positivos posibles: si alguien dice "perdí mi paraguas en el bar",
+ * va a recibir el mensaje de auth. Para Huellitas Unidas, "perdí" casi
+ * siempre significa "perdí mi mascota", así que es aceptable.
+ */
+function userIntendsToCreate(message: string): boolean {
+  // Bug fix: \b en JavaScript no funciona con caracteres acentuados (í, é, ó,
+  // etc.) porque no los considera "word characters". Workaround: reemplazar
+  // toda la puntuación por espacios y poner padding, así usamos \s como
+  // boundary (que sí funciona con tildes).
+  const lower = message.toLowerCase();
+  const padded = ` ${lower.replace(/[¿?¡!,.;:()"]/g, " ")} `;
+  // Verbos típicos del dominio:
+  //   - lost: perdí/perdi/perdió/perdio/extravié/extravio/se escapó/se me escapó/se fue/no aparece
+  //   - found: encontré/encontre/hallé/halle/se acercó
+  //   - adoption: quiero adoptar / me gustaría adoptar / adoptar una/un/mascota
+  //   - generic: reportar mascota
+  return /\s(perd[ií]|perd[ií]o|extravi[eé]|extravi[oó]|encontr[eé]|hall[eé]|escap[oó]|se\s+(escap[oó]|fue|me\s+escap[oó])|no\s+aparece|quiero\s+adoptar|me\s+gustar[ií]a\s+adoptar|adoptar\s+(una|un|mascota)|reportar\s+(mi|una|un|mascota))\s/i.test(padded);
+}
+
+const AUTH_GATE_MESSAGE =
+  "Te puedo ayudar con eso. Si querés crear un reporte oficial vas a necesitar " +
+  "iniciar sesión primero, pero también podés revisar si alguien ya reportó tu mascota " +
+  "buscando en la plataforma (eso no requiere login). ¿Qué preferís hacer?";
+
+/**
+ * Quick replies sugeridas cuando se activa el auth gate. Dan al usuario
+ * dos caminos claros: seguir como anónimo para buscar, o ir a loguearse
+ * si su intención era crear algo.
+ */
+const AUTH_GATE_QUICK_REPLIES = [
+  {
+    label: "Buscar reportes existentes",
+    value: "Mostrame los reportes que ya hay para ver si está mi mascota",
+  },
+  {
+    label: "Iniciar sesión",
+    value: "Quiero iniciar sesión para crear un reporte",
+  },
+];
+
+
+/**
+ * Detecta cuando el usuario quiere VER el listado de reportes sin filtros
+ * específicos (ej: clickeó el quick reply "Buscar reportes existentes" o
+ * tipeó "mostrame qué reportes hay"). Para estos casos usamos un bypass
+ * server-side que llama listLostPets + listFoundPets sin filtros y devuelve
+ * un formato consistente. Razón: con el modelo actual, el LLM tiende a
+ * inventar filtros (animalType/location) cuando el usuario no los provee,
+ * lo que produce listas truncadas o tool calls mal formados.
+ *
+ * NO matcheamos cuando el usuario ya dio filtros (ej: "mostrame perros en
+ * Palermo"): ahí dejamos que el LLM haga el trabajo normalmente.
+ */
+/**
+ * Detecta intención de listar reportes (con o sin filtro de tipo de animal).
+ * Si menciona zona específica, dejamos que el LLM maneje (filtros de zona
+ * tienen mucha variación natural).
+ */
+function userWantsListing(message: string): boolean {
+  const lower = message.toLowerCase();
+  const padded = ` ${lower.replace(/[¿?¡!,.;:()"]/g, " ")} `;
+  const hasListVerb = /\s(mostrame|mostr[aá]|ver|listame|list[aá]|mostr[aá]me|quiero\s+ver|qu[eé]\s+reportes|qu[eé]\s+mascotas)\s/i.test(padded);
+  const mentionsReports = /\s(reportes?|mascotas?|listado|perros?|gatos?|otros?)\s/i.test(padded);
+  // Si menciona zona específica, NO matchea (el LLM lo maneja mejor)
+  const hasLocation = /\b(en\s+\w+|zona\s+|barrio\s+|palermo|belgrano|villa\s+urquiza|almagro|caballito|recoleta|flores|boedo|villa\s+crespo|san\s+telmo)\b/i.test(lower);
+  return hasListVerb && mentionsReports && !hasLocation;
+}
+
+/**
+ * Extrae el tipo de animal del mensaje del usuario. Devuelve null si no
+ * mencionó tipo (caso "mostrame reportes" sin más). En ese caso preguntamos.
+ */
+function detectListingAnimalType(message: string): "perro" | "gato" | "otro" | null {
+  const lower = message.toLowerCase();
+  if (/\b(perros?|canes?)\b/i.test(lower)) return "perro";
+  if (/\b(gatos?|felinos?|mininos?)\b/i.test(lower)) return "gato";
+  if (/\botros?\s+animal/i.test(lower)) return "otro";
+  return null;
+}
+
+type MinimalPet = {
+  id?: number | string;
+  name?: string | null;
+  description?: string | null;
+  animalType?: string | null;
+  breed?: string | null;
+  color?: string | null;
+  location?: string | null;
+  date?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+};
+
+function formatPet(pet: MinimalPet): string {
+  // Construye una línea por mascota mostrando solo campos con valor real.
+  const head = pet.name ? `${pet.name} — ` : "";
+  const descParts: string[] = [];
+  if (pet.animalType) descParts.push(pet.animalType);
+  if (pet.breed) descParts.push(pet.breed);
+  if (pet.color) descParts.push(pet.color);
+  if (descParts.length === 0 && pet.description) {
+    descParts.push(pet.description.slice(0, 80));
+  }
+  const desc = descParts.join(" ");
+  // Cuando NO hay nombre, la línea arranca con el tipo de animal en
+  // minúscula (viene así de la DB). Lo capitalizamos para que la oración
+  // se lea natural: "Perro mestizo..." en vez de "perro mestizo...".
+  const body = head ? `${head}${desc}` : desc.charAt(0).toUpperCase() + desc.slice(1);
+  const where = pet.location ? `, en ${pet.location}` : "";
+  const when = pet.date ? `, ${pet.date}` : "";
+  const contact = pet.contactPhone
+    ? `. Contacto: ${pet.contactPhone}`
+    : pet.contactEmail
+      ? `. Contacto: ${pet.contactEmail}`
+      : "";
+  return `- ${body}${where}${when}${contact}.`;
+}
+
+async function buildListingsBypassMessage(
+  animalType: "perro" | "gato" | "otro",
+): Promise<string> {
+  const [lost, found] = await Promise.all([
+    findPetsByStatus({
+      statusId: CatalogIds.petStatus.perdido,
+      animalType,
+      limit: 5,
+    }),
+    findPetsByStatus({
+      statusId: CatalogIds.petStatus.encontrado,
+      animalType,
+      limit: 5,
+    }),
+  ]);
+
+  const labelPlural =
+    animalType === "perro" ? "perros" : animalType === "gato" ? "gatos" : "otros animales";
+
+  const parts: string[] = [];
+  if (lost.length === 0 && found.length === 0) {
+    return `Por ahora no hay reportes activos de ${labelPlural}. ¿Querés probar con otro tipo de animal o filtrar por zona?`;
+  }
+
+  if (found.length > 0) {
+    parts.push(`Reportes recientes de ${labelPlural} encontrados:`);
+    parts.push(found.map(formatPet).join("\n"));
+  }
+  if (lost.length > 0) {
+    if (parts.length > 0) parts.push("");
+    parts.push(`Reportes recientes de ${labelPlural} perdidos:`);
+    parts.push(lost.map(formatPet).join("\n"));
+  }
+  parts.push("");
+  parts.push("¿Alguna coincide con la que buscás? Si querés filtrar por barrio, decímelo.");
+  return parts.join("\n");
+}
+
 /**
  * Lista de nombres de tools (debe mantenerse sincronizada con chatbot.tools.ts).
  * El system prompt prohíbe al modelo mencionarlas al usuario, así que cualquier
@@ -144,6 +310,94 @@ export async function handleChatMessage(
   };
   await appendMessages(session, [userMessage]);
 
+  // AUTH GATE SERVER-SIDE: si el usuario está anónimo y su mensaje sugiere
+  // intención de crear, devolvemos el mensaje canónico sin invocar al LLM.
+  // Esto es 100% determinístico y no depende de que el modelo respete el
+  // prompt (Llama a veces lo ignora). Ahorra tokens y latencia también.
+  if (!params.userContext && userIntendsToCreate(params.message)) {
+    await appendMessages(session, [
+      { role: "assistant", content: AUTH_GATE_MESSAGE },
+    ]);
+    await setLastIntent(session, "auth_required");
+
+    const response: ChatResponse = {
+      sessionId: session.id,
+      messages: [
+        { role: "assistant", type: "text", text: AUTH_GATE_MESSAGE },
+      ],
+      quickReplies: AUTH_GATE_QUICK_REPLIES,
+    };
+    if (params.debug === true || process.env.CHAT_DEBUG === "true") {
+      response.debug = {
+        detectedIntent: "auth_required",
+        toolCalls: [],
+        model: model(),
+        iterations: 0,
+        authenticated: false,
+      };
+    }
+    return response;
+  }
+
+  // SEGUNDO BYPASS SERVER-SIDE: listado genérico de reportes.
+  // Cuando el usuario tipea "mostrame los reportes" o equivalentes sin
+  // dar filtros, llamamos las tools directamente y formateamos. Esto evita
+  // que el LLM invente animalType/location y produzca tool calls mal
+  // formados (problema observado con llama-3.1-8b-instant).
+  if (userWantsListing(params.message)) {
+    const animalType = detectListingAnimalType(params.message);
+    if (animalType === null) {
+      // Sin tipo específico: preguntar al usuario qué quiere ver
+      const askText =
+        "¿Qué tipo de mascota te interesa ver? Tocá una opción:";
+      await appendMessages(session, [
+        { role: "assistant", content: askText },
+      ]);
+      await setLastIntent(session, "listing_pick_type");
+      const response: ChatResponse = {
+        sessionId: session.id,
+        messages: [{ role: "assistant", type: "text", text: askText }],
+        quickReplies: [
+          { label: "Reportes de perros", value: "Mostrame los reportes de perros" },
+          { label: "Reportes de gatos", value: "Mostrame los reportes de gatos" },
+          { label: "Otros animales", value: "Mostrame los reportes de otros animales" },
+        ],
+      };
+      if (params.debug === true || process.env.CHAT_DEBUG === "true") {
+        response.debug = {
+          detectedIntent: "listing_pick_type",
+          toolCalls: [],
+          model: model(),
+          iterations: 0,
+          authenticated: !!params.userContext,
+        };
+      }
+      return response;
+    }
+
+    // Con tipo concreto: mostrar el listado filtrado
+    const listingText = await buildListingsBypassMessage(animalType);
+    await appendMessages(session, [
+      { role: "assistant", content: listingText },
+    ]);
+    await setLastIntent(session, "listing");
+
+    const response: ChatResponse = {
+      sessionId: session.id,
+      messages: [{ role: "assistant", type: "text", text: listingText }],
+    };
+    if (params.debug === true || process.env.CHAT_DEBUG === "true") {
+      response.debug = {
+        detectedIntent: "listing",
+        toolCalls: [],
+        model: model(),
+        iterations: 0,
+        authenticated: !!params.userContext,
+      };
+    }
+    return response;
+  }
+
   const client = getClient();
   const tracedToolCalls: ToolCallTrace[] = [];
   let lastIntent: string | null = session.lastIntent;
@@ -153,9 +407,15 @@ export async function handleChatMessage(
   // System messages: el prompt principal + (opcional) el contexto del usuario.
   // Se inyectan en cada call para que no se trunquen junto con el historial.
   const userContextPrompt = buildUserContextPrompt(params.userContext);
+  // Inyectamos la fecha actual al modelo. Sin esto, el LLM no sabe qué día
+  // es hoy (su conocimiento puede estar varios meses atrasado) y termina
+  // guardando fechas como "hoy", "ayer" en texto literal.
+  const today = new Date();
+  const dateContext = `Fecha actual: ${today.toISOString().slice(0, 10)} (formato YYYY-MM-DD). Si el usuario dice "hoy", "ayer" o "anteayer", calculá la fecha real basándote en esto y pasala SIEMPRE en formato YYYY-MM-DD a las tools de creación. NUNCA pases "hoy" o "ayer" como string literal.`;
   const systemMessages: SessionMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "system", content: userContextPrompt },
+    { role: "system", content: dateContext },
   ];
 
   while (iterations < maxIterations()) {

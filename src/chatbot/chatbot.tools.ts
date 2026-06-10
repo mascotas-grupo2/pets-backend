@@ -53,7 +53,7 @@ async function serializeMinimalPet(pet: Pet) {
   };
 }
 
-async function findPetsByStatus(params: {
+export async function findPetsByStatus(params: {
   statusId: number;
   location?: string;
   animalType?: string;
