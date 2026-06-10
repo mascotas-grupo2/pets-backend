@@ -266,7 +266,12 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
 
 export async function getMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const mascota = await repo().findOneBy({ id });
+  let mascota;
+  try {
+    mascota = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!mascota) return res.status(404).json({ error: "Pet no encontrada" });
   // No revelamos la existencia de reportes no-públicos a terceros.
   if (!canViewPet(mascota, req.authUser)) {
@@ -295,6 +300,7 @@ export async function createMascota(req: Request, res: Response) {
       sexId: maybeNumber(bodyForValidation.sexId),
       statusId: maybeNumber(bodyForValidation.statusId),
       medicalStatusId: maybeNumber(bodyForValidation.medicalStatusId),
+      activityLevelId: maybeNumber(bodyForValidation.activityLevelId),
     };
 
     // campos booleanos enviados como "true"/"false"
@@ -305,6 +311,7 @@ export async function createMascota(req: Request, res: Response) {
       "neutered",
       "vaccinated",
       "friendlyWithKids",
+      "friendlyWithPets",
       "trained",
     ];
     for (const f of booleanFields) {
@@ -348,6 +355,7 @@ export async function createMascota(req: Request, res: Response) {
     sexId: number | null | undefined;
     statusId: number | null | undefined;
     medicalStatusId: number | null | undefined;
+    activityLevelId: number | null | undefined;
   };
   try {
     const animalTypeId = await resolveCatalogValueId(
@@ -373,6 +381,11 @@ export async function createMascota(req: Request, res: Response) {
         Catalog.PET_MEDICAL_STATUS,
         data.medicalStatusId,
         data.medicalStatus,
+      ),
+      activityLevelId: await resolveOptionalCatalogId(
+        Catalog.ACTIVITY_LEVEL,
+        data.activityLevelId,
+        data.activityLevel,
       ),
     };
   } catch (error) {
@@ -409,6 +422,10 @@ export async function createMascota(req: Request, res: Response) {
     ...(catalogIds.medicalStatusId !== undefined &&
     catalogIds.medicalStatusId !== null
       ? { medicalStatusId: catalogIds.medicalStatusId }
+      : {}),
+    ...(catalogIds.activityLevelId !== undefined &&
+    catalogIds.activityLevelId !== null
+      ? { activityLevelId: catalogIds.activityLevelId }
       : {}),
     userId,
     ...coords,
@@ -553,7 +570,12 @@ export async function updateMascota(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   // permiso: admin puede editar cualquier reporte; usuario puede editar solo sus propios reportes
   const authUser = req.authUser;
@@ -571,6 +593,7 @@ export async function updateMascota(req: Request, res: Response) {
         statusId?: number | null;
         medicalStatusId?: number | null;
         reportStatusId?: number | null;
+        activityLevelId?: number | null;
       }
     | undefined;
   // si no es admin, evitamos que modifique el reportStatus
@@ -601,6 +624,11 @@ export async function updateMascota(req: Request, res: Response) {
         Catalog.PET_MEDICAL_STATUS,
         data.medicalStatusId,
         data.medicalStatus,
+      ),
+      activityLevelId: await resolveOptionalCatalogId(
+        Catalog.ACTIVITY_LEVEL,
+        data.activityLevelId,
+        data.activityLevel,
       ),
       // reportStatus only resolved for admins
       ...(isAdmin
@@ -647,6 +675,10 @@ export async function updateMascota(req: Request, res: Response) {
     catalogIds.medicalStatusId !== null
       ? { medicalStatusId: catalogIds.medicalStatusId }
       : {}),
+    ...(catalogIds?.activityLevelId !== undefined &&
+    catalogIds.activityLevelId !== null
+      ? { activityLevelId: catalogIds.activityLevelId }
+      : {}),
     ...(isAdmin &&
     catalogIds?.reportStatusId !== undefined &&
     catalogIds.reportStatusId !== null
@@ -666,7 +698,12 @@ export async function updateMascota(req: Request, res: Response) {
 
 export async function approveMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.activo;
   const saved = await repo().save(existing);
@@ -676,7 +713,12 @@ export async function approveMascota(req: Request, res: Response) {
 
 export async function finalizeMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
   const saved = await repo().save(existing);
@@ -686,7 +728,12 @@ export async function finalizeMascota(req: Request, res: Response) {
 
 export async function rejectMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.rechazado;
   const saved = await repo().save(existing);
@@ -696,7 +743,12 @@ export async function rejectMascota(req: Request, res: Response) {
 
 export async function deleteMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   await repo().remove(existing);
   res.status(204).send();
@@ -704,7 +756,12 @@ export async function deleteMascota(req: Request, res: Response) {
 
 export async function listPetNotes(req: Request, res: Response) {
   const petId = req.params.id;
-  const exists = await repo().findOneBy({ id: petId });
+  let exists;
+  try {
+    exists = await repo().findOneBy({ id: petId });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!exists) return res.status(404).json({ error: "Pet no encontrada" });
   const notes = await noteRepo().find({
     where: { petId },
@@ -720,7 +777,12 @@ export async function createPetNote(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const pet = await repo().findOneBy({ id: petId });
+  let pet;
+  try {
+    pet = await repo().findOneBy({ id: petId });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
 
   const authorId = req.authUser?.id ?? null;

@@ -25,6 +25,7 @@ export function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMa
   const status = catalogInfo(catalogValuesById, mascota.statusId);
   const reportStatus = catalogInfo(catalogValuesById, mascota.reportStatusId);
   const medicalStatus = catalogInfo(catalogValuesById, mascota.medicalStatusId);
+  const activityLevel = catalogInfo(catalogValuesById, (mascota as any).activityLevelId);
   const payload = { ...(mascota as any) };
 
   return {
@@ -44,6 +45,9 @@ export function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMa
     reportStatus: reportStatus?.code ?? null,
     reportStatusLabel: reportStatus?.label ?? null,
     reportStatusInfo: reportStatus,
+    activityLevel: activityLevel?.code ?? null,
+    activityLevelLabel: activityLevel?.label ?? null,
+    activityLevelInfo: activityLevel,
   };
 }
 

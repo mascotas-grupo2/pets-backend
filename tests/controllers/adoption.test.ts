@@ -34,6 +34,10 @@ vi.mock("../../src/lib/catalog-values.js", () => ({
   CatalogValidationError: class CatalogValidationError extends Error {},
 }));
 
+vi.mock("../../src/lib/matching.js", () => ({
+  calculateCompatibility: vi.fn(() => ({ factors: [] })),
+}));
+
 import {
   createAdoption,
   getAdoptionById,

@@ -6,6 +6,8 @@ export const Catalog = {
   PET_NOTE_KIND: "pet_note_kind",
   PET_REPORT_STATUS: "pet_report_status",
   ADOPTION_STATUS: "adoption_status",
+  FOLLOWUP_TYPE: "followup_type",
+  FOLLOWUP_STATUS: "followup_status",
   USER_ROLE: "user_role",
   SSO_PROVIDER: "sso_provider",
   YES_NO: "yes_no",
@@ -13,6 +15,7 @@ export const Catalog = {
   LIVING_SITUATION: "living_situation",
   HOUSEHOLD_SETTING: "household_setting",
   ACTIVITY_LEVEL: "activity_level",
+  USER_STATUS: "user_status",
 } as const;
 
 export const CatalogIds = {
@@ -49,6 +52,11 @@ export const CatalogIds = {
   userRole: {
     user: 501,
     admin: 502,
+  },
+  userStatus: {
+    activo: 511,
+    enEvaluacion: 512,
+    bloqueado: 513,
   },
   ssoProvider: {
     keycloak: 601,
@@ -93,6 +101,18 @@ export const CatalogIds = {
     aceptada: 1205,
     descartada: 1206,
   },
+  followupType: {
+    programado: 1301,
+    medico: 1302,
+    visita: 1303,
+    urgente: 1304,
+    control: 1305,
+    postAdopcion: 1306,
+  },
+  followupStatus: {
+    pendiente: 1311,
+    confirmado: 1312,
+  },
 } as const;
 
 export type CatalogName = (typeof Catalog)[keyof typeof Catalog];
@@ -133,6 +153,10 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 501, catalog: Catalog.USER_ROLE, code: "user", label: "Usuario" },
   { id: 502, catalog: Catalog.USER_ROLE, code: "admin", label: "Administrador" },
 
+  { id: 511, catalog: Catalog.USER_STATUS, code: "activo", label: "Activo" },
+  { id: 512, catalog: Catalog.USER_STATUS, code: "evaluacion", label: "En evaluación" },
+  { id: 513, catalog: Catalog.USER_STATUS, code: "bloqueado", label: "Bloqueado" },
+
   { id: 601, catalog: Catalog.SSO_PROVIDER, code: "keycloak", label: "Keycloak" },
 
   { id: 701, catalog: Catalog.YES_NO, code: "si", label: "Si" },
@@ -166,6 +190,16 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 1204, catalog: Catalog.ADOPTION_STATUS, code: "ACEPTADA_CON_SEGUIMIENTO", label: "Aceptada con seguimiento" },
   { id: 1205, catalog: Catalog.ADOPTION_STATUS, code: "ACEPTADA", label: "Aceptada" },
   { id: 1206, catalog: Catalog.ADOPTION_STATUS, code: "DESCARTADA", label: "Descartada" },
+
+  { id: 1301, catalog: Catalog.FOLLOWUP_TYPE, code: "PROGRAMADO", label: "Programado" },
+  { id: 1302, catalog: Catalog.FOLLOWUP_TYPE, code: "MEDICO", label: "Medico" },
+  { id: 1303, catalog: Catalog.FOLLOWUP_TYPE, code: "VISITA", label: "Visita" },
+  { id: 1304, catalog: Catalog.FOLLOWUP_TYPE, code: "URGENTE", label: "Urgente" },
+  { id: 1305, catalog: Catalog.FOLLOWUP_TYPE, code: "CONTROL", label: "Control" },
+  { id: 1306, catalog: Catalog.FOLLOWUP_TYPE, code: "POST_ADOPCION", label: "Post adopcion" },
+
+  { id: 1311, catalog: Catalog.FOLLOWUP_STATUS, code: "PENDIENTE", label: "Pendiente" },
+  { id: 1312, catalog: Catalog.FOLLOWUP_STATUS, code: "CONFIRMADO", label: "Confirmado" },
 ];
 
 const byId = new Map(CatalogSeed.map((item) => [item.id, item]));

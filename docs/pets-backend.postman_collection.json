@@ -4,7 +4,7 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "baseUrl", "value": "http://backend.localdev.me" },
     { "key": "token", "value": "" },
     { "key": "refreshToken", "value": "" },
     { "key": "userId", "value": "1" },
@@ -525,6 +525,58 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
             "url": "{{baseUrl}}/api/user/{{userId}}/details"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "GET /api/messages/inbox (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/messages/inbox"
+          }
+        },
+        {
+          "name": "GET /api/messages/admin/inbox (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/messages/admin/inbox?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "messages", "admin", "inbox"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /api/messages/conversation/:userId (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/messages/conversation/{{userId}}"
+          }
+        },
+        {
+          "name": "POST /api/messages (auth)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverId\": 1,\n  \"content\": \"Hola! Tengo una consulta sobre la adopción...\"\n}"
+            },
+            "url": "{{baseUrl}}/api/messages"
           }
         }
       ]

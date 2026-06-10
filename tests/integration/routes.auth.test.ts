@@ -78,6 +78,10 @@ vi.mock("../../src/lib/geocoding.js", () => ({
   geocodificarDireccion: vi.fn(async () => null),
 }));
 
+vi.mock("../../src/lib/matching.js", () => ({
+  calculateCompatibility: vi.fn(() => ({ factors: [] })),
+}));
+
 import { app } from "../../src/app.js";
 import { createAccessToken } from "../../src/lib/auth.js";
 

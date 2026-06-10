@@ -141,6 +141,10 @@ Base URL: `http://localhost:3001`
 | POST | `/api/mascotas/:id/approve` | Admin | Marca un reporte como `activo` |
 | POST | `/api/mascotas/:id/finalize` | Admin | Marca un reporte como `finalizado` |
 
+| POST | `/api/followups` | Auth | Crear un seguimiento (cita). Campos: `petId`, `userId`, `typeId`, `appointmentAt` (fecha futura) |
+| GET | `/api/followups` | No (opcional) | Listar seguimientos con filtros: `petId`, `userId`, `typeId`, `statusId`, paginado |
+| POST | `/api/followups/:id/status` | Admin | Cambiar estado de un seguimiento. Body: `{ "statusId": <id> }` |
+
 Tambien existen aliases:
 
 ```txt
@@ -211,6 +215,9 @@ curl -X POST http://localhost:3001/api/mascotas/petsByIds \
 - `role`: `user`, `admin`
 - Campos si/no de adopcion: `si`, `no`
 - `neutered` y `vaccinated` en adopcion: `si`, `no`, `na`
+
+- `followup` types (catalog codes): `PROGRAMADO`, `MEDICO`, `VISITA`, `URGENTE`, `CONTROL`, `POST_ADOPCION` (IDs 1301-1306)
+- `followup` status: `PENDIENTE` (1311), `CONFIRMADO` (1312)
 
 ## Geocodificacion de direcciones
 
