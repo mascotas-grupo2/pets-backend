@@ -65,14 +65,11 @@ export const AppDataSource = new DataSource({
     AddAdoptionStatusAndCompatibility1748600000000,
     AddAdoptionStatusCatalog1748600001000,
     AddAdoptionStatusFk1748600002000,
-    // followups
     AddFollowupCatalog1748600100000,
     AddSeguimientos1748600101000,
     AddMessageTable1748700000000,
     AddUserStatusAndNote1748710000000,
     AddPetCompatibilityFields1748800000000,
-    // chatbot (movida de 1748800000000 a 1748900000000 para evitar
-    // colisión con AddPetCompatibilityFields que también usaba ese timestamp)
     AddChatSession1748900000000,
   ],
   synchronize: false,
