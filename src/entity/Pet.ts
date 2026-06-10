@@ -84,6 +84,12 @@ export class Pet {
   friendlyWithKids: boolean | null;
 
   @Column({ nullable: true, type: "boolean" })
+  friendlyWithPets: boolean | null;
+
+  @Column({ nullable: true, type: "int" })
+  activityLevelId: number | null;
+
+  @Column({ nullable: true, type: "boolean" })
   trained: boolean | null;
 
   @Column({ nullable: true, type: "varchar", length: 120 })

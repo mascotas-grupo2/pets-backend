@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { In } from "typeorm";
+import { ILike, In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
@@ -24,7 +24,6 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
-import { createPet } from "../lib/pet-service.js";
 
 function repo() {
   return AppDataSource.getRepository(Pet);
@@ -54,6 +53,7 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
   const status = catalogInfo(catalogValuesById, mascota.statusId);
   const reportStatus = catalogInfo(catalogValuesById, mascota.reportStatusId);
   const medicalStatus = catalogInfo(catalogValuesById, mascota.medicalStatusId);
+  const activityLevel = catalogInfo(catalogValuesById, mascota.activityLevelId);
   const payload = { ...(mascota as any) };
 
   return {
@@ -73,6 +73,9 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
     reportStatus: reportStatus?.code ?? null,
     reportStatusLabel: reportStatus?.label ?? null,
     reportStatusInfo: reportStatus,
+    activityLevel: activityLevel?.code ?? null,
+    activityLevelLabel: activityLevel?.label ?? null,
+    activityLevelInfo: activityLevel,
   };
 }
 
@@ -84,6 +87,18 @@ function serializePetNote(note: PetNote, catalogValuesById: CatalogValueMap) {
     kindLabel: kind?.label ?? null,
     kindInfo: kind,
   };
+}
+
+/**
+ * ¿Puede el solicitante ver esta mascota? Los reportes públicos (activo) son
+ * visibles para todos; los demás estados (pendiente/rechazado/finalizado) solo
+ * para el dueño o un admin. Evita IDOR en los endpoints sin filtro de estado.
+ */
+function canViewPet(mascota: Pet, authUser?: { id: number; role?: string }) {
+  if (mascota.reportStatusId === CatalogIds.petReportStatus.activo) return true;
+  if (!authUser) return false;
+  if (authUser.role === "admin") return true;
+  return mascota.userId === authUser.id;
 }
 
 function handleCatalogError(error: unknown, res: Response) {
@@ -124,17 +139,73 @@ export async function listCatalogValueCatalog(req: Request, res: Response) {
   res.json(await listCatalogValues(catalog));
 }
 
-export async function listMascotas(_req: Request, res: Response) {
-  const mascotas = await repo().find({ order: { id: "DESC" } });
+export async function listMascotas(req: Request, res: Response) {
+  const userId = req.authUser?.id ?? null;
+  const mascotas = await repo().find({
+    where: userId
+      ? [
+          { reportStatusId: CatalogIds.petReportStatus.activo },
+          {
+            userId,
+            reportStatusId: In([
+              CatalogIds.petReportStatus.pendiente,
+              CatalogIds.petReportStatus.rechazado,
+            ]),
+          },
+        ]
+      : { reportStatusId: CatalogIds.petReportStatus.activo },
+    order: { id: "DESC" },
+  });
   const catalogValuesById = await getCatalogValuesById();
   res.json(
     mascotas.map((mascota) => serializeMascota(mascota, catalogValuesById)),
   );
 }
 
-export async function adminListMascotas(_req: Request, res: Response) {
-  const mascotas = await repo().find({ order: { createdAt: "DESC" } });
-  if (mascotas.length === 0) return res.json([]);
+async function resolveReportStatusId(input: unknown) {
+  if (input === undefined || input === null) return undefined;
+  const numeric = Number(input);
+  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
+  const id = await resolveCatalogValueId(
+    Catalog.PET_REPORT_STATUS,
+    { id: numeric },
+    true,
+  );
+  return id ?? undefined;
+}
+
+function buildAdminPetQuery(reportStatusId?: number | null) {
+  if (reportStatusId) return { reportStatusId };
+  return undefined;
+}
+
+function parseOptionalInt(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
+  return numeric;
+}
+
+function buildAdminFilters(req: Request) {
+  const animalTypeId = parseOptionalInt(req.query.animalTypeId);
+  const statusId = parseOptionalInt(req.query.statusId);
+  const name = typeof req.query.name === "string" ? req.query.name.trim() : "";
+  const nameFilter = name.length > 0 ? ILike(`%${name}%`) : undefined;
+
+  return {
+    ...(animalTypeId ? { animalTypeId } : {}),
+    ...(statusId ? { statusId } : {}),
+    ...(nameFilter ? { name: nameFilter } : {}),
+  };
+}
+
+function parsePagination(req: Request) {
+  const page = Math.max(1, Number(req.query.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
+  return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+async function serializeAdminPets(mascotas: Pet[]) {
+  if (mascotas.length === 0) return [];
   const catalogValuesById = await getCatalogValuesById();
 
   const ids = mascotas.map((m) => m.id);
@@ -177,24 +248,109 @@ export async function adminListMascotas(_req: Request, res: Response) {
     }
   }
 
-  res.json(
-    mascotas.map((m) => {
-      const s = byPet.get(m.id)!;
-      return {
-        ...serializeMascota(m, catalogValuesById),
-        adoptionInterestCount: s.adoption,
-        medicalNoteCount: s.medical,
-        generalNoteCount: s.general,
-        lastNoteAt: s.lastNoteAt,
-      };
-    }),
-  );
+  const userIds = [
+    ...new Set(
+      mascotas
+        .map((m) => m.userId)
+        .filter((uid): uid is number => Number.isInteger(uid)),
+    ),
+  ];
+  const owners = userIds.length
+    ? await userRepo().find({ where: { id: In(userIds) } })
+    : [];
+  const ownerById = new Map(owners.map((u) => [u.id, u]));
+
+  return mascotas.map((m) => {
+    const s = byPet.get(m.id)!;
+    const owner = m.userId != null ? ownerById.get(m.userId) : null;
+    return {
+      ...serializeMascota(m, catalogValuesById),
+      ownerName: owner?.name ?? null,
+      ownerEmail: owner?.email ?? null,
+      adoptionInterestCount: s.adoption,
+      medicalNoteCount: s.medical,
+      generalNoteCount: s.general,
+      lastNoteAt: s.lastNoteAt,
+    };
+  });
+}
+
+export async function adminListMascotas(_req: Request, res: Response) {
+  const mascotas = await repo().find({ order: { createdAt: "DESC" } });
+  res.json(await serializeAdminPets(mascotas));
+}
+
+export async function adminListMascotasPaged(req: Request, res: Response) {
+  const { page, pageSize, skip } = parsePagination(req);
+  let reportStatusId: number | undefined;
+  try {
+    reportStatusId = await resolveReportStatusId(req.query.reportStatusId);
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
+
+  const filters = buildAdminFilters(req);
+  const baseQuery = buildAdminPetQuery(reportStatusId);
+  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+
+  const [mascotas, total] = await repo().findAndCount({
+    where,
+    order: { createdAt: "DESC" },
+    take: pageSize,
+    skip,
+  });
+
+  res.json({
+    items: await serializeAdminPets(mascotas),
+    total,
+    page,
+    pageSize,
+  });
+}
+
+export async function adminListMascotasByStatus(req: Request, res: Response) {
+  const { page, pageSize, skip } = parsePagination(req);
+  let reportStatusId: number | undefined;
+  try {
+    reportStatusId = await resolveReportStatusId(req.params.status);
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
+
+  const filters = buildAdminFilters(req);
+  const baseQuery = buildAdminPetQuery(reportStatusId);
+  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+
+  const [mascotas, total] = await repo().findAndCount({
+    where,
+    order: { createdAt: "DESC" },
+    take: pageSize,
+    skip,
+  });
+
+  res.json({
+    items: await serializeAdminPets(mascotas),
+    total,
+    page,
+    pageSize,
+  });
 }
 
 export async function getMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const mascota = await repo().findOneBy({ id });
+  let mascota;
+  try {
+    mascota = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!mascota) return res.status(404).json({ error: "Pet no encontrada" });
+  // No revelamos la existencia de reportes no-públicos a terceros.
+  if (!canViewPet(mascota, req.authUser)) {
+    return res.status(404).json({ error: "Pet no encontrada" });
+  }
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(mascota, catalogValuesById));
 }
@@ -218,6 +374,7 @@ export async function createMascota(req: Request, res: Response) {
       sexId: maybeNumber(bodyForValidation.sexId),
       statusId: maybeNumber(bodyForValidation.statusId),
       medicalStatusId: maybeNumber(bodyForValidation.medicalStatusId),
+      activityLevelId: maybeNumber(bodyForValidation.activityLevelId),
     };
 
     // campos booleanos enviados como "true"/"false"
@@ -228,6 +385,7 @@ export async function createMascota(req: Request, res: Response) {
       "neutered",
       "vaccinated",
       "friendlyWithKids",
+      "friendlyWithPets",
       "trained",
     ];
     for (const f of booleanFields) {
@@ -255,90 +413,98 @@ export async function createMascota(req: Request, res: Response) {
     } catch (e) {
       /* ignore logging failures */
     }
-    return res
-      .status(400)
-      .json({
-        error: parsed.error.flatten(),
-        debug: {
-          bodyKeys: Object.keys(bodyForValidation),
-          files: Array.isArray((req as any).files)
-            ? (req as any).files.length
-            : 0,
-        },
-      });
-  }
-  const data = { ...parsed.data };
-
-  // Helper para convertir IDs de catálogo a codes (el body puede traer
-  // animalTypeId/sexId/statusId/medicalStatusId en vez de los campos string).
-  const catalogValues = await getCatalogValuesById();
-  const idToCode = (id: number | undefined | null) =>
-    id ? catalogValues.get(id)?.code : undefined;
-
-  // Resolución del userId con el orden de prioridad histórico:
-  // 1) usuario autenticado, 2) userId del body, 3) lookup por contactEmail.
-  const resolvedUserId =
-    req.authUser?.id ??
-    data.userId ??
-    (await userRepo().findOneBy({ email: data.contactEmail }))?.id ??
-    undefined;
-
-  // Llamada al servicio compartido (mismo que usa la tool del chatbot).
-  // Resuelve catálogos, geocodifica y persiste el Pet.
-  let saved;
-  try {
-    saved = await createPet(
-      {
-        name: data.name ?? null,
-        description: data.description,
-        animalType:
-          (typeof data.animalType === "string" ? data.animalType : undefined) ??
-          idToCode(data.animalTypeId) ??
-          "",
-        date: data.date,
-        location: data.location,
-        contactPhone: data.contactPhone,
-        contactEmail: data.contactEmail,
-        sex:
-          (typeof data.sex === "string" ? data.sex : undefined) ??
-          idToCode(data.sexId),
-        breed: data.breed,
-        color: data.color,
-        ageMonths: data.ageMonths,
-        weightKg: data.weightKg,
-        heightCm: data.heightCm,
-        hasCollar: data.hasCollar,
-        hasTag: data.hasTag,
-        microchipped: data.microchipped,
-        neutered: data.neutered,
-        vaccinated: data.vaccinated,
-        friendlyWithKids: data.friendlyWithKids,
-        trained: data.trained,
-        reward: data.reward,
-        status:
-          (typeof data.status === "string" ? data.status : undefined) ??
-          idToCode(data.statusId),
-        medicalStatus:
-          (typeof data.medicalStatus === "string"
-            ? data.medicalStatus
-            : undefined) ?? idToCode(data.medicalStatusId),
+    return res.status(400).json({
+      error: parsed.error.flatten(),
+      debug: {
+        bodyKeys: Object.keys(bodyForValidation),
+        files: Array.isArray((req as any).files)
+          ? (req as any).files.length
+          : 0,
       },
-      { userId: resolvedUserId },
+    });
+  }
+  let data = { ...parsed.data };
+  let catalogIds: {
+    animalTypeId: number;
+    sexId: number | null | undefined;
+    statusId: number | null | undefined;
+    medicalStatusId: number | null | undefined;
+    activityLevelId: number | null | undefined;
+  };
+  try {
+    const animalTypeId = await resolveCatalogValueId(
+      Catalog.ANIMAL_TYPE,
+      { id: data.animalTypeId, code: data.animalType },
+      true,
     );
+    if (!animalTypeId)
+      return res.status(400).json({ error: "El tipo de animal es requerido" });
+    catalogIds = {
+      animalTypeId,
+      sexId: await resolveOptionalCatalogId(
+        Catalog.PET_SEX,
+        data.sexId,
+        data.sex,
+      ),
+      statusId: await resolveOptionalCatalogId(
+        Catalog.PET_STATUS,
+        data.statusId,
+        data.status,
+      ),
+      medicalStatusId: await resolveOptionalCatalogId(
+        Catalog.PET_MEDICAL_STATUS,
+        data.medicalStatusId,
+        data.medicalStatus,
+      ),
+      activityLevelId: await resolveOptionalCatalogId(
+        Catalog.ACTIVITY_LEVEL,
+        data.activityLevelId,
+        data.activityLevel,
+      ),
+    };
   } catch (error) {
     if (handleCatalogError(error, res)) return;
     throw error;
   }
+  // No subimos aún; creamos el registro primero para obtener el id del reporte
 
-  // Si el body trajo una URL ya subida en `photo`, la guardamos en el Pet.
-  // Las data URLs y los multipart files se procesan más abajo.
-  if (
-    typeof data.photo === "string" &&
-    !data.photo.startsWith("data:image/")
-  ) {
-    saved.photo = data.photo;
-    saved = await repo().save(saved);
-  }
+  const coords = await resolverCoordenadas(data.location);
+  const {
+    id: _id,
+    createdAt: _createdAt,
+    animalType: _animalType,
+    animalTypeId: _inputAnimalTypeId,
+    sex: _sex,
+    sexId: _inputSexId,
+    status: _status,
+    statusId: _inputStatusId,
+    medicalStatus: _medicalStatus,
+    medicalStatusId: _inputMedicalStatusId,
+    ...petData
+  } = data;
+  // Solo el usuario autenticado es dueño del reporte. NO confiamos en un
+  // `userId` del body ni asociamos por contactEmail: ambos permitirían
+  // asignar un reporte a la cuenta de otra persona (spoofing de propiedad).
+  const userId = req.authUser?.id ?? null;
+  const mascota = repo().create({
+    ...petData,
+    animalTypeId: catalogIds.animalTypeId,
+    ...(catalogIds.sexId !== undefined ? { sexId: catalogIds.sexId } : {}),
+    ...(catalogIds.statusId !== undefined && catalogIds.statusId !== null
+      ? { statusId: catalogIds.statusId }
+      : {}),
+    ...(catalogIds.medicalStatusId !== undefined &&
+    catalogIds.medicalStatusId !== null
+      ? { medicalStatusId: catalogIds.medicalStatusId }
+      : {}),
+    ...(catalogIds.activityLevelId !== undefined &&
+    catalogIds.activityLevelId !== null
+      ? { activityLevelId: catalogIds.activityLevelId }
+      : {}),
+    userId,
+    ...coords,
+  });
+  const saved = await repo().save(mascota);
 
   // ahora procesamos imágenes (si las hay) y las subimos dentro de una "carpeta" con el id del reporte
   const bucket = process.env.MINIO_BUCKET ?? "report-images";
@@ -407,11 +573,9 @@ export async function createMascota(req: Request, res: Response) {
         } catch (e: any) {
           console.error("Error subiendo data URL a MinIO:", e);
           if (e?.code === "LIMIT_FILE_SIZE")
-            return res
-              .status(413)
-              .json({
-                error: "Imagen codificada demasiado grande. Máximo 5MB.",
-              });
+            return res.status(413).json({
+              error: "Imagen codificada demasiado grande. Máximo 5MB.",
+            });
           return res.status(500).json({ error: "Error subiendo imagen" });
         }
       } else if (
@@ -451,9 +615,11 @@ export async function listMascotasByIds(req: Request, res: Response) {
   if (ids.length === 0) return res.json([]);
 
   const mascotas = await repo().findBy({ id: In(ids) });
+  // Solo devolvemos los visibles para el solicitante (evita IDOR por id).
+  const visibles = mascotas.filter((m) => canViewPet(m, req.authUser));
   const catalogValuesById = await getCatalogValuesById();
   res.json(
-    mascotas.map((mascota) => serializeMascota(mascota, catalogValuesById)),
+    visibles.map((mascota) => serializeMascota(mascota, catalogValuesById)),
   );
 }
 
@@ -478,7 +644,12 @@ export async function updateMascota(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   // permiso: admin puede editar cualquier reporte; usuario puede editar solo sus propios reportes
   const authUser = req.authUser;
@@ -496,6 +667,7 @@ export async function updateMascota(req: Request, res: Response) {
         statusId?: number | null;
         medicalStatusId?: number | null;
         reportStatusId?: number | null;
+        activityLevelId?: number | null;
       }
     | undefined;
   // si no es admin, evitamos que modifique el reportStatus
@@ -526,6 +698,11 @@ export async function updateMascota(req: Request, res: Response) {
         Catalog.PET_MEDICAL_STATUS,
         data.medicalStatusId,
         data.medicalStatus,
+      ),
+      activityLevelId: await resolveOptionalCatalogId(
+        Catalog.ACTIVITY_LEVEL,
+        data.activityLevelId,
+        data.activityLevel,
       ),
       // reportStatus only resolved for admins
       ...(isAdmin
@@ -572,10 +749,19 @@ export async function updateMascota(req: Request, res: Response) {
     catalogIds.medicalStatusId !== null
       ? { medicalStatusId: catalogIds.medicalStatusId }
       : {}),
+    ...(catalogIds?.activityLevelId !== undefined &&
+    catalogIds.activityLevelId !== null
+      ? { activityLevelId: catalogIds.activityLevelId }
+      : {}),
     ...(isAdmin &&
     catalogIds?.reportStatusId !== undefined &&
     catalogIds.reportStatusId !== null
       ? { reportStatusId: catalogIds.reportStatusId }
+      : {}),
+    // Si edita un usuario (no admin), el reporte vuelve a "pendiente" para que
+    // el admin revise el cambio antes de volver a publicarlo.
+    ...(!isAdmin
+      ? { reportStatusId: CatalogIds.petReportStatus.pendiente }
       : {}),
     ...coords,
   });
@@ -586,7 +772,12 @@ export async function updateMascota(req: Request, res: Response) {
 
 export async function approveMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.activo;
   const saved = await repo().save(existing);
@@ -596,7 +787,12 @@ export async function approveMascota(req: Request, res: Response) {
 
 export async function finalizeMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
   const saved = await repo().save(existing);
@@ -604,9 +800,29 @@ export async function finalizeMascota(req: Request, res: Response) {
   res.json(serializeMascota(saved, catalogValuesById));
 }
 
+export async function rejectMascota(req: Request, res: Response) {
+  const id = req.params.id;
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+  existing.reportStatusId = CatalogIds.petReportStatus.rechazado;
+  const saved = await repo().save(existing);
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(saved, catalogValuesById));
+}
+
 export async function deleteMascota(req: Request, res: Response) {
   const id = req.params.id;
-  const existing = await repo().findOneBy({ id });
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   await repo().remove(existing);
   res.status(204).send();
@@ -614,7 +830,12 @@ export async function deleteMascota(req: Request, res: Response) {
 
 export async function listPetNotes(req: Request, res: Response) {
   const petId = req.params.id;
-  const exists = await repo().findOneBy({ id: petId });
+  let exists;
+  try {
+    exists = await repo().findOneBy({ id: petId });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!exists) return res.status(404).json({ error: "Pet no encontrada" });
   const notes = await noteRepo().find({
     where: { petId },
@@ -630,7 +851,12 @@ export async function createPetNote(req: Request, res: Response) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const pet = await repo().findOneBy({ id: petId });
+  let pet;
+  try {
+    pet = await repo().findOneBy({ id: petId });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
   if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
 
   const authorId = req.authUser?.id ?? null;

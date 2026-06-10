@@ -17,7 +17,9 @@ if (!jwtSecretValue) {
 const jwtSecret = new TextEncoder().encode(jwtSecretValue);
 
 const jwks = issuer
-  ? createRemoteJWKSet(new URL(`${issuer.replace(/\/$/, "")}/protocol/openid-connect/certs`))
+  ? createRemoteJWKSet(
+      new URL(`${issuer.replace(/\/$/, "")}/protocol/openid-connect/certs`),
+    )
   : null;
 
 export type AuthUser = {
@@ -38,7 +40,8 @@ declare global {
 
 export function getRequestToken(req: Request) {
   const header = req.headers.authorization;
-  if (header?.startsWith("Bearer ")) return header.slice("Bearer ".length).trim();
+  if (header?.startsWith("Bearer "))
+    return header.slice("Bearer ".length).trim();
   return req.cookies?.auth_token;
 }
 
@@ -64,9 +67,16 @@ export async function createAccessToken(user: User) {
     .sign(jwtSecret);
 }
 
-export function setAuthCookies(res: Response, token: string, refreshToken: string) {
-  const secure = process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production";
+export function setAuthCookies(
+  res: Response,
+  token: string,
+  refreshToken: string,
+) {
+  const secure =
+    process.env.COOKIE_SECURE === "true" ||
+    process.env.NODE_ENV === "production";
   const sameSite = secure ? "none" : "lax";
+
   res.cookie("auth_token", token, {
     httpOnly: false,
     sameSite,
@@ -94,11 +104,14 @@ export async function issueAuthTokens(user: User) {
   return { token, refreshToken };
 }
 
-async function authUserFromPayload(payload: JWTPayload): Promise<AuthUser | null> {
+async function authUserFromPayload(
+  payload: JWTPayload,
+): Promise<AuthUser | null> {
   const id = Number(payload.sub);
   const email = typeof payload.email === "string" ? payload.email : undefined;
   const role = typeof payload.role === "string" ? payload.role : undefined;
-  const provider = typeof payload.provider === "string" ? payload.provider : undefined;
+  const provider =
+    typeof payload.provider === "string" ? payload.provider : undefined;
 
   if (Number.isInteger(id)) {
     return { id, email, role, provider };
@@ -111,8 +124,7 @@ async function authUserFromPayload(payload: JWTPayload): Promise<AuthUser | null
     (await userRepo.findOneBy({
       ssoProviderId: CatalogIds.ssoProvider.keycloak,
       ssoSubject: payload.sub,
-    })) ??
-    (email ? await userRepo.findOneBy({ email }) : null);
+    })) ?? (email ? await userRepo.findOneBy({ email }) : null);
 
   if (!user) return null;
   return {
@@ -125,7 +137,9 @@ async function authUserFromPayload(payload: JWTPayload): Promise<AuthUser | null
 
 async function verifyToken(token: string) {
   try {
-    const { payload } = await jwtVerify(token, jwtSecret, { issuer: localIssuer });
+    const { payload } = await jwtVerify(token, jwtSecret, {
+      issuer: localIssuer,
+    });
     return payload;
   } catch {
     return verifyKeycloakToken(token);
@@ -141,7 +155,11 @@ export async function verifyKeycloakToken(token: string) {
   return payload;
 }
 
-export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+export async function optionalAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
   const token = getRequestToken(req);
   if (!token) return next();
 
@@ -159,7 +177,7 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
 export async function requireAuth(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) {
   const token = getRequestToken(req);
   if (!token) return res.status(401).json({ error: "Falta token Bearer" });
@@ -167,7 +185,8 @@ export async function requireAuth(
   try {
     const payload = await verifyToken(token);
     const authUser = await authUserFromPayload(payload);
-    if (!authUser) return res.status(401).json({ error: "Token invalido o expirado" });
+    if (!authUser)
+      return res.status(401).json({ error: "Token invalido o expirado" });
     req.user = payload;
     req.authUser = authUser;
     return next();
@@ -187,9 +206,12 @@ export async function requireAdmin(
   try {
     const payload = await verifyToken(token);
     const authUser = await authUserFromPayload(payload);
-    if (!authUser) return res.status(401).json({ error: "Token invalido o expirado" });
+    if (!authUser)
+      return res.status(401).json({ error: "Token invalido o expirado" });
     if (authUser.role !== "admin") {
-      return res.status(403).json({ error: "Se requiere rol de administrador" });
+      return res
+        .status(403)
+        .json({ error: "Se requiere rol de administrador" });
     }
     req.user = payload;
     req.authUser = authUser;

@@ -6,6 +6,8 @@ import { authRouter } from "./routes/auth.routes.js";
 import { userRouter } from "./routes/user.routes.js";
 import { adoptionRouter } from "./routes/adoption.routes.js";
 import { chatbotRouter } from "./routes/chatbot.routes.js";
+import { followupRouter } from "./routes/followup.routes.js";
+import { messageRouter } from "./routes/message.routes.js";
 import {
   createMascota,
   listAnimalTypeCatalog,
@@ -44,6 +46,8 @@ app.use("/api/user", userRouter);
 app.use("/api/users", userRouter);
 app.use("/api/adoptions", adoptionRouter);
 app.use("/api/chatbot", chatbotRouter);
+app.use("/api/followups", followupRouter);
+app.use("/api/messages", messageRouter);
 app.post("/api/pet/reportar", optionalAuth, multiple("photo", 10), multerErrorHandler, createMascota);
 app.post("/api/pet/adoptar", requireAuth, submitAdoption);
 // Proxy para servir objetos desde MinIO sin exponer el bucket directamente.

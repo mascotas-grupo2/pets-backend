@@ -5,6 +5,9 @@ export const Catalog = {
   PET_MEDICAL_STATUS: "pet_medical_status",
   PET_NOTE_KIND: "pet_note_kind",
   PET_REPORT_STATUS: "pet_report_status",
+  ADOPTION_STATUS: "adoption_status",
+  FOLLOWUP_TYPE: "followup_type",
+  FOLLOWUP_STATUS: "followup_status",
   USER_ROLE: "user_role",
   SSO_PROVIDER: "sso_provider",
   YES_NO: "yes_no",
@@ -12,6 +15,7 @@ export const Catalog = {
   LIVING_SITUATION: "living_situation",
   HOUSEHOLD_SETTING: "household_setting",
   ACTIVITY_LEVEL: "activity_level",
+  USER_STATUS: "user_status",
 } as const;
 
 export const CatalogIds = {
@@ -49,6 +53,11 @@ export const CatalogIds = {
     user: 501,
     admin: 502,
   },
+  userStatus: {
+    activo: 511,
+    enEvaluacion: 512,
+    bloqueado: 513,
+  },
   ssoProvider: {
     keycloak: 601,
   },
@@ -82,6 +91,27 @@ export const CatalogIds = {
     pendiente: 1101,
     activo: 1102,
     finalizado: 1103,
+    rechazado: 1104,
+  },
+  adoptionStatus: {
+    nueva: 1201,
+    enEvaluacion: 1202,
+    entrevistaPendiente: 1203,
+    aceptadaConSeguimiento: 1204,
+    aceptada: 1205,
+    descartada: 1206,
+  },
+  followupType: {
+    programado: 1301,
+    medico: 1302,
+    visita: 1303,
+    urgente: 1304,
+    control: 1305,
+    postAdopcion: 1306,
+  },
+  followupStatus: {
+    pendiente: 1311,
+    confirmado: 1312,
   },
 } as const;
 
@@ -123,6 +153,10 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 501, catalog: Catalog.USER_ROLE, code: "user", label: "Usuario" },
   { id: 502, catalog: Catalog.USER_ROLE, code: "admin", label: "Administrador" },
 
+  { id: 511, catalog: Catalog.USER_STATUS, code: "activo", label: "Activo" },
+  { id: 512, catalog: Catalog.USER_STATUS, code: "evaluacion", label: "En evaluación" },
+  { id: 513, catalog: Catalog.USER_STATUS, code: "bloqueado", label: "Bloqueado" },
+
   { id: 601, catalog: Catalog.SSO_PROVIDER, code: "keycloak", label: "Keycloak" },
 
   { id: 701, catalog: Catalog.YES_NO, code: "si", label: "Si" },
@@ -148,6 +182,24 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 1101, catalog: Catalog.PET_REPORT_STATUS, code: "pendiente", label: "Pendiente" },
   { id: 1102, catalog: Catalog.PET_REPORT_STATUS, code: "activo", label: "Activo" },
   { id: 1103, catalog: Catalog.PET_REPORT_STATUS, code: "finalizado", label: "Finalizado" },
+  { id: 1104, catalog: Catalog.PET_REPORT_STATUS, code: "rechazado", label: "Rechazado" },
+
+  { id: 1201, catalog: Catalog.ADOPTION_STATUS, code: "NUEVA", label: "Nueva" },
+  { id: 1202, catalog: Catalog.ADOPTION_STATUS, code: "EN_EVALUACION", label: "En evaluacion" },
+  { id: 1203, catalog: Catalog.ADOPTION_STATUS, code: "ENTREVISTA_PENDIENTE", label: "Entrevista pendiente" },
+  { id: 1204, catalog: Catalog.ADOPTION_STATUS, code: "ACEPTADA_CON_SEGUIMIENTO", label: "Aceptada con seguimiento" },
+  { id: 1205, catalog: Catalog.ADOPTION_STATUS, code: "ACEPTADA", label: "Aceptada" },
+  { id: 1206, catalog: Catalog.ADOPTION_STATUS, code: "DESCARTADA", label: "Descartada" },
+
+  { id: 1301, catalog: Catalog.FOLLOWUP_TYPE, code: "PROGRAMADO", label: "Programado" },
+  { id: 1302, catalog: Catalog.FOLLOWUP_TYPE, code: "MEDICO", label: "Medico" },
+  { id: 1303, catalog: Catalog.FOLLOWUP_TYPE, code: "VISITA", label: "Visita" },
+  { id: 1304, catalog: Catalog.FOLLOWUP_TYPE, code: "URGENTE", label: "Urgente" },
+  { id: 1305, catalog: Catalog.FOLLOWUP_TYPE, code: "CONTROL", label: "Control" },
+  { id: 1306, catalog: Catalog.FOLLOWUP_TYPE, code: "POST_ADOPCION", label: "Post adopcion" },
+
+  { id: 1311, catalog: Catalog.FOLLOWUP_STATUS, code: "PENDIENTE", label: "Pendiente" },
+  { id: 1312, catalog: Catalog.FOLLOWUP_STATUS, code: "CONFIRMADO", label: "Confirmado" },
 ];
 
 const byId = new Map(CatalogSeed.map((item) => [item.id, item]));

@@ -64,3 +64,9 @@ export const adoptionSchema = z.object({
 });
 
 export type AdoptionInput = z.infer<typeof adoptionSchema>;
+
+export const adoptionStatusUpdateSchema = z.object({
+  status: z.string().trim().min(1).max(120),
+});
+
+export type AdoptionStatusUpdateInput = z.infer<typeof adoptionStatusUpdateSchema>;

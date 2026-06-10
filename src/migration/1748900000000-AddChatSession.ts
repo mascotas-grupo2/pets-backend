@@ -11,8 +11,8 @@ import type { MigrationInterface, QueryRunner } from "typeorm";
  *   mensajes se van con ella. No queremos mensajes huérfanos.
  * - tool_calls como JSONB para poder indexar/queriarlo después si hace falta.
  */
-export class AddChatSession1748800000000 implements MigrationInterface {
-  name = "AddChatSession1748800000000";
+export class AddChatSession1748900000000 implements MigrationInterface {
+  name = "AddChatSession1748900000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

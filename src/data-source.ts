@@ -5,6 +5,8 @@ import { PetNote } from "./entity/PetNote.js";
 import { User } from "./entity/User.js";
 import { Adoption } from "./entity/Adoption.js";
 import { CatalogValue } from "./entity/CatalogValue.js";
+import { Followup } from "./entity/Followup.js";
+import { Message } from "./entity/Message.js";
 import { ChatSession } from "./entity/ChatSession.js";
 import { ChatMessage } from "./entity/ChatMessage.js";
 import { InitPetTable1744402212000 } from "./migration/1744402212000-Init.js";
@@ -20,12 +22,31 @@ import { AddPasswordReset1744402219000 } from "./migration/1744402219000-AddPass
 import { AddAdoptionPetId1744402220000 } from "./migration/1744402220000-AddAdoptionPetId.js";
 import { NormalizeCatalogValues1744402222000 } from "./migration/1744402222000-NormalizeCatalogValues.js";
 import { AddReportStatus1744402223000 } from "./migration/1744402223000-AddReportStatus.js";
-import { AddChatSession1748800000000 } from "./migration/1748800000000-AddChatSession.js";
+import { AddRejectedReportStatus1744402224000 } from "./migration/1744402224000-AddRejectedReportStatus.js";
+import { AddAdoptionStatusAndCompatibility1748600000000 } from "./migration/1748600000000-AddAdoptionStatusAndCompatibility.js";
+import { AddAdoptionStatusCatalog1748600001000 } from "./migration/1748600001000-AddAdoptionStatusCatalog.js";
+import { AddAdoptionStatusFk1748600002000 } from "./migration/1748600002000-AddAdoptionStatusFk.js";
+import { AddFollowupCatalog1748600100000 } from "./migration/1748600100000-AddFollowupCatalog.js";
+import { AddSeguimientos1748600101000 } from "./migration/1748600101000-AddSeguimientos.js";
+import { AddMessageTable1748700000000 } from "./migration/1748700000000-AddMessageTable.js";
+import { AddUserStatusAndNote1748710000000 } from "./migration/1748710000000-AddUserStatusAndNote.js";
+import { AddPetCompatibilityFields1748800000000 } from "./migration/1748800000000-AddPetCompatibilityFields.js";
+import { AddChatSession1748900000000 } from "./migration/1748900000000-AddChatSession.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.DATABASE_URL,
-  entities: [Pet, User, Adoption, PetNote, CatalogValue, ChatSession, ChatMessage],
+  entities: [
+    Pet,
+    User,
+    Adoption,
+    PetNote,
+    CatalogValue,
+    Followup,
+    Message,
+    ChatSession,
+    ChatMessage,
+  ],
   migrations: [
     InitPetTable1744402212000,
     AddUser1744402213000,
@@ -40,7 +61,19 @@ export const AppDataSource = new DataSource({
     AddAdoptionPetId1744402220000,
     NormalizeCatalogValues1744402222000,
     AddReportStatus1744402223000,
-    AddChatSession1748800000000,
+    AddRejectedReportStatus1744402224000,
+    AddAdoptionStatusAndCompatibility1748600000000,
+    AddAdoptionStatusCatalog1748600001000,
+    AddAdoptionStatusFk1748600002000,
+    // followups
+    AddFollowupCatalog1748600100000,
+    AddSeguimientos1748600101000,
+    AddMessageTable1748700000000,
+    AddUserStatusAndNote1748710000000,
+    AddPetCompatibilityFields1748800000000,
+    // chatbot (movida de 1748800000000 a 1748900000000 para evitar
+    // colisión con AddPetCompatibilityFields que también usaba ese timestamp)
+    AddChatSession1748900000000,
   ],
   synchronize: false,
 });
