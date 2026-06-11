@@ -32,6 +32,7 @@ function noteRepo() {
 type UserContext = {
   context: string | null;
   petId: string | null;
+  adoptionId: number | null;
   phone: string | null;
   town: string | null;
 };
@@ -69,6 +70,7 @@ async function buildUserContexts(
         ? `Solicitud de adopción de ${name}`
         : "Solicitud de adopción",
       petId: a.petId ?? null,
+      adoptionId: a.id,
       phone: a.phone ?? null,
       town: a.town ?? null,
     });
@@ -197,6 +199,7 @@ export async function getConversation(req: Request, res: Response) {
           status: statusLabel,
           evaluationNote: userProfile.evaluationNote,
           context: ctx?.context ?? null,
+          adoptionId: ctx?.adoptionId ?? null,
           phone: ctx?.phone ?? null,
           town: ctx?.town ?? null,
           notes: notes.map((n) => ({

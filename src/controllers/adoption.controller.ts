@@ -6,6 +6,8 @@ import { CatalogValue } from "../entity/CatalogValue.js";
 import { Followup } from "../entity/Followup.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
+import { AdoptionCheck } from "../entity/AdoptionCheck.js";
+import { AdoptionNote } from "../entity/AdoptionNote.js";
 import { adoptionSchema, AdoptionInput, adoptionStatusUpdateSchema, AdoptionStatusUpdateInput } from "../schemas/adoption.schema.js";
 import {
   CatalogValidationError,
@@ -29,6 +31,32 @@ function petRepo() {
 
 function followupRepo() {
   return AppDataSource.getRepository(Followup);
+}
+
+function checkRepo() {
+  return AppDataSource.getRepository(AdoptionCheck);
+}
+
+function adoptionNoteRepo() {
+  return AppDataSource.getRepository(AdoptionNote);
+}
+
+// Checklist de evaluación del adoptante (orden fijo).
+export const EVAL_CHECKLIST = [
+  "Verificó identidad",
+  "Consultó sobre vivienda",
+  "Evaluó experiencia previa",
+  "Revisó situación familiar",
+  "Coordinó visita al hogar",
+];
+
+// Qué ítems del checklist se exigen para habilitar cada transición.
+function requiredChecksFor(statusId: number): string[] {
+  const A = CatalogIds.adoptionStatus;
+  if (statusId === A.entrevistaPendiente)
+    return ["Verificó identidad", "Consultó sobre vivienda"];
+  if (statusId === A.aceptadaConSeguimiento) return EVAL_CHECKLIST; // completo
+  return [];
 }
 
 function createFollowupsForAdoption(adoption: Adoption) {
@@ -587,6 +615,19 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
     }
   }
 
+  // Gating por checklist: ciertas transiciones exigen ítems verificados.
+  const requeridos = requiredChecksFor(statusId);
+  if (requeridos.length > 0 && statusId !== adoption.statusId) {
+    const hechos = await checkRepo().findBy({ adoptionId: id });
+    const hechosSet = new Set(hechos.map((c) => c.item));
+    const faltan = requeridos.filter((r) => !hechosSet.has(r));
+    if (faltan.length > 0) {
+      return res.status(409).json({
+        error: `Faltan completar ítems de la evaluación: ${faltan.join(", ")}.`,
+      });
+    }
+  }
+
   const previousStatusId = adoption.statusId;
   const A = CatalogIds.adoptionStatus;
   const R = CatalogIds.petReportStatus;
@@ -654,4 +695,94 @@ export async function deleteAdoption(req: Request, res: Response) {
   if (result.affected === 0) return res.status(404).json({ error: "Solicitud no encontrada" });
 
   res.status(204).send();
+}
+
+// ── Evaluación del adoptante (checklist + impresiones) ──────────────────────
+
+/** Devuelve el checklist (definición + ítems marcados) y las impresiones. */
+export async function getAdoptionEvaluation(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const adoption = await adoptionRepo().findOneBy({ id });
+  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+
+  const [checks, notes] = await Promise.all([
+    checkRepo().findBy({ adoptionId: id }),
+    adoptionNoteRepo().find({
+      where: { adoptionId: id },
+      order: { createdAt: "DESC" },
+    }),
+  ]);
+
+  res.json({
+    items: EVAL_CHECKLIST,
+    checked: checks.map((c) => c.item),
+    notes: notes.map((n) => ({
+      id: n.id,
+      text: n.text,
+      author: n.authorName,
+      createdAt: n.createdAt,
+    })),
+  });
+}
+
+/** Marca o desmarca un ítem del checklist. Body: { item, done }. */
+export async function toggleAdoptionCheck(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const item = typeof req.body?.item === "string" ? req.body.item.trim() : "";
+  const done = req.body?.done !== false; // por defecto marca
+  if (!EVAL_CHECKLIST.includes(item)) {
+    return res.status(400).json({ error: "Ítem de checklist inválido" });
+  }
+
+  const adoption = await adoptionRepo().findOneBy({ id });
+  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+
+  const existing = await checkRepo().findOneBy({ adoptionId: id, item });
+  if (done && !existing) {
+    await checkRepo().save(
+      checkRepo().create({
+        adoptionId: id,
+        item,
+        checkedBy: req.authUser?.id ?? null,
+      }),
+    );
+  } else if (!done && existing) {
+    await checkRepo().remove(existing);
+  }
+
+  const checks = await checkRepo().findBy({ adoptionId: id });
+  res.json({ checked: checks.map((c) => c.item) });
+}
+
+/** Agrega una impresión / nota libre a la evaluación. Body: { text }. */
+export async function addAdoptionNote(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  if (!text) return res.status(400).json({ error: "La nota no puede estar vacía" });
+
+  const adoption = await adoptionRepo().findOneBy({ id });
+  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+
+  const authorId = req.authUser?.id ?? null;
+  let authorName: string | null = null;
+  if (authorId) {
+    const author = await userRepo().findOneBy({ id: authorId });
+    authorName = author?.name ?? author?.email ?? null;
+  }
+
+  const note = await adoptionNoteRepo().save(
+    adoptionNoteRepo().create({ adoptionId: id, text, authorId, authorName }),
+  );
+  res.status(201).json({
+    id: note.id,
+    text: note.text,
+    author: note.authorName,
+    createdAt: note.createdAt,
+  });
 }
