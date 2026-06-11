@@ -119,3 +119,14 @@ export async function updateFollowup(req: Request, res: Response) {
     status: catalogValuesById.get(saved.statusId) ?? null,
   });
 }
+
+export async function deleteFollowup(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const item = await repo().findOneBy({ id });
+  if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
+
+  await repo().remove(item);
+  res.json({ success: true });
+}
