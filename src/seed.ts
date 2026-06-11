@@ -309,7 +309,7 @@ async function seed() {
   const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
   const adminSaved = await repoUsers.save(
     repoUsers.create({
-      name: "Admin",
+      name: "Laura Fernández",
       email: "admin@admin.com",
       passwordHash: hash,
       passwordSalt: salt,
@@ -321,8 +321,8 @@ async function seed() {
 
   // Add two regular users (role = user)
   const usersToCreate = [
-    { name: "Usuario Uno", email: "user1@example.com" },
-    { name: "Usuario Dos", email: "user2@example.com" },
+    { name: "Juan Pérez", email: "juan.perez@example.com" },
+    { name: "María Gómez", email: "maria.gomez@example.com" },
   ];
   const createdUsers: { id: number; email: string }[] = [];
   for (const u of usersToCreate) {
@@ -345,8 +345,15 @@ async function seed() {
   console.log("Seed completed: 2 usuarios insertados (role=user).");
 
   // Add more users to reach ~10 regular users
+  const realNames = [
+    "Carlos Ruiz", "Ana López", "Ricardo Martínez", "Pedro Silva",
+    "Lucía González", "Sofía Rodríguez", "Diego Fernández", "Valentina Díaz"
+  ];
   const moreUsers: { name: string; email: string }[] = [];
-  for (let i = 3; i <= 10; i++) moreUsers.push({ name: `Usuario ${i}`, email: `user${i}@example.com` });
+  for (let i = 0; i < realNames.length; i++) {
+    const nameParts = realNames[i].toLowerCase().split(" ");
+    moreUsers.push({ name: realNames[i], email: `${nameParts[0]}.${nameParts[1].replace('á','a').replace('ó','o').replace('í','i').replace('é','e')}@example.com` });
+  }
   for (const u of moreUsers) {
     const usalt = crypto.randomBytes(16).toString("hex");
     const uhash = crypto.pbkdf2Sync(password, usalt, 310000, 32, "sha256").toString("hex");
