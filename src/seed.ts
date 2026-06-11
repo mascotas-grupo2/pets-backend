@@ -94,7 +94,7 @@ async function seed() {
 
     // ============= PERROS ENCONTRADOS =============
     {
-      name: null,
+      name: "Bobi",
       animalTypeId: CatalogIds.animalType.perro,
       statusId: CatalogIds.petStatus.encontrado,
       description: "Perro mestizo tamaño mediano, marrón con patas blancas. Sin collar. Muy amigable, parece bien cuidado.",
@@ -111,7 +111,7 @@ async function seed() {
       friendlyWithKids: true,
     },
     {
-      name: null,
+      name: "Manchas",
       animalTypeId: CatalogIds.animalType.perro,
       statusId: CatalogIds.petStatus.encontrado,
       description: "Perro chico negro con manchas blancas en el pecho. Tenía collar rosa sin chapita.",
@@ -208,7 +208,7 @@ async function seed() {
 
     // ============= GATOS ENCONTRADOS =============
     {
-      name: null,
+      name: "Michi",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.encontrado,
       description: "Gata atigrada chiquita, parece joven. Maúlla mucho. La encontramos en el patio de un edificio.",
@@ -224,7 +224,7 @@ async function seed() {
       hasCollar: false,
     },
     {
-      name: null,
+      name: "Salem",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.encontrado,
       description: "Gato negro adulto, ojos verdes muy expresivos. Vino solo a la puerta de mi casa. Está flaco pero parece sano.",
