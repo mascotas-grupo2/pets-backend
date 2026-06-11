@@ -218,7 +218,7 @@ async function serializeAdoptionDetail(adoption: Adoption) {
       ? {
           id: pet.id,
           name: pet.name,
-          photo: pet.photo,
+          photo: pet.photos?.[0] ?? pet.photo,
           animalTypeId: pet.animalTypeId,
           statusId: pet.statusId,
           reportStatusId: pet.reportStatusId,
@@ -385,7 +385,7 @@ async function mapAdoptionSummaries(items: Adoption[]) {
       userEmail: user?.email ?? null,
       userPhoto: user?.photo ?? null,
       petName: pet?.name ?? null,
-      petPhoto: pet?.photo ?? null,
+      petPhoto: pet?.photos?.[0] ?? pet?.photo ?? null,
       petAnimalTypeId: pet?.animalTypeId ?? null,
     };
   });
