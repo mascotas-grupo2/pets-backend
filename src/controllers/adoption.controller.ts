@@ -270,7 +270,9 @@ type SortOrder = {
   direction: SortDirection;
 };
 
-const adoptionSortFieldMap: Record<AdoptionSortField, string> = {
+// Acepta tanto los nombres canónicos como los alias que manda la tabla del
+// front (SolicitudesTable usa: compat, estado, fecha, fechaModificacion, userName).
+const adoptionSortFieldMap: Record<string, string> = {
   createdAt: "adoption.createdAt",
   updatedAt: "adoption.updatedAt",
   compatibilityScore: "adoption.compatibilityScore",
@@ -280,6 +282,14 @@ const adoptionSortFieldMap: Record<AdoptionSortField, string> = {
   town: "adoption.town",
   adults: "adoption.adults",
   children: "adoption.children",
+  // Alias del front:
+  compat: "adoption.compatibilityScore",
+  estado: "adoption.statusId",
+  fecha: "adoption.createdAt",
+  fechaModificacion: "adoption.updatedAt",
+  userName: "adoption.firstName",
+  // Nota: "petName" no se puede ordenar server-side sin joinear la tabla pet
+  // (el nombre de la mascota se resuelve en una query aparte). Queda sin sort.
 };
 
 function parsePagination(req: Request) {
