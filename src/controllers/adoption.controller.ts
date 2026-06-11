@@ -541,13 +541,58 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
   if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
 
   const previousStatusId = adoption.statusId;
+  const A = CatalogIds.adoptionStatus;
+  const R = CatalogIds.petReportStatus;
+
+  // La publicación se "reserva" al programar la entrevista: por eso solo se puede
+  // programar si la mascota está disponible (en adopción y publicada/activa).
+  const pet = adoption.petId
+    ? await petRepo().findOneBy({ id: adoption.petId })
+    : null;
+  if (
+    statusId === A.entrevistaPendiente &&
+    previousStatusId !== statusId &&
+    pet
+  ) {
+    const enAdopcion = pet.statusId === CatalogIds.petStatus.adopcion;
+    const publicada = pet.reportStatusId === R.activo;
+    if (!enAdopcion || !publicada) {
+      return res.status(409).json({
+        error:
+          "No se puede programar la entrevista: la mascota debe estar en adopción y publicada.",
+      });
+    }
+  }
+
   adoption.statusId = statusId;
   const saved = await adoptionRepo().save(adoption);
 
-  if (
-    statusId === CatalogIds.adoptionStatus.aceptadaConSeguimiento &&
-    previousStatusId !== statusId
-  ) {
+  // La solicitud manda y la publicación reacciona (la publicación nunca toca la solicitud).
+  if (pet && previousStatusId !== statusId) {
+    let petChanged = false;
+    if (statusId === A.entrevistaPendiente) {
+      // Se programó la entrevista → la publicación queda reservada (oculta del público).
+      pet.reportStatusId = R.reservada;
+      petChanged = true;
+    } else if (statusId === A.descartada) {
+      // Si esta solicitud era la que tenía reservada la mascota, se vuelve a publicar.
+      const eraReservadora =
+        previousStatusId === A.entrevistaPendiente ||
+        previousStatusId === A.aceptadaConSeguimiento;
+      if (eraReservadora && pet.reportStatusId === R.reservada) {
+        pet.reportStatusId = R.activo;
+        petChanged = true;
+      }
+    } else if (statusId === A.aceptada) {
+      // Adopción concretada → mascota adoptada y publicación cerrada.
+      pet.statusId = CatalogIds.petStatus.adoptado;
+      pet.reportStatusId = R.finalizado;
+      petChanged = true;
+    }
+    if (petChanged) await petRepo().save(pet);
+  }
+
+  if (statusId === A.aceptadaConSeguimiento && previousStatusId !== statusId) {
     await createFollowupsForAdoption(saved);
   }
 

@@ -342,6 +342,26 @@ export async function updateUser(req: Request, res: Response) {
   res.json(publicUser(merged));
 }
 
+// Sort server-side (mismo patrón que solicitudes): ?sort=campo:ASC,campo2:DESC
+const USER_SORT_MAP: Record<string, string> = {
+  name: "name",
+  email: "email",
+  role: "roleId",
+  createdAt: "createdAt",
+  id: "id",
+};
+function parseUserOrder(req: Request): Record<string, "ASC" | "DESC"> {
+  const raw = typeof req.query.sort === "string" ? req.query.sort : "";
+  const order: Record<string, "ASC" | "DESC"> = {};
+  for (const seg of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [field, dir] = seg.split(":").map((p) => p.trim());
+    const column = USER_SORT_MAP[field];
+    if (column) order[column] = dir?.toUpperCase() === "DESC" ? "DESC" : "ASC";
+  }
+  if (Object.keys(order).length === 0) order.id = "ASC";
+  return order;
+}
+
 export async function adminListUsers(req: Request, res: Response) {
   const parsed = adminListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
@@ -366,15 +386,24 @@ export async function adminListUsers(req: Request, res: Response) {
 
   const [users, total] = await userRepo().findAndCount({
     where: finalWhere as any,
-    order: { id: "ASC" },
+    order: parseUserOrder(req),
     skip: (page - 1) * pageSize,
     take: pageSize,
   });
+
+  // Totales globales (no dependen de los filtros) para las cards del panel.
+  const [totalAll, admins, adopters, comunes] = await Promise.all([
+    userRepo().count(),
+    userRepo().count({ where: { roleId: CatalogIds.userRole.admin } }),
+    userRepo().count({ where: { adopter: true } }),
+    userRepo().count({ where: { roleId: CatalogIds.userRole.user } }),
+  ]);
 
   res.json({
     page,
     pageSize,
     total,
+    totals: { total: totalAll, admins, adopters, comunes },
     items: users.map((u) => {
       const safe = publicUser(u);
       return {

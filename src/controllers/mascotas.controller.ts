@@ -162,8 +162,20 @@ export async function listMascotas(req: Request, res: Response) {
   );
 }
 
+const REPORT_STATUS_ID_BY_CODE: Record<string, number> = {
+  pendiente: CatalogIds.petReportStatus.pendiente,
+  activo: CatalogIds.petReportStatus.activo,
+  rechazado: CatalogIds.petReportStatus.rechazado,
+  finalizado: CatalogIds.petReportStatus.finalizado,
+  reservada: CatalogIds.petReportStatus.reservada,
+};
+
 async function resolveReportStatusId(input: unknown) {
   if (input === undefined || input === null) return undefined;
+  // Acepta el código ("activo", "rechazado", ...) que manda el front.
+  if (typeof input === "string" && REPORT_STATUS_ID_BY_CODE[input.trim()]) {
+    return REPORT_STATUS_ID_BY_CODE[input.trim()];
+  }
   const numeric = Number(input);
   if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
   const id = await resolveCatalogValueId(
@@ -183,6 +195,26 @@ function parseOptionalInt(value: unknown) {
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
   return numeric;
+}
+
+// Sort server-side (mismo patrón que solicitudes): ?sort=campo:ASC,campo2:DESC
+const PET_SORT_MAP: Record<string, string> = {
+  name: "name",
+  tipo: "statusId",
+  estado: "reportStatusId",
+  fecha: "date",
+  createdAt: "createdAt",
+};
+function parsePetOrder(req: Request): Record<string, "ASC" | "DESC"> {
+  const raw = typeof req.query.sort === "string" ? req.query.sort : "";
+  const order: Record<string, "ASC" | "DESC"> = {};
+  for (const seg of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [field, dir] = seg.split(":").map((p) => p.trim());
+    const column = PET_SORT_MAP[field];
+    if (column) order[column] = dir?.toUpperCase() === "ASC" ? "ASC" : "DESC";
+  }
+  if (Object.keys(order).length === 0) order.createdAt = "DESC";
+  return order;
 }
 
 function buildAdminFilters(req: Request) {
@@ -267,6 +299,7 @@ async function serializeAdminPets(mascotas: Pet[]) {
       ...serializeMascota(m, catalogValuesById),
       ownerName: owner?.name ?? null,
       ownerEmail: owner?.email ?? null,
+      ownerIsAdmin: owner?.roleId === CatalogIds.userRole.admin,
       adoptionInterestCount: s.adoption,
       medicalNoteCount: s.medical,
       generalNoteCount: s.general,
@@ -284,7 +317,9 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
   const { page, pageSize, skip } = parsePagination(req);
   let reportStatusId: number | undefined;
   try {
-    reportStatusId = await resolveReportStatusId(req.query.reportStatusId);
+    reportStatusId = await resolveReportStatusId(
+      req.query.reportStatusId ?? req.query.reportStatus,
+    );
   } catch (error) {
     if (handleCatalogError(error, res)) return;
     throw error;
@@ -296,7 +331,7 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
 
   const [mascotas, total] = await repo().findAndCount({
     where,
-    order: { createdAt: "DESC" },
+    order: parsePetOrder(req),
     take: pageSize,
     skip,
   });
@@ -306,7 +341,40 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
     total,
     page,
     pageSize,
+    // Totales por estado del conjunto completo (para las cards), independientes
+    // del filtro de estado aplicado a la lista paginada.
+    statusTotals: await reportStatusTotals(),
   });
+}
+
+// Cuenta publicaciones agrupadas por reportStatus (para las cards del panel).
+async function reportStatusTotals() {
+  const rows = await repo()
+    .createQueryBuilder("pet")
+    .select("pet.reportStatusId", "reportStatusId")
+    .addSelect("COUNT(*)", "count")
+    .groupBy("pet.reportStatusId")
+    .getRawMany<{ reportStatusId: string; count: string }>();
+
+  const totals: Record<string, number> = {
+    pendiente: 0,
+    activo: 0,
+    rechazado: 0,
+    finalizado: 0,
+    reservada: 0,
+  };
+  const byId: Record<number, string> = {
+    [CatalogIds.petReportStatus.pendiente]: "pendiente",
+    [CatalogIds.petReportStatus.activo]: "activo",
+    [CatalogIds.petReportStatus.rechazado]: "rechazado",
+    [CatalogIds.petReportStatus.finalizado]: "finalizado",
+    [CatalogIds.petReportStatus.reservada]: "reservada",
+  };
+  for (const row of rows) {
+    const code = byId[Number(row.reportStatusId)];
+    if (code) totals[code] = Number(row.count) || 0;
+  }
+  return totals;
 }
 
 export async function adminListMascotasByStatus(req: Request, res: Response) {
@@ -325,7 +393,7 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
 
   const [mascotas, total] = await repo().findAndCount({
     where,
-    order: { createdAt: "DESC" },
+    order: parsePetOrder(req),
     take: pageSize,
     skip,
   });
@@ -335,6 +403,7 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
     total,
     page,
     pageSize,
+    statusTotals: await reportStatusTotals(),
   });
 }
 
@@ -618,9 +687,35 @@ export async function listMascotasByIds(req: Request, res: Response) {
   // Solo devolvemos los visibles para el solicitante (evita IDOR por id).
   const visibles = mascotas.filter((m) => canViewPet(m, req.authUser));
   const catalogValuesById = await getCatalogValuesById();
-  res.json(
-    visibles.map((mascota) => serializeMascota(mascota, catalogValuesById)),
-  );
+  const serialized = visibles.map((mascota) =>
+    serializeMascota(mascota, catalogValuesById),
+  ) as Array<ReturnType<typeof serializeMascota> & { rejectionReason?: string }>;
+
+  // A las publicaciones rechazadas les adjuntamos el motivo del último rechazo
+  // (guardado como nota "Rechazo: ..."), así el dueño puede ver por qué se rechazó.
+  const rejectedIds = visibles
+    .filter((m) => m.reportStatusId === CatalogIds.petReportStatus.rechazado)
+    .map((m) => m.id);
+  if (rejectedIds.length) {
+    const notes = await noteRepo()
+      .createQueryBuilder("note")
+      .where("note.petId IN (:...ids)", { ids: rejectedIds })
+      .andWhere("note.text LIKE :prefix", { prefix: "Rechazo:%" })
+      .orderBy("note.createdAt", "DESC")
+      .getMany();
+    const reasonByPet = new Map<string, string>();
+    for (const note of notes) {
+      if (!reasonByPet.has(note.petId)) {
+        reasonByPet.set(note.petId, note.text.replace(/^Rechazo:\s*/, ""));
+      }
+    }
+    for (const pet of serialized) {
+      const reason = reasonByPet.get(pet.id);
+      if (reason) pet.rejectionReason = reason;
+    }
+  }
+
+  res.json(serialized);
 }
 
 export async function listMascotasByUser(req: Request, res: Response) {
@@ -651,12 +746,28 @@ export async function updateMascota(req: Request, res: Response) {
     return res.status(400).json({ error: "Id invalido" });
   }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
-  // permiso: admin puede editar cualquier reporte; usuario puede editar solo sus propios reportes
+  // Permisos de edición:
+  //  - El dueño (no admin) edita solo sus propias publicaciones.
+  //  - El admin SOLO edita publicaciones que pertenecen a un admin (la propia o
+  //    la de otro admin); el contenido cargado por un usuario común no se edita,
+  //    solo se modera (aprobar/rechazar/eliminar).
   const authUser = req.authUser;
   const isAdmin = authUser?.role === "admin";
   if (!isAdmin) {
     if (!authUser || authUser.id !== existing.userId) {
       return res.status(403).json({ error: "No autorizado" });
+    }
+  } else {
+    const owner =
+      existing.userId != null
+        ? await userRepo().findOneBy({ id: existing.userId })
+        : null;
+    const ownerIsAdmin = owner?.roleId === CatalogIds.userRole.admin;
+    if (!ownerIsAdmin) {
+      return res.status(403).json({
+        error:
+          "No se puede editar una publicación de un usuario; solo moderarla (aprobar/rechazar/eliminar).",
+      });
     }
   }
 
@@ -718,6 +829,14 @@ export async function updateMascota(req: Request, res: Response) {
   } catch (error) {
     if (handleCatalogError(error, res)) return;
     throw error;
+  }
+
+  // "finalizado" no es un estado que se setee a mano: lo maneja el flujo de adopción.
+  if (catalogIds.reportStatusId === CatalogIds.petReportStatus.finalizado) {
+    return res.status(409).json({
+      error:
+        "No se puede pasar una publicación a finalizado manualmente; se finaliza al concretarse la adopción.",
+    });
   }
 
   const coords =
@@ -785,19 +904,13 @@ export async function approveMascota(req: Request, res: Response) {
   res.json(serializeMascota(saved, catalogValuesById));
 }
 
-export async function finalizeMascota(req: Request, res: Response) {
-  const id = req.params.id;
-  let existing;
-  try {
-    existing = await repo().findOneBy({ id });
-  } catch (err) {
-    return res.status(400).json({ error: "Id invalido" });
-  }
-  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
-  existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
-  const saved = await repo().save(existing);
-  const catalogValuesById = await getCatalogValuesById();
-  res.json(serializeMascota(saved, catalogValuesById));
+export async function finalizeMascota(_req: Request, res: Response) {
+  // Las publicaciones NO se finalizan a mano: solo pasan a "finalizado" de forma
+  // automática cuando se concreta una adopción (solicitud ACEPTADA).
+  return res.status(409).json({
+    error:
+      "Una publicación no se puede finalizar manualmente; se finaliza sola al concretarse la adopción.",
+  });
 }
 
 export async function rejectMascota(req: Request, res: Response) {
@@ -811,6 +924,28 @@ export async function rejectMascota(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.rechazado;
   const saved = await repo().save(existing);
+
+  // Si el admin envió un motivo, lo dejamos registrado como nota de la publicación.
+  const reason =
+    typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (reason) {
+    const authorId = req.authUser?.id ?? null;
+    let authorName: string | null = null;
+    if (authorId) {
+      const author = await userRepo().findOneBy({ id: authorId });
+      authorName = author?.name ?? author?.email ?? null;
+    }
+    await noteRepo().save(
+      noteRepo().create({
+        petId: existing.id,
+        authorId,
+        authorName,
+        text: `Rechazo: ${reason}`,
+        kindId: CatalogIds.petNoteKind.general,
+      }),
+    );
+  }
+
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(saved, catalogValuesById));
 }

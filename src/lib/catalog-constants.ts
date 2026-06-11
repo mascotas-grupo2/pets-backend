@@ -92,6 +92,7 @@ export const CatalogIds = {
     activo: 1102,
     finalizado: 1103,
     rechazado: 1104,
+    reservada: 1105,
   },
   adoptionStatus: {
     nueva: 1201,
