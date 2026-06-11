@@ -84,6 +84,32 @@ function getAdoptionStatusCode(id: number | null | undefined) {
   return isAdoptionStatusId(id) ? adoptionStatusById.get(id) : undefined;
 }
 
+// Cadena incremental de estados. Debe coincidir con la regla del front
+// (components/admin/lib/solicitud-status.tsx): solo se puede avanzar al estado
+// inmediatamente siguiente o pasar a DESCARTADA; ACEPTADA y DESCARTADA son terminales.
+const adoptionStatusChain: AdoptionStatusCode[] = [
+  "NUEVA",
+  "EN_EVALUACION",
+  "ENTREVISTA_PENDIENTE",
+  "ACEPTADA_CON_SEGUIMIENTO",
+  "ACEPTADA",
+];
+
+function isTerminalAdoptionStatus(code: AdoptionStatusCode) {
+  return code === "ACEPTADA" || code === "DESCARTADA";
+}
+
+function allowedNextAdoptionStatuses(code: AdoptionStatusCode): AdoptionStatusCode[] {
+  if (isTerminalAdoptionStatus(code)) return [];
+  const idx = adoptionStatusChain.indexOf(code);
+  const next =
+    idx >= 0 && idx < adoptionStatusChain.length - 1 ? adoptionStatusChain[idx + 1] : null;
+  const result: AdoptionStatusCode[] = [];
+  if (next) result.push(next);
+  result.push("DESCARTADA");
+  return result;
+}
+
 function catalogInfo(catalogValuesById: CatalogValueMap, id: number | null | undefined) {
   const item = id ? catalogValuesById.get(id) ?? null : null;
   return item ? { id: item.id, code: item.code, label: item.label } : null;
@@ -546,6 +572,20 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
 
   const adoption = await adoptionRepo().findOneBy({ id });
   if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+
+  // Validación de transición incremental (espejo de la regla del front): solo se
+  // admite avanzar al estado siguiente de la cadena o pasar a DESCARTADA.
+  const previousStatusCode = getAdoptionStatusCode(adoption.statusId);
+  if (previousStatusCode && statusCode !== previousStatusCode) {
+    const allowed = allowedNextAdoptionStatuses(previousStatusCode);
+    if (!allowed.includes(statusCode)) {
+      return res.status(409).json({
+        error: isTerminalAdoptionStatus(previousStatusCode)
+          ? "La solicitud está finalizada y no admite cambios de estado."
+          : `Transición no permitida: desde ${previousStatusCode} solo se puede pasar a ${allowed.join(" o ")}.`,
+      });
+    }
+  }
 
   const previousStatusId = adoption.statusId;
   const A = CatalogIds.adoptionStatus;
