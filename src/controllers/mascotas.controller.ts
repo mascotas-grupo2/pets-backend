@@ -208,7 +208,10 @@ const PET_SORT_MAP: Record<string, string> = {
 function parsePetOrder(req: Request): Record<string, "ASC" | "DESC"> {
   const raw = typeof req.query.sort === "string" ? req.query.sort : "";
   const order: Record<string, "ASC" | "DESC"> = {};
-  for (const seg of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+  for (const seg of raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     const [field, dir] = seg.split(":").map((p) => p.trim());
     const column = PET_SORT_MAP[field];
     if (column) order[column] = dir?.toUpperCase() === "ASC" ? "ASC" : "DESC";
@@ -220,7 +223,8 @@ function parsePetOrder(req: Request): Record<string, "ASC" | "DESC"> {
 function buildAdminFilters(req: Request) {
   const animalTypeId = parseOptionalInt(req.query.animalTypeId);
   const statusId = parseOptionalInt(req.query.statusId);
-  const name = typeof req.query.name === "string" ? req.query.name.trim() : "";
+  const search = req.query.name ?? req.query.q;
+  const name = typeof search === "string" ? search.trim() : "";
   const nameFilter = name.length > 0 ? ILike(`%${name}%`) : undefined;
 
   return {
@@ -689,7 +693,9 @@ export async function listMascotasByIds(req: Request, res: Response) {
   const catalogValuesById = await getCatalogValuesById();
   const serialized = visibles.map((mascota) =>
     serializeMascota(mascota, catalogValuesById),
-  ) as Array<ReturnType<typeof serializeMascota> & { rejectionReason?: string }>;
+  ) as Array<
+    ReturnType<typeof serializeMascota> & { rejectionReason?: string }
+  >;
 
   // A las publicaciones rechazadas les adjuntamos el motivo del último rechazo
   // (guardado como nota "Rechazo: ..."), así el dueño puede ver por qué se rechazó.
