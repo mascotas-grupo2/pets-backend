@@ -24,6 +24,7 @@ import { NormalizeCatalogValues1744402222000 } from "./migration/1744402222000-N
 import { AddReportStatus1744402223000 } from "./migration/1744402223000-AddReportStatus.js";
 import { AddRejectedReportStatus1744402224000 } from "./migration/1744402224000-AddRejectedReportStatus.js";
 import { AddReservedReportStatus1749000000000 } from "./migration/1749000000000-AddReservedReportStatus.js";
+import { RenameEncontradoLabel1749000100000 } from "./migration/1749000100000-RenameEncontradoLabel.js";
 import { AddAdoptionStatusAndCompatibility1748600000000 } from "./migration/1748600000000-AddAdoptionStatusAndCompatibility.js";
 import { AddAdoptionStatusCatalog1748600001000 } from "./migration/1748600001000-AddAdoptionStatusCatalog.js";
 import { AddAdoptionStatusFk1748600002000 } from "./migration/1748600002000-AddAdoptionStatusFk.js";
@@ -33,6 +34,7 @@ import { AddMessageTable1748700000000 } from "./migration/1748700000000-AddMessa
 import { AddUserStatusAndNote1748710000000 } from "./migration/1748710000000-AddUserStatusAndNote.js";
 import { AddPetCompatibilityFields1748800000000 } from "./migration/1748800000000-AddPetCompatibilityFields.js";
 import { AddChatSession1748900000000 } from "./migration/1748900000000-AddChatSession.js";
+import { AddAdoptionUpdatedAt1749100000000 } from "./migration/1749100000000-AddAdoptionUpdatedAt.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -64,6 +66,7 @@ export const AppDataSource = new DataSource({
     AddReportStatus1744402223000,
     AddRejectedReportStatus1744402224000,
     AddReservedReportStatus1749000000000,
+    RenameEncontradoLabel1749000100000,
     AddAdoptionStatusAndCompatibility1748600000000,
     AddAdoptionStatusCatalog1748600001000,
     AddAdoptionStatusFk1748600002000,
@@ -73,6 +76,7 @@ export const AppDataSource = new DataSource({
     AddUserStatusAndNote1748710000000,
     AddPetCompatibilityFields1748800000000,
     AddChatSession1748900000000,
+    AddAdoptionUpdatedAt1749100000000,
   ],
   synchronize: false,
 });
