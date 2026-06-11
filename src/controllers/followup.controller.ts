@@ -55,15 +55,26 @@ export async function listFollowups(req: Request, res: Response) {
   res.json({ page, pageSize, total, items: items.map((i) => ({ ...i, type: catalogValuesById.get(i.typeId) ?? null, status: catalogValuesById.get(i.statusId) ?? null })) });
 }
 
-export async function changeFollowupStatus(req: Request, res: Response) {
+export async function confirmFollowup(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
-  const statusId = Number(req.body.statusId);
-  if (!Number.isInteger(statusId)) return res.status(400).json({ error: "statusId invalido" });
 
   const item = await repo().findOneBy({ id });
   if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
-  item.statusId = statusId;
+  
+  item.statusId = CatalogIds.followupStatus.confirmado;
+  await repo().save(item);
+  res.json(item);
+}
+
+export async function completeFollowup(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const item = await repo().findOneBy({ id });
+  if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
+
+  item.statusId = CatalogIds.followupStatus.completado;
   await repo().save(item);
   res.json(item);
 }
