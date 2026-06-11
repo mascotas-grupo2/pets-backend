@@ -326,12 +326,19 @@ async function seed() {
       emailVerified: true,
     })
   );
+  try {
+    const url = await uploadSeedPhoto(bucket, "admin.png", "users");
+    adminSaved.photo = url;
+    await repoUsers.save(adminSaved);
+  } catch (e) {
+    console.warn("No se pudo subir imagen de seed para admin", e);
+  }
   console.log("Seed completed: Admin user inserted (role=admin).");
 
   // Add two regular users (role = user)
   const usersToCreate = [
-    { name: "Juan Pérez", email: "juan.perez@example.com" },
-    { name: "María Gómez", email: "maria.gomez@example.com" },
+    { name: "Juan Pérez", email: "juan.perez@example.com", seedImage: "juan.png" },
+    { name: "María Gómez", email: "maria.gomez@example.com", seedImage: "maria.png" },
   ];
   const createdUsers: { id: number; email: string }[] = [];
   for (const u of usersToCreate) {
@@ -347,6 +354,13 @@ async function seed() {
         emailVerified: true,
       })
     );
+    try {
+      const url = await uploadSeedPhoto(bucket, u.seedImage, "users");
+      saved.photo = url;
+      await repoUsers.save(saved);
+    } catch (e) {
+      console.warn("No se pudo subir imagen de seed para", u.name, e);
+    }
     createdUsers.push({ id: saved.id, email: saved.email });
   }
   // include admin in the createdUsers array for easier referencing
@@ -358,10 +372,16 @@ async function seed() {
     "Carlos Ruiz", "Ana López", "Ricardo Martínez", "Pedro Silva",
     "Lucía González", "Sofía Rodríguez", "Diego Fernández", "Valentina Díaz"
   ];
-  const moreUsers: { name: string; email: string }[] = [];
+  const moreUsers: { name: string; email: string; seedImage: string }[] = [];
   for (let i = 0; i < realNames.length; i++) {
     const nameParts = realNames[i].toLowerCase().split(" ");
-    moreUsers.push({ name: realNames[i], email: `${nameParts[0]}.${nameParts[1].replace('á','a').replace('ó','o').replace('í','i').replace('é','e')}@example.com` });
+    const firstName = nameParts[0].replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u');
+    const lastName = nameParts[1].replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u');
+    moreUsers.push({ 
+      name: realNames[i], 
+      email: `${firstName}.${lastName}@example.com`,
+      seedImage: `${firstName}.png`
+    });
   }
   for (const u of moreUsers) {
     const usalt = crypto.randomBytes(16).toString("hex");
@@ -376,6 +396,13 @@ async function seed() {
         emailVerified: true,
       })
     );
+    try {
+      const url = await uploadSeedPhoto(bucket, u.seedImage, "users");
+      saved.photo = url;
+      await repoUsers.save(saved);
+    } catch (e) {
+      console.warn("No se pudo subir imagen de seed para", u.name, e);
+    }
     createdUsers.push({ id: saved.id, email: saved.email });
   }
   // fetch all users count for logging
@@ -397,7 +424,7 @@ async function seed() {
     "Kira",
     "Balto",
     "Zoe",
-    "Diego",
+    "Thor",
   ];
   const extraPetDescriptions = [
     "Perro cariñoso que ama pasear y jugar con pelotas.",
@@ -422,7 +449,7 @@ async function seed() {
     "kira.png",
     "balto.png",
     "zoe.png",
-    "diego.png",
+    "thor.png",
   ];
 
   const extraPets = [] as any[];
