@@ -70,8 +70,7 @@ async function seed() {
       hasCollar: true,
       vaccinated: true,
       seedImage: "toby.png",
-    },
-    {
+    },    {
       name: "Coco",
       animalTypeId: CatalogIds.animalType.perro,
       statusId: CatalogIds.petStatus.perdido,
@@ -90,6 +89,7 @@ async function seed() {
       vaccinated: true,
       neutered: true,
       reward: "$50.000",
+      seedImage: "coco.png",
     },
 
     // ============= PERROS ENCONTRADOS =============
@@ -109,6 +109,7 @@ async function seed() {
       weightKg: 15,
       hasCollar: false,
       friendlyWithKids: true,
+      seedImage: "bobi.png",
     },
     {
       name: "Manchas",
@@ -125,6 +126,7 @@ async function seed() {
       color: "Negro y blanco",
       weightKg: 8,
       hasCollar: true,
+      seedImage: "manchas.png",
     },
 
     // ============= PERROS EN ADOPCIÓN =============
@@ -146,6 +148,7 @@ async function seed() {
       vaccinated: true,
       friendlyWithKids: true,
       trained: true,
+      seedImage: "max.png",
     },
     {
       name: "Rocco",
@@ -164,6 +167,7 @@ async function seed() {
       neutered: true,
       vaccinated: true,
       friendlyWithKids: true,
+      seedImage: "rocco.png",
     },
 
     // ============= GATOS PERDIDOS =============
@@ -184,6 +188,7 @@ async function seed() {
       hasCollar: false,
       microchipped: true,
       neutered: true,
+      seedImage: "pelusa.png",
     },
     {
       name: "Simba",
@@ -204,6 +209,7 @@ async function seed() {
       microchipped: true,
       neutered: true,
       reward: "$30.000",
+      seedImage: "simba.png",
     },
 
     // ============= GATOS ENCONTRADOS =============
@@ -222,6 +228,7 @@ async function seed() {
       color: "Atigrada",
       weightKg: 2,
       hasCollar: false,
+      seedImage: "michi.png",
     },
     {
       name: "Salem",
@@ -237,6 +244,7 @@ async function seed() {
       ageMonths: 36,
       color: "Negro",
       weightKg: 3,
+      seedImage: "salem.png",
     },
 
     // ============= GATOS EN ADOPCIÓN =============
@@ -257,6 +265,7 @@ async function seed() {
       neutered: true,
       vaccinated: true,
       friendlyWithKids: true,
+      seedImage: "mishi.png",
     },
     {
       name: "Luna",
@@ -403,6 +412,19 @@ async function seed() {
     "Perro joven, curioso y con mucha energía para entrenar.",
   ];
 
+  const extraPetImages = [
+    "bruno.png",
+    "simba_extra.png",
+    "chispa.png",
+    "maya.png",
+    "rambo.png",
+    "bella.png",
+    "kira.png",
+    "balto.png",
+    "zoe.png",
+    "diego.png",
+  ];
+
   const extraPets = [] as any[];
   for (let i = 0; i < extraPetNames.length; i++) {
     const name = extraPetNames[i];
@@ -425,12 +447,23 @@ async function seed() {
       activityLevelId: i % 3 === 0 ? CatalogIds.activityLevel.tranquilo : (i % 3 === 1 ? CatalogIds.activityLevel.moderado : CatalogIds.activityLevel.activo),
       statusId: CatalogIds.petStatus.adopcion,
       reportStatusId: CatalogIds.petReportStatus.activo,
+      seedImage: extraPetImages[i],
     });
   }
   const createdExtraPets = [] as any[];
   for (const p of extraPets) {
-    const created = await repoPets.save(repoPets.create(p));
+    const { seedImage, ...petFields } = p as any;
+    const created = await repoPets.save(repoPets.create(petFields as Partial<Pet>));
     createdExtraPets.push(created);
+    if (seedImage) {
+      try {
+        const url = await uploadSeedPhoto(bucket, seedImage, String(created.id));
+        created.photos = [url];
+        await repoPets.save(created);
+      } catch (e) {
+        console.warn("No se pudo subir imagen de seed para pet adicional", created.id, e);
+      }
+    }
   }
   console.log(`Seed completed: ${createdExtraPets.length} mascotas adicionales insertadas (reportStatus=activo).`);
 
