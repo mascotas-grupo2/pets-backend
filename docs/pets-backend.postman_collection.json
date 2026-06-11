@@ -1289,6 +1289,19 @@
             ],
             "url": "{{baseUrl}}/api/followups/1/completar"
           }
+        },
+        {
+          "name": "DELETE /api/followups/:id (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/followups/1"
+          }
         }
       ]
     }
