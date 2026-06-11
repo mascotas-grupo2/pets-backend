@@ -38,6 +38,7 @@ import { AddPetCompatibilityFields1748800000000 } from "./migration/174880000000
 import { AddChatSession1748900000000 } from "./migration/1748900000000-AddChatSession.js";
 import { AddAdoptionUpdatedAt1749100000000 } from "./migration/1749100000000-AddAdoptionUpdatedAt.js";
 import { AddAdoptionEvaluation1749200000000 } from "./migration/1749200000000-AddAdoptionEvaluation.js";
+import { AddFollowupStatusCompletado1749300000000 } from "./migration/1749300000000-AddFollowupStatusCompletado.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -83,6 +84,7 @@ export const AppDataSource = new DataSource({
     AddChatSession1748900000000,
     AddAdoptionUpdatedAt1749100000000,
     AddAdoptionEvaluation1749200000000,
+    AddFollowupStatusCompletado1749300000000,
   ],
   synchronize: false,
 });
