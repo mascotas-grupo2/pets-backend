@@ -530,12 +530,12 @@ async function seed() {
   const followupsToSave = [] as any[];
   // Create followups referencing deterministic pet and user ids (useful for tests)
   for (let i = 0; i < 10; i++) {
-    const userId = deterministicUserIds[i % deterministicUserIds.length];
-    const petId = deterministicPetIds[i % deterministicPetIds.length];
+    const user = allUsers[i % allUsers.length];
+    const pet = allPets[i % allPets.length];
     const appointment = new Date(Date.now() + (i + 1) * 24 * 60 * 60 * 1000); // i+1 days in future
     const fu = repoF.create({
-      petId: petId,
-      userId: userId,
+      petId: pet.id,
+      userId: user.id,
       typeId: ((i % 6) + 1301),
       appointmentAt: appointment,
       statusId: CatalogIds.followupStatus.pendiente,
