@@ -18,6 +18,8 @@ export const followupListQuerySchema = z.object({
   dateTo: z.coerce.date().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  orderBy: z.enum(["id", "petId", "userId", "typeId", "statusId", "appointmentAt", "createdAt"]).optional().default("appointmentAt"),
+  orderDir: z.enum(["ASC", "DESC", "asc", "desc"]).optional().default("DESC"),
 });
 
 export const followupUpdateSchema = z.object({

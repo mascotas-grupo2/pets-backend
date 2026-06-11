@@ -47,7 +47,10 @@ export async function listFollowups(req: Request, res: Response) {
   if (filters.dateFrom) qb.andWhere("f.appointmentAt >= :dateFrom", { dateFrom: filters.dateFrom });
   if (filters.dateTo) qb.andWhere("f.appointmentAt <= :dateTo", { dateTo: filters.dateTo });
 
-  const [items, total] = await qb.orderBy("f.appointmentAt", "DESC").skip(skip).take(pageSize).getManyAndCount();
+  const orderByField = filters.orderBy ? `f.${filters.orderBy}` : "f.appointmentAt";
+  const orderDirection = filters.orderDir ? (filters.orderDir.toUpperCase() as "ASC" | "DESC") : "DESC";
+
+  const [items, total] = await qb.orderBy(orderByField, orderDirection).skip(skip).take(pageSize).getManyAndCount();
   const catalogValuesById = await getCatalogValuesById();
   res.json({ page, pageSize, total, items: items.map((i) => ({ ...i, type: catalogValuesById.get(i.typeId) ?? null, status: catalogValuesById.get(i.statusId) ?? null })) });
 }
