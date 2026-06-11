@@ -331,7 +331,11 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
 
   const filters = buildAdminFilters(req);
   const baseQuery = buildAdminPetQuery(reportStatusId);
-  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+  // La sección Mascotas filtra por situación del animal (perdido / refugio /
+  // en adopción / adoptados) mediante ?statusCategory=...
+  const categoryIds = PET_STATUS_CATEGORY[String(req.query.statusCategory ?? "")];
+  const categoryFilter = categoryIds ? { statusId: In(categoryIds) } : {};
+  const where = { ...(baseQuery ?? {}), ...filters, ...categoryFilter };
 
   const [mascotas, total] = await repo().findAndCount({
     where,
@@ -346,9 +350,44 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
     page,
     pageSize,
     // Totales por estado del conjunto completo (para las cards), independientes
-    // del filtro de estado aplicado a la lista paginada.
+    // del filtro aplicado a la lista paginada.
     statusTotals: await reportStatusTotals(),
+    petStatusTotals: await petStatusTotals(),
   });
+}
+
+// Categorías de situación del animal usadas por la sección Mascotas.
+const PET_STATUS_CATEGORY: Record<string, number[]> = {
+  perdido: [CatalogIds.petStatus.perdido],
+  refugio: [
+    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+  ],
+  adopcion: [CatalogIds.petStatus.adopcion],
+  adoptados: [CatalogIds.petStatus.adoptado],
+};
+
+// Conteos por categoría de situación (para las cards de la sección Mascotas).
+async function petStatusTotals() {
+  const rows = await repo()
+    .createQueryBuilder("pet")
+    .select("pet.statusId", "statusId")
+    .addSelect("COUNT(*)", "count")
+    .groupBy("pet.statusId")
+    .getRawMany<{ statusId: string; count: string }>();
+
+  const totals = { todas: 0, perdido: 0, refugio: 0, adopcion: 0, adoptados: 0 };
+  for (const row of rows) {
+    const id = Number(row.statusId);
+    const n = Number(row.count) || 0;
+    totals.todas += n;
+    if (id === CatalogIds.petStatus.perdido) totals.perdido += n;
+    else if (id === CatalogIds.petStatus.adopcion) totals.adopcion += n;
+    else if (id === CatalogIds.petStatus.adoptado) totals.adoptados += n;
+    else totals.refugio += n;
+  }
+  return totals;
 }
 
 // Cuenta publicaciones agrupadas por reportStatus (para las cards del panel).
@@ -845,6 +884,15 @@ export async function updateMascota(req: Request, res: Response) {
     });
   }
 
+  // "adoptado" tampoco se setea a mano: solo vía una adopción (formal o entrega
+  // directa), para que siempre quede registro de quién recibió la mascota.
+  if (catalogIds.statusId === CatalogIds.petStatus.adoptado) {
+    return res.status(409).json({
+      error:
+        "No se puede marcar 'adoptado' a mano; usá 'Registrar adopción directa' para dejar registro de quién la recibió.",
+    });
+  }
+
   const coords =
     "location" in data ? await resolverCoordenadas(data.location) : {};
 
@@ -917,6 +965,59 @@ export async function finalizeMascota(_req: Request, res: Response) {
     error:
       "Una publicación no se puede finalizar manualmente; se finaliza sola al concretarse la adopción.",
   });
+}
+
+/**
+ * Entrega directa: el admin entrega la mascota a alguien que conoce, sin pasar
+ * por el proceso formal de solicitud. Deja la mascota adoptada + finalizada y
+ * registra a quién se entregó (nota), así siempre queda rastro.
+ */
+export async function entregaDirecta(req: Request, res: Response) {
+  const id = req.params.id;
+  const recipientName =
+    typeof req.body?.recipientName === "string"
+      ? req.body.recipientName.trim()
+      : "";
+  if (!recipientName) {
+    return res.status(400).json({ error: "Indicá a quién se entregó la mascota." });
+  }
+
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch (err) {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+  if (existing.statusId === CatalogIds.petStatus.adoptado) {
+    return res.status(409).json({ error: "La mascota ya está adoptada." });
+  }
+
+  existing.statusId = CatalogIds.petStatus.adoptado;
+  existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  const saved = await repo().save(existing);
+
+  // Registro de auditoría: quién la recibió y qué admin la entregó.
+  const adminId = req.authUser?.id ?? null;
+  let adminName: string | null = null;
+  if (adminId) {
+    const admin = await userRepo().findOneBy({ id: adminId });
+    adminName = admin?.name ?? admin?.email ?? null;
+  }
+  await noteRepo().save(
+    noteRepo().create({
+      petId: existing.id,
+      authorId: adminId,
+      authorName: adminName,
+      text: `Adopción directa: entregada a ${recipientName}${
+        adminName ? ` por ${adminName}` : ""
+      }.`,
+      kindId: CatalogIds.petNoteKind.adopcion,
+    }),
+  );
+
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(saved, catalogValuesById));
 }
 
 export async function rejectMascota(req: Request, res: Response) {

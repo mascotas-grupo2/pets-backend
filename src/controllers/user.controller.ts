@@ -396,7 +396,10 @@ export async function adminListUsers(req: Request, res: Response) {
     userRepo().count(),
     userRepo().count({ where: { roleId: CatalogIds.userRole.admin } }),
     userRepo().count({ where: { adopter: true } }),
-    userRepo().count({ where: { roleId: CatalogIds.userRole.user } }),
+    // "Comunes" = usuario común que todavía no es adoptante.
+    userRepo().count({
+      where: { roleId: CatalogIds.userRole.user, adopter: false },
+    }),
   ]);
 
   res.json({

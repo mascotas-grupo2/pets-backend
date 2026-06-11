@@ -200,6 +200,7 @@ function parseStatusId(value: unknown, statusIdValue: unknown) {
 
 type AdoptionSortField =
   | "createdAt"
+  | "updatedAt"
   | "compatibilityScore"
   | "statusId"
   | "firstName"
@@ -217,6 +218,7 @@ type SortOrder = {
 
 const adoptionSortFieldMap: Record<AdoptionSortField, string> = {
   createdAt: "adoption.createdAt",
+  updatedAt: "adoption.updatedAt",
   compatibilityScore: "adoption.compatibilityScore",
   statusId: "adoption.statusId",
   firstName: "adoption.firstName",
@@ -277,6 +279,10 @@ function applySort(qb: SelectQueryBuilder<any>, orders: SortOrder[]) {
   for (const order of rest) {
     ordered = ordered.addOrderBy(order.column, order.direction);
   }
+  // Desempate estable: con created_at empatado (p. ej. tras el seed, donde todas
+  // las filas comparten now()) Postgres reordena la fila recién actualizada al
+  // final del heap. Fijar el id como criterio final mantiene cada fila en su lugar.
+  ordered = ordered.addOrderBy("adoption.id", "DESC");
   return ordered;
 }
 
@@ -318,6 +324,7 @@ async function mapAdoptionSummaries(items: Adoption[]) {
       status: getAdoptionStatusCode(item.statusId) ?? "NUEVA",
       compatibilityScore: item.compatibilityScore ?? null,
       createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
       applicantName: `${item.firstName} ${item.lastName}`.trim(),
       applicantEmail: item.email,
       userName: user?.name ?? null,
