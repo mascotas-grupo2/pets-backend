@@ -9,6 +9,7 @@ import { PetNote } from "../entity/PetNote.js";
 import { CatalogIds, catalogItemForId } from "../lib/catalog-constants.js";
 import { publicUser } from "./user.controller.js";
 import { notify } from "../lib/notify.js";
+import { uploadFileToMinio } from "../lib/minio.js";
 
 function messageRepo() {
   return AppDataSource.getRepository(Message);
@@ -88,7 +89,9 @@ export async function sendMessage(req: Request, res: Response) {
     return res.status(401).json({ error: "El usuario remitente no existe" });
 
   const { receiverId, content } = req.body;
-  if (!receiverId || !content)
+  const file = (req as any).file as Express.Multer.File | undefined;
+
+  if (!receiverId || (!content && !file))
     return res.status(400).json({ error: "Faltan datos" });
 
   const receiver = await userRepo().findOneBy({ id: Number(receiverId) });
@@ -96,10 +99,17 @@ export async function sendMessage(req: Request, res: Response) {
     return res.status(404).json({ error: "Destinatario no encontrado" });
 
   try {
+    let photoUrl = null;
+    if (file) {
+      const bucket = process.env.MINIO_MESSAGE_FILES_BUCKET ?? "message-files";
+      photoUrl = await uploadFileToMinio(bucket, `msg-${sender.id}-${Date.now()}`, file.originalname, file.buffer, file.mimetype);
+    }
+
     const msg = messageRepo().create({
       senderId: sender.id,
       receiverId: receiver.id,
-      content,
+      content: content || "",
+      photo: photoUrl,
       read: false,
     });
 
@@ -239,11 +249,11 @@ export async function deleteMessage(req: Request, res: Response) {
   const msg = await messageRepo().findOneBy({ id });
   if (!msg) return res.status(404).json({ error: "Mensaje no encontrado" });
 
-  // Puede borrar un participante de la conversación o un admin.
+  // Puede borrar el remitente del mensaje o un admin.
   const isAdmin = req.authUser?.role === "admin";
-  const isParticipant = msg.senderId === userId || msg.receiverId === userId;
-  if (!isParticipant && !isAdmin) {
-    return res.status(403).json({ error: "No autorizado" });
+  const isSender = msg.senderId === userId;
+  if (!isSender && !isAdmin) {
+    return res.status(403).json({ error: "No autorizado para borrar este mensaje" });
   }
 
   await messageRepo().remove(msg);

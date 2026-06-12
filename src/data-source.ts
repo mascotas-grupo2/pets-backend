@@ -41,6 +41,7 @@ import { AddAdoptionUpdatedAt1749100000000 } from "./migration/1749100000000-Add
 import { AddAdoptionEvaluation1749200000000 } from "./migration/1749200000000-AddAdoptionEvaluation.js";
 import { AddFollowupStatusCompletado1749300000000 } from "./migration/1749300000000-AddFollowupStatusCompletado.js";
 import { AddNotification1749400000000 } from "./migration/1749400000000-AddNotification.js";
+import { AddMessagePhoto1749500000000 } from "./migration/1749500000000-AddMessagePhoto.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -89,6 +90,7 @@ export const AppDataSource = new DataSource({
     AddAdoptionEvaluation1749200000000,
     AddFollowupStatusCompletado1749300000000,
     AddNotification1749400000000,
+    AddMessagePhoto1749500000000,
   ],
   synchronize: false,
 });

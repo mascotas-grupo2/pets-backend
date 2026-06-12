@@ -15,6 +15,9 @@ export class Message {
   @Column({ type: "text" })
   content!: string;
 
+  @Column({ type: "text", nullable: true })
+  photo!: string | null;
+
   @Column({ type: "boolean", default: false })
   read!: boolean;
 
