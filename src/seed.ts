@@ -453,6 +453,37 @@ async function seed() {
     "thor.png",
   ];
 
+  // Ubicaciones reales de CABA (el front conoce sus coordenadas para la vista mapa).
+  const extraPetLocations = [
+    "Plaza Serrano, Palermo, CABA",
+    "Parque Centenario, Caballito, CABA",
+    "Parque Lezama, San Telmo, CABA",
+    "Parque Rivadavia, Caballito, CABA",
+    "Barrancas de Belgrano, CABA",
+    "Parque Chacabuco, CABA",
+    "Plaza Irlanda, Caballito, CABA",
+    "Parque Los Andes, Chacarita, CABA",
+    "Plaza Pueyrredón, Flores, CABA",
+    "Parque Saavedra, CABA",
+  ];
+  // Estados variados (perdido/encontrado/tránsito/adopción) para enriquecer el listado.
+  const extraPetStatuses = [
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.adopcion,
+  ];
+  // Antigüedad del reporte en días, relativa a HOY → habilita la urgencia y el orden.
+  const extraPetDaysAgo = [1, 0, 3, 8, 22, 2, 13, 30, 6, 40];
+  const isoDaysAgo = (n: number) =>
+    new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+
   const extraPets = [] as any[];
   for (let i = 0; i < extraPetNames.length; i++) {
     const name = extraPetNames[i];
@@ -460,8 +491,8 @@ async function seed() {
       name,
       animalTypeId: i % 2 === 0 ? CatalogIds.animalType.perro : CatalogIds.animalType.gato,
       description: extraPetDescriptions[i],
-      date: "2026-05-01",
-      location: `Barrio ${i + 1}, Ciudad`,
+      date: isoDaysAgo(extraPetDaysAgo[i]),
+      location: extraPetLocations[i],
       contactPhone: `11500000${i + 1}`,
       contactEmail: `pet${i + 1}@example.com`,
       sexId: i % 2 === 0 ? CatalogIds.petSex.macho : CatalogIds.petSex.hembra,
@@ -473,7 +504,7 @@ async function seed() {
       friendlyWithKids: i % 2 === 0,
       friendlyWithPets: i % 4 !== 0,
       activityLevelId: i % 3 === 0 ? CatalogIds.activityLevel.tranquilo : (i % 3 === 1 ? CatalogIds.activityLevel.moderado : CatalogIds.activityLevel.activo),
-      statusId: CatalogIds.petStatus.adopcion,
+      statusId: extraPetStatuses[i],
       reportStatusId: CatalogIds.petReportStatus.activo,
       seedImage: extraPetImages[i],
     });

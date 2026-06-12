@@ -5,6 +5,7 @@ import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
+import { Followup } from "../entity/Followup.js";
 import {
   petCreateSchema,
   petNoteCreateSchema,
@@ -36,6 +37,10 @@ function userRepo() {
 
 function noteRepo() {
   return AppDataSource.getRepository(PetNote);
+}
+
+function followupRepo() {
+  return AppDataSource.getRepository(Followup);
 }
 
 type CatalogValueMap = Map<number, CatalogValue>;
@@ -334,7 +339,8 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
   const baseQuery = buildAdminPetQuery(reportStatusId);
   // La sección Mascotas filtra por situación del animal (perdido / refugio /
   // en adopción / adoptados) mediante ?statusCategory=...
-  const categoryIds = PET_STATUS_CATEGORY[String(req.query.statusCategory ?? "")];
+  const categoryIds =
+    PET_STATUS_CATEGORY[String(req.query.statusCategory ?? "")];
   const categoryFilter = categoryIds ? { statusId: In(categoryIds) } : {};
   const where = { ...(baseQuery ?? {}), ...filters, ...categoryFilter };
 
@@ -378,7 +384,13 @@ async function petStatusTotals() {
     .groupBy("pet.statusId")
     .getRawMany<{ statusId: string; count: string }>();
 
-  const totals = { todas: 0, perdido: 0, refugio: 0, adopcion: 0, adoptados: 0 };
+  const totals = {
+    todas: 0,
+    perdido: 0,
+    refugio: 0,
+    adopcion: 0,
+    adoptados: 0,
+  };
   for (const row of rows) {
     const id = Number(row.statusId);
     const n = Number(row.count) || 0;
@@ -986,7 +998,9 @@ export async function entregaDirecta(req: Request, res: Response) {
       ? req.body.recipientName.trim()
       : "";
   if (!recipientName) {
-    return res.status(400).json({ error: "Indicá a quién se entregó la mascota." });
+    return res
+      .status(400)
+      .json({ error: "Indicá a quién se entregó la mascota." });
   }
 
   let existing;
@@ -1080,7 +1094,21 @@ export async function deleteMascota(req: Request, res: Response) {
     return res.status(400).json({ error: "Id invalido" });
   }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
-  await repo().remove(existing);
+
+  try {
+    await AppDataSource.transaction(async (manager) => {
+      await manager.getRepository(Followup).delete({ petId: id });
+      await manager.getRepository(PetNote).delete({ petId: id });
+      await manager.getRepository(Pet).remove(existing);
+    });
+  } catch (err) {
+    console.error("Error al eliminar mascota:", err);
+    return res
+      .status(409)
+      .json({
+        error: "No se pudo eliminar la publicación por datos asociados.",
+      });
+  }
   res.status(204).send();
 }
 
