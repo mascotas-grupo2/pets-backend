@@ -339,6 +339,7 @@ async function seed() {
   const usersToCreate = [
     { name: "Juan Pérez", email: "juan.perez@example.com", seedImage: "juan.png" },
     { name: "María Gómez", email: "maria.gomez@example.com", seedImage: "maria.png" },
+    { name: "Cberto", email: "cberto021@gmail.com", seedImage: "carlos.png" },
   ];
   const createdUsers: { id: number; email: string }[] = [];
   for (const u of usersToCreate) {
