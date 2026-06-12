@@ -236,11 +236,11 @@ export async function deleteMessage(req: Request, res: Response) {
   const msg = await messageRepo().findOneBy({ id });
   if (!msg) return res.status(404).json({ error: "Mensaje no encontrado" });
 
-  // Puede borrar un participante de la conversación o un admin.
+  // Puede borrar el remitente del mensaje o un admin.
   const isAdmin = req.authUser?.role === "admin";
-  const isParticipant = msg.senderId === userId || msg.receiverId === userId;
-  if (!isParticipant && !isAdmin) {
-    return res.status(403).json({ error: "No autorizado" });
+  const isSender = msg.senderId === userId;
+  if (!isSender && !isAdmin) {
+    return res.status(403).json({ error: "No autorizado para borrar este mensaje" });
   }
 
   await messageRepo().remove(msg);
