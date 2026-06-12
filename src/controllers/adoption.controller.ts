@@ -288,8 +288,9 @@ const adoptionSortFieldMap: Record<string, string> = {
   fecha: "adoption.createdAt",
   fechaModificacion: "adoption.updatedAt",
   userName: "adoption.firstName",
-  // Nota: "petName" no se puede ordenar server-side sin joinear la tabla pet
-  // (el nombre de la mascota se resuelve en una query aparte). Queda sin sort.
+  // "petName" no se ordena server-side: el nombre de la mascota vive en otra
+  // tabla y joinearlo rompe la paginación con DISTINCT de TypeORM. La columna
+  // se marca como NO ordenable en el front (SolicitudesTable).
 };
 
 function parsePagination(req: Request) {
