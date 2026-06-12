@@ -17,6 +17,7 @@ import {
   uploadFileToMinio,
 } from "../lib/minio.js";
 import { geocodificarDireccion } from "../lib/geocoding.js";
+import { notify } from "../lib/notify.js";
 import {
   CatalogValidationError,
   getCatalogValuesById,
@@ -954,6 +955,12 @@ export async function approveMascota(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
   existing.reportStatusId = CatalogIds.petReportStatus.activo;
   const saved = await repo().save(existing);
+  await notify(existing.userId, {
+    type: "publication",
+    title: "Tu publicación fue aprobada",
+    body: `"${existing.name ?? "Tu publicación"}" ya está visible en el listado.`,
+    link: `/mascotas-perdidas/${existing.id}`,
+  });
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(saved, catalogValuesById));
 }
@@ -1052,6 +1059,13 @@ export async function rejectMascota(req: Request, res: Response) {
       }),
     );
   }
+
+  await notify(existing.userId, {
+    type: "publication",
+    title: "Tu publicación fue rechazada",
+    body: reason ? `Motivo: ${reason}` : "Editala para que vuelva a revisión.",
+    link: "/account",
+  });
 
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(saved, catalogValuesById));

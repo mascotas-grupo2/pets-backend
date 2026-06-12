@@ -8,6 +8,7 @@ import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { CatalogIds, catalogItemForId } from "../lib/catalog-constants.js";
 import { publicUser } from "./user.controller.js";
+import { notify } from "../lib/notify.js";
 
 function messageRepo() {
   return AppDataSource.getRepository(Message);
@@ -103,6 +104,18 @@ export async function sendMessage(req: Request, res: Response) {
     });
 
     await messageRepo().save(msg);
+
+    // Notificar al receptor del mensaje nuevo (link según su rol).
+    const receiverIsAdmin = receiver.roleId === CatalogIds.userRole.admin;
+    await notify(receiver.id, {
+      type: "message",
+      title: `Nuevo mensaje de ${sender.name}`,
+      body: typeof content === "string" ? content.slice(0, 140) : null,
+      link: receiverIsAdmin
+        ? `/admin/mensajes?user=${sender.id}`
+        : `/account?tab=messages&user=${sender.id}`,
+    });
+
     res.status(201).json(msg);
   } catch (error) {
     console.error("Error saving message:", error);

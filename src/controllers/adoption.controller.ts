@@ -16,6 +16,17 @@ import {
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
 import { calculateCompatibility } from "../lib/matching.js";
+import { notify } from "../lib/notify.js";
+
+// Etiquetas amigables por código de estado (para las notificaciones).
+const ADOPTION_STATUS_LABELS: Record<string, string> = {
+  NUEVA: "Nueva",
+  EN_EVALUACION: "En evaluación",
+  ENTREVISTA_PENDIENTE: "Entrevista pendiente",
+  ACEPTADA_CON_SEGUIMIENTO: "Aceptada con seguimiento",
+  ACEPTADA: "Aceptada",
+  DESCARTADA: "Descartada",
+};
 
 function adoptionRepo() {
   return AppDataSource.getRepository(Adoption);
@@ -693,6 +704,16 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
 
   if (statusId === A.aceptadaConSeguimiento && previousStatusId !== statusId) {
     await createFollowupsForAdoption(saved);
+  }
+
+  // Notificar al solicitante el cambio de estado de su solicitud.
+  if (previousStatusId !== statusId) {
+    await notify(saved.userId, {
+      type: "adoption_status",
+      title: "Tu solicitud de adopción cambió de estado",
+      body: `Ahora está: ${ADOPTION_STATUS_LABELS[statusCode] ?? statusCode}`,
+      link: "/account",
+    });
   }
 
   res.json(await serializeAdoptionDetail(saved));
