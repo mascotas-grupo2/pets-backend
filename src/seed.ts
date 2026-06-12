@@ -806,8 +806,16 @@ async function seed() {
     adoptionSamples.push(a as any);
   }
   await repoAdopt.save(adoptionSamples);
+  // created_at es @CreateDateColumn (TypeORM lo pisa con now() en el INSERT), así
+  // que todas quedarían con la MISMA fecha y la columna "Fecha" del admin no
+  // ordenaría. Lo espaciamos 1 día entre sí con un UPDATE posterior.
+  await AppDataSource.query(`
+    UPDATE adoption a SET created_at = now() - (s.rn * interval '1 day')
+    FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM adoption) s
+    WHERE a.id = s.id
+  `);
   console.log(
-    `Seed completed: ${adoptionSamples.length} solicitudes de adopción insertadas.`,
+    `Seed completed: ${adoptionSamples.length} solicitudes de adopción insertadas (createdAt espaciado).`,
   );
 
   // Create ~10 followups (appointments) in the future

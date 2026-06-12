@@ -811,6 +811,8 @@ export async function updateMascota(req: Request, res: Response) {
   //    solo se modera (aprobar/rechazar/eliminar).
   const authUser = req.authUser;
   const isAdmin = authUser?.role === "admin";
+
+  let adminManageOnly = false;
   if (!isAdmin) {
     if (!authUser || authUser.id !== existing.userId) {
       return res.status(403).json({ error: "No autorizado" });
@@ -821,12 +823,9 @@ export async function updateMascota(req: Request, res: Response) {
         ? await userRepo().findOneBy({ id: existing.userId })
         : null;
     const ownerIsAdmin = owner?.roleId === CatalogIds.userRole.admin;
-    if (!ownerIsAdmin) {
-      return res.status(403).json({
-        error:
-          "No se puede editar una publicación de un usuario; solo moderarla (aprobar/rechazar/eliminar).",
-      });
-    }
+    // Publicación de un usuario común: el admin solo gestiona estado/moderación,
+    // no edita su contenido (nombre, descripción, fotos, etc.).
+    if (!ownerIsAdmin) adminManageOnly = true;
   }
 
   let catalogIds:
@@ -844,6 +843,20 @@ export async function updateMascota(req: Request, res: Response) {
   if (!isAdmin) {
     delete data.reportStatus;
     delete data.reportStatusId;
+  }
+
+  if (adminManageOnly) {
+    const gestion = new Set([
+      "status",
+      "statusId",
+      "reportStatus",
+      "reportStatusId",
+      "medicalStatus",
+      "medicalStatusId",
+    ]);
+    for (const k of Object.keys(data)) {
+      if (!gestion.has(k)) delete data[k];
+    }
   }
 
   try {
@@ -904,6 +917,29 @@ export async function updateMascota(req: Request, res: Response) {
       error:
         "No se puede marcar 'adoptado' a mano; usá 'Registrar adopción directa' para dejar registro de quién la recibió.",
     });
+  }
+
+  if (
+    catalogIds.statusId != null &&
+    existing.statusId != null &&
+    catalogIds.statusId !== existing.statusId
+  ) {
+    const S = CatalogIds.petStatus;
+    const PET_STATUS_NEXT: Record<number, number[]> = {
+      [S.perdido]: [S.encontrado],
+      [S.encontrado]: [S.transito, S.medico, S.adopcion],
+      [S.transito]: [S.medico, S.adopcion],
+      [S.medico]: [S.transito, S.adopcion],
+      [S.adopcion]: [S.adoptado],
+      [S.adoptado]: [],
+    };
+    const permitidos = PET_STATUS_NEXT[existing.statusId] ?? [];
+    if (!permitidos.includes(catalogIds.statusId)) {
+      return res.status(409).json({
+        error:
+          "Transición de estado no permitida: el estado de la mascota solo puede avanzar.",
+      });
+    }
   }
 
   const coords =
@@ -1103,11 +1139,9 @@ export async function deleteMascota(req: Request, res: Response) {
     });
   } catch (err) {
     console.error("Error al eliminar mascota:", err);
-    return res
-      .status(409)
-      .json({
-        error: "No se pudo eliminar la publicación por datos asociados.",
-      });
+    return res.status(409).json({
+      error: "No se pudo eliminar la publicación por datos asociados.",
+    });
   }
   res.status(204).send();
 }
