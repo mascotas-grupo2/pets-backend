@@ -485,6 +485,21 @@ async function seed() {
     CatalogIds.petSex.macho,  // Thor
   ];
 
+  // Pesos explícitos para cubrir las 3 categorías del filtro de tamaño
+  // (pequeño ≤10kg, mediano ≤25kg, grande >25kg), coherentes con el tipo.
+  const extraPetWeights = [
+    30, // Bruno  - perro grande
+    5,  // Simba  - gato
+    8,  // Chispa - perro pequeño (cachorro)
+    4,  // Maya   - gata
+    35, // Rambo  - perro grande
+    4,  // Bella  - gata
+    5,  // Kira   - gata
+    22, // Balto  - perro mediano
+    3,  // Zoe    - gata
+    18, // Thor   - perro mediano
+  ];
+
   const extraPets = [] as any[];
   for (let i = 0; i < extraPetNames.length; i++) {
     const name = extraPetNames[i];
@@ -500,7 +515,7 @@ async function seed() {
       breed: "Común",
       ageMonths: 6 + i,
       color: "Mixto",
-      weightKg: 3 + i,
+      weightKg: extraPetWeights[i],
       vaccinated: i % 3 !== 0,
       friendlyWithKids: i % 2 === 0,
       friendlyWithPets: i % 4 !== 0,
@@ -526,6 +541,31 @@ async function seed() {
     }
   }
   console.log(`Seed completed: ${createdExtraPets.length} mascotas adicionales insertadas (reportStatus=activo).`);
+
+  // --- Fechas variadas para los filtros del listado ---
+  // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
+  // inserta todo junto, sin esto todas quedarían en "hoy". Espaciamos `createdAt`
+  // y sincronizamos `date` (la fecha de reporte que se muestra) para que coincidan.
+  // createdAt es @CreateDateColumn (TypeORM lo pisa en el INSERT), así que se
+  // setea con un UPDATE directo.
+  const allCreatedPetIds = [
+    ...createdPets.map((p) => p.id),
+    ...createdExtraPets.map((p) => p.id),
+  ];
+  const dayOffsets = [
+    0, 0, 1, 2, 3, 5, 6, 8, 10, 13, 15, 18, 20, 22, 25, 28, 35, 40, 45, 55, 60, 70,
+  ];
+  for (let i = 0; i < allCreatedPetIds.length; i++) {
+    const offset = dayOffsets[i % dayOffsets.length];
+    const d = new Date(Date.now() - offset * 24 * 60 * 60 * 1000);
+    await AppDataSource.query(
+      `UPDATE "pet" SET "createdAt" = $1, "date" = $2 WHERE "id" = $3`,
+      [d.toISOString(), d.toISOString().slice(0, 10), allCreatedPetIds[i]],
+    );
+  }
+  console.log(
+    `Seed completed: createdAt/date espaciados en ${allCreatedPetIds.length} mascotas (para filtros de fecha).`,
+  );
 
   // Refresh lists of users and pets to reference in adoptions and followups
   // Refresh lists of users and pets to reference in adoptions and followups

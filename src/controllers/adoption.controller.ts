@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { In, SelectQueryBuilder } from "typeorm";
+import { In, IsNull, Not, SelectQueryBuilder } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Adoption } from "../entity/Adoption.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
@@ -527,7 +527,11 @@ export async function listAdoptions(req: Request, res: Response) {
   const repo = adoptionRepo();
   const isAdmin = req.authUser?.role === "admin";
   if (isAdmin) {
-    const all = await repo.find({ order: { createdAt: "DESC" } });
+    // Excluye los perfiles de adoptante (sin petId); solo solicitudes reales.
+    const all = await repo.find({
+      where: { petId: Not(IsNull()) },
+      order: { createdAt: "DESC" },
+    });
     const catalogValuesById = await getCatalogValuesById();
     return res.json(all.map((item) => serializeAdoption(item, catalogValuesById)));
   }
@@ -545,6 +549,10 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   const sortOrders = parseSort(req);
 
   const qb = adoptionRepo().createQueryBuilder("adoption");
+  // Solo solicitudes asociadas a una mascota concreta. Las adopciones sin petId
+  // son el "perfil de adoptante" (registro general del usuario) y no deben
+  // aparecer como solicitudes en el panel.
+  qb.andWhere("adoption.petId IS NOT NULL");
   if (filters.userId) qb.andWhere("adoption.userId = :userId", { userId: filters.userId });
   if (filters.petId) qb.andWhere("adoption.petId = :petId", { petId: filters.petId });
   if (filters.statusId) qb.andWhere("adoption.statusId = :statusId", { statusId: filters.statusId });
@@ -566,6 +574,7 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   // mientras que la lista paginada aplica los filtros del query.
   const rawSummary = await adoptionRepo()
     .createQueryBuilder("adoption")
+    .where("adoption.petId IS NOT NULL")
     .select("adoption.statusId", "statusId")
     .addSelect("COUNT(*)", "count")
     .groupBy("adoption.statusId")
