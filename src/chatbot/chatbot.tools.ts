@@ -60,7 +60,10 @@ export async function findPetsByStatus(params: {
   limit?: number;
 }) {
   const limit = Math.min(Math.max(params.limit ?? 5, 1), 20);
-  const where: any = { statusId: params.statusId };
+  const where: any = {
+    statusId: params.statusId,
+    reportStatusId: CatalogIds.petReportStatus.activo,
+  };
   if (params.location) where.location = ILike(`%${params.location}%`);
   if (params.animalType) {
     const animalTypeId = ANIMAL_TYPE_BY_CODE[params.animalType.toLowerCase()];
@@ -177,7 +180,10 @@ const getPetDetails: ToolDefinition = {
     },
   },
   handler: async (args) => {
-    const pet = await petRepo().findOneBy({ id: args.petId });
+    const pet = await petRepo().findOneBy({
+      id: args.petId,
+      reportStatusId: CatalogIds.petReportStatus.activo,
+    });
     if (!pet) return { found: false };
     return { found: true, pet: await serializeMinimalPet(pet) };
   },

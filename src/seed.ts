@@ -287,13 +287,20 @@ async function seed() {
     },
   ];
 
+  const keepPending = new Set(["Coco", "Manchas"]);
+
   const createdPets: { id: string; name: string | null }[] = [];
   for (const item of petsData) {
     // El campo `seedImage` es opcional y solo está presente en algunas
     // mascotas del dataset. Lo extraemos antes de persistir.
     const { seedImage, ...petFields } = item as any;
     const created = await repoPets.save(
-      repoPets.create(petFields as Partial<Pet>),
+      repoPets.create({
+        ...(petFields as Partial<Pet>),
+        reportStatusId: keepPending.has((item as any).name)
+          ? CatalogIds.petReportStatus.pendiente
+          : CatalogIds.petReportStatus.activo,
+      }),
     );
     createdPets.push({ id: created.id, name: created.name ?? null });
     if (seedImage) {
@@ -453,18 +460,43 @@ async function seed() {
     "thor.png",
   ];
 
+  const extraPetTypes = [
+    CatalogIds.animalType.perro, // Bruno  - "Perro cariñoso..."
+    CatalogIds.animalType.gato,  // Simba  - "Gato curioso..."
+    CatalogIds.animalType.perro, // Chispa - "Cachorro energético..."
+    CatalogIds.animalType.gato,  // Maya   - "Gata tranquila..."
+    CatalogIds.animalType.perro, // Rambo  - "Perro protector..."
+    CatalogIds.animalType.gato,  // Bella  - "Hembra dulce..."
+    CatalogIds.animalType.gato,  // Kira   - "Gata activa..."
+    CatalogIds.animalType.perro, // Balto  - "Perro de tamaño mediano..."
+    CatalogIds.animalType.gato,  // Zoe    - "Gatito pequeño..."
+    CatalogIds.animalType.perro, // Thor   - "Perro joven..."
+  ];
+  const extraPetSexes = [
+    CatalogIds.petSex.macho,  // Bruno
+    CatalogIds.petSex.macho,  // Simba
+    CatalogIds.petSex.macho,  // Chispa
+    CatalogIds.petSex.hembra, // Maya
+    CatalogIds.petSex.macho,  // Rambo
+    CatalogIds.petSex.hembra, // Bella
+    CatalogIds.petSex.hembra, // Kira
+    CatalogIds.petSex.macho,  // Balto
+    CatalogIds.petSex.hembra, // Zoe
+    CatalogIds.petSex.macho,  // Thor
+  ];
+
   const extraPets = [] as any[];
   for (let i = 0; i < extraPetNames.length; i++) {
     const name = extraPetNames[i];
     extraPets.push({
       name,
-      animalTypeId: i % 2 === 0 ? CatalogIds.animalType.perro : CatalogIds.animalType.gato,
+      animalTypeId: extraPetTypes[i],
       description: extraPetDescriptions[i],
       date: "2026-05-01",
       location: `Barrio ${i + 1}, Ciudad`,
       contactPhone: `11500000${i + 1}`,
       contactEmail: `pet${i + 1}@example.com`,
-      sexId: i % 2 === 0 ? CatalogIds.petSex.macho : CatalogIds.petSex.hembra,
+      sexId: extraPetSexes[i],
       breed: "Común",
       ageMonths: 6 + i,
       color: "Mixto",
