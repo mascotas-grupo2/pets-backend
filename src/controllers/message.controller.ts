@@ -8,6 +8,7 @@ import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { CatalogIds, catalogItemForId } from "../lib/catalog-constants.js";
 import { publicUser } from "./user.controller.js";
+import { uploadFileToMinio } from "../lib/minio.js";
 
 function messageRepo() {
   return AppDataSource.getRepository(Message);
@@ -87,7 +88,9 @@ export async function sendMessage(req: Request, res: Response) {
     return res.status(401).json({ error: "El usuario remitente no existe" });
 
   const { receiverId, content } = req.body;
-  if (!receiverId || !content)
+  const file = (req as any).file as Express.Multer.File | undefined;
+
+  if (!receiverId || (!content && !file))
     return res.status(400).json({ error: "Faltan datos" });
 
   const receiver = await userRepo().findOneBy({ id: Number(receiverId) });
@@ -95,10 +98,17 @@ export async function sendMessage(req: Request, res: Response) {
     return res.status(404).json({ error: "Destinatario no encontrado" });
 
   try {
+    let photoUrl = null;
+    if (file) {
+      const bucket = process.env.MINIO_MESSAGE_FILES_BUCKET ?? "message-files";
+      photoUrl = await uploadFileToMinio(bucket, `msg-${sender.id}-${Date.now()}`, file.originalname, file.buffer, file.mimetype);
+    }
+
     const msg = messageRepo().create({
       senderId: sender.id,
       receiverId: receiver.id,
-      content,
+      content: content || "",
+      photo: photoUrl,
       read: false,
     });
 

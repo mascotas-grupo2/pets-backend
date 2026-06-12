@@ -58,7 +58,7 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: /bin/sh -c "sleep 5; mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; mc mb --ignore-existing myminio/report-images; mc policy set download myminio/report-images || true; mc mb --ignore-existing myminio/profile; mc policy set download myminio/profile || true; exit 0"
+    entrypoint: /bin/sh -c "sleep 5; mc alias set myminio http://minio:9090 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; mc mb --ignore-existing myminio/report-images; mc policy set download myminio/report-images || true; mc mb --ignore-existing myminio/profile; mc policy set download myminio/profile || true; mc mb --ignore-existing myminio/message-files; mc policy set download myminio/message-files || true; exit 0"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
