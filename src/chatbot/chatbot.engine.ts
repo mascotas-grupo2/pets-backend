@@ -79,6 +79,20 @@ function userIntendsToCreate(message: string): boolean {
   return /\s(perd[ií]|perd[ií]o|extravi[eé]|extravi[oó]|encontr[eé]|hall[eé]|escap[oó]|se\s+(escap[oó]|fue|me\s+escap[oó])|no\s+aparece|quiero\s+adoptar|me\s+gustar[ií]a\s+adoptar|adoptar\s+(una|un|mascota)|reportar\s+(mi|una|un|mascota))\s/i.test(padded);
 }
 
+/**
+ * Detecta la ENTRADA al flujo de mascota perdida ("perdí mi mascota, ¿qué
+ * hago?"): verbo de pérdida + pedido de ayuda genérico, sin detalles todavía.
+ * Para este caso mostramos un menú con botones (Ver mascotas / Reportar) tanto
+ * para usuarios logueados como anónimos. NO matchea cuando el usuario ya da
+ * detalles (zona, color), porque ahí conviene el auth gate / LLM.
+ */
+function userAsksLostPetHelp(message: string): boolean {
+  const padded = ` ${message.toLowerCase().replace(/[¿?¡!,.;:()"]/g, " ")} `;
+  const lostVerb = /\s(perd[ií]|perd[ií]o|extravi[eé]|extravi[oó]|se\s+me\s+escap[oó]|se\s+escap[oó])\s/i.test(padded);
+  const asksHelp = /\s(qu[eé]\s+hago|qu[eé]\s+hacer|ayuda|ayudame|no\s+s[eé]\s+qu[eé]\s+hacer)\s/i.test(padded);
+  return lostVerb && asksHelp;
+}
+
 const AUTH_GATE_MESSAGE =
   "Te puedo ayudar con eso. Si querés crear un reporte oficial vas a necesitar " +
   "iniciar sesión primero, pero también podés revisar si alguien ya reportó tu mascota " +
@@ -309,6 +323,38 @@ export async function handleChatMessage(
     content: params.message,
   };
   await appendMessages(session, [userMessage]);
+
+  // MENÚ DE MASCOTA PERDIDA (logueado o anónimo): cuando el usuario entra con
+  // "perdí mi mascota, ¿qué hago?" le ofrecemos dos caminos con botones.
+  // "Ver mascotas" reusa el bypass de listado (lleva a elegir Perro/Gato) y
+  // "Reportar" cae en el auth gate si es anónimo, o en el slot-filling del LLM
+  // si está logueado. Va ANTES del auth gate para mostrarse en ambos casos.
+  if (userAsksLostPetHelp(params.message)) {
+    const menuText =
+      "Te ayudo. ¿Querés ver las mascotas ya reportadas (por si está la tuya) " +
+      "o reportar tu mascota perdida?";
+    await appendMessages(session, [{ role: "assistant", content: menuText }]);
+    await setLastIntent(session, "lost_pet_menu");
+
+    const response: ChatResponse = {
+      sessionId: session.id,
+      messages: [{ role: "assistant", type: "text", text: menuText }],
+      quickReplies: [
+        { label: "Ver mascotas", value: "Mostrame los reportes que ya hay" },
+        { label: "Reportar", value: "Quiero reportar mi mascota perdida" },
+      ],
+    };
+    if (debugEnabled) {
+      response.debug = {
+        detectedIntent: "lost_pet_menu",
+        toolCalls: [],
+        model: model(),
+        iterations: 0,
+        authenticated: !!params.userContext,
+      };
+    }
+    return response;
+  }
 
   // AUTH GATE SERVER-SIDE: si el usuario está anónimo y su mensaje sugiere
   // intención de crear, devolvemos el mensaje canónico sin invocar al LLM.
