@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
 	adminListAdoptionsPaged,
+	cancelMyAdoption,
 	createAdoption,
 	getAdoptionById,
 	listAdoptions,
@@ -17,6 +18,7 @@ export const adoptionRouter = Router();
 adoptionRouter.post("/", requireAuth, createAdoption);
 adoptionRouter.get("/", requireAuth, listAdoptions);
 adoptionRouter.get("/admin/paged", requireAdmin, adminListAdoptionsPaged);
+adoptionRouter.patch("/:id/cancel", requireAuth, cancelMyAdoption);
 adoptionRouter.patch("/:id/status", requireAdmin, updateAdoptionStatus);
 adoptionRouter.get("/:id/evaluation", requireAdmin, getAdoptionEvaluation);
 adoptionRouter.patch("/:id/checks", requireAdmin, toggleAdoptionCheck);
