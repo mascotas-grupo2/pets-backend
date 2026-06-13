@@ -61,6 +61,8 @@ export const adoptionSchema = z.object({
   vaccinated: catalogReference,
   experience: z.string().max(2000).optional().default(""),
   acceptsTerms: z.boolean(),
+  // "adopcion" (default) | "transito": ofrecimiento de hogar de tránsito.
+  kind: z.enum(["adopcion", "transito"]).optional().default("adopcion"),
 });
 
 export type AdoptionInput = z.infer<typeof adoptionSchema>;
