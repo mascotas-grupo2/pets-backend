@@ -4,7 +4,7 @@ import { Comment } from "../entity/Comment.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
 import { COMMENT_SECTIONS } from "../schemas/comment.schema.js";
-import { createNotification } from "../lib/notify.js";
+import { notify } from "../lib/notify.js";
 
 function commentRepo() {
   return AppDataSource.getRepository(Comment);
@@ -224,13 +224,12 @@ export async function approveComment(req: Request, res: Response) {
   // Si se aprobó el comentario, notificar al autor
   if (approved && saved.userId !== req.authUser?.id) {
     const petName = pet?.name ?? "tu publicación";
-    createNotification(
-      saved.userId,
-      "comment",
-      "Comentario aprobado",
-      `Tu comentario en "${petName}" fue aprobado y ya es visible.`,
-      `/mascotas-perdidas/${comment.petId}`,
-    ).catch(() => {});
+    notify(saved.userId, {
+      type: "comment",
+      title: "Comentario aprobado",
+      body: `Tu comentario en "${petName}" fue aprobado y ya es visible.`,
+      link: `/mascotas-perdidas/${comment.petId}`,
+    }).catch(() => {});
   }
 
   res.json(serializeComment(saved, user?.name ?? "Usuario"));
