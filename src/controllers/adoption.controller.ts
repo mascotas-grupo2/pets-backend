@@ -430,6 +430,12 @@ async function resolveCatalogId(
   return resolveCatalogValueId(catalog, { id, code }, required);
 }
 
+function normalizeYesNoNAId(id: number | null | undefined) {
+  if (id === CatalogIds.yesNo.si) return CatalogIds.yesNoNA.si;
+  if (id === CatalogIds.yesNo.no) return CatalogIds.yesNoNA.no;
+  return id;
+}
+
 async function resolveAdoptionCatalogIds(values: AdoptionInput) {
   return {
     preferredAnimalTypeId: await resolveCatalogId(
@@ -470,8 +476,8 @@ async function resolveAdoptionCatalogIds(values: AdoptionInput) {
       true,
     ),
     otherAnimalsId: await resolveCatalogId(Catalog.YES_NO, values.otherAnimalsId, values.otherAnimals, true),
-    neuteredId: await resolveCatalogId(Catalog.YES_NO_NA, values.neuteredId, values.neutered, true),
-    vaccinatedId: await resolveCatalogId(Catalog.YES_NO_NA, values.vaccinatedId, values.vaccinated, true),
+    neuteredId: await resolveCatalogId(Catalog.YES_NO_NA, normalizeYesNoNAId(values.neuteredId), values.neutered, true),
+    vaccinatedId: await resolveCatalogId(Catalog.YES_NO_NA, normalizeYesNoNAId(values.vaccinatedId), values.vaccinated, true),
   };
 }
 
@@ -521,6 +527,40 @@ export async function createAdoption(req: Request, res: Response) {
   const saved = await adoptionRepo().save(adoption);
   const catalogValuesById = await getCatalogValuesById();
   res.status(201).json(serializeAdoption(saved, catalogValuesById));
+}
+
+/**
+ * Lista las solicitudes de adopción del usuario autenticado.
+ * Devuelve solo las del propio usuario con info de la mascota.
+ */
+export async function listMyAdoptions(req: Request, res: Response) {
+  const userId = req.authUser?.id;
+  if (!Number.isInteger(userId)) {
+    return res.status(401).json({ error: "No autenticado" });
+  }
+
+  const adoptions = await adoptionRepo().find({
+    where: { userId },
+    order: { createdAt: "DESC" },
+  });
+
+  const catalogValuesById = await getCatalogValuesById();
+
+  // Enriquecer con info de la mascota
+  const petIds = [...new Set(adoptions.map((a) => a.petId).filter((id): id is string => typeof id === "string"))];
+  const pets = petIds.length ? await petRepo().findBy({ id: In(petIds) }) : [];
+  const petsById = new Map(pets.map((p) => [p.id, p]));
+
+  const result = adoptions.map((adoption) => {
+    const pet = adoption.petId ? petsById.get(adoption.petId) : null;
+    return {
+      ...serializeAdoption(adoption, catalogValuesById),
+      petName: pet?.name ?? null,
+      petPhoto: pet?.photo ?? pet?.photos?.[0] ?? null,
+    };
+  });
+
+  res.json(result);
 }
 
 export async function listAdoptions(req: Request, res: Response) {
@@ -615,6 +655,57 @@ export async function getAdoptionById(req: Request, res: Response) {
   }
 
   res.json(await serializeAdoptionDetail(adoption));
+}
+
+export async function getMyPetCompatibility(req: Request, res: Response) {
+  const userId = req.authUser?.id;
+  if (!Number.isInteger(userId)) {
+    return res.status(401).json({ error: "No autenticado" });
+  }
+
+  const petId = typeof req.params.petId === "string" ? req.params.petId.trim() : "";
+  if (!petId) return res.status(400).json({ error: "Mascota inválida" });
+
+  const pet = await petRepo().findOneBy({ id: petId });
+  if (!pet) return res.status(404).json({ error: "Mascota no encontrada" });
+
+  // Preferimos la solicitud exacta si ya existe. Si no, usamos el perfil general
+  // de adopción (petId null) o, como respaldo, la solicitud más reciente del usuario.
+  let adoption = await adoptionRepo().findOne({
+    where: { userId, petId },
+    order: { createdAt: "DESC" },
+  });
+  let source: "application" | "profile" | "latest" = "application";
+
+  if (!adoption) {
+    adoption = await adoptionRepo().findOne({
+      where: { userId, petId: IsNull() },
+      order: { createdAt: "DESC" },
+    });
+    source = "profile";
+  }
+
+  if (!adoption) {
+    adoption = await adoptionRepo().findOne({
+      where: { userId },
+      order: { createdAt: "DESC" },
+    });
+    source = "latest";
+  }
+
+  if (!adoption) {
+    return res.status(404).json({
+      error: "No hay perfil de adopción para calcular compatibilidad.",
+    });
+  }
+
+  const compatibility = calculateCompatibility(adoption, pet);
+  res.json({
+    score: compatibility.score,
+    factors: compatibility.factors,
+    source,
+    adoptionId: adoption.id,
+  });
 }
 
 export async function updateAdoptionStatus(req: Request, res: Response) {

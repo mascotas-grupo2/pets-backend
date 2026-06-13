@@ -1,34 +1,34 @@
 import { AppDataSource } from "../data-source.js";
 import { Notification } from "../entity/Notification.js";
 
-export type NotificationType = "message" | "adoption_status" | "publication";
+/**
+ * Crea una notificación in-app para un usuario.
+ * @param userId - ID del usuario destinatario
+ * @param type - Tipo de notificación: "message" | "adoption_status" | "publication" | "comment"
+ * @param title - Título corto de la notificación
+ * @param body - Texto descriptivo (opcional)
+ * @param link - Ruta del front a la que lleva (opcional)
+ */
+export async function createNotification(
+  userId: number,
+  type: string,
+  title: string,
+  body?: string | null,
+  link?: string | null,
+) {
+  const repo = AppDataSource.getRepository(Notification);
+  const notif = repo.create({ userId, type, title, body: body ?? null, link: link ?? null });
+  return repo.save(notif);
+}
 
 /**
- * Crea una notificación in-app para un usuario. Es best-effort: si falla no
- * lanza (no debe tumbar la operación principal que la dispara).
+ * Wrapper para crear notificaciones con un objeto de opciones.
+ * Usado por los controllers existentes (mascotas, etc.).
  */
 export async function notify(
-  userId: number | null | undefined,
-  data: {
-    type: NotificationType;
-    title: string;
-    body?: string | null;
-    link?: string | null;
-  },
+  userId: number | null,
+  opts: { type: string; title: string; body?: string | null; link?: string | null },
 ) {
   if (!Number.isInteger(userId)) return;
-  try {
-    const repo = AppDataSource.getRepository(Notification);
-    await repo.save(
-      repo.create({
-        userId: userId as number,
-        type: data.type,
-        title: data.title.slice(0, 160),
-        body: data.body ? data.body.slice(0, 2000) : null,
-        link: data.link ?? null,
-      }),
-    );
-  } catch (e) {
-    console.warn("[notify] no se pudo crear la notificación:", (e as Error).message);
-  }
+  return createNotification(userId!, opts.type, opts.title, opts.body, opts.link);
 }

@@ -64,6 +64,7 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
 
   return {
     ...payload,
+    viewsCount: mascota.viewsCount ?? 0,
     animalType: animalType?.code ?? null,
     animalTypeLabel: animalType?.label ?? null,
     animalTypeInfo: animalType,
@@ -476,6 +477,14 @@ export async function getMascota(req: Request, res: Response) {
   if (!canViewPet(mascota, req.authUser)) {
     return res.status(404).json({ error: "Pet no encontrada" });
   }
+
+  // Incrementar contador de vistas (solo si no es el dueño)
+  const isOwner = req.authUser && mascota.userId === req.authUser.id;
+  if (!isOwner) {
+    await repo().increment({ id }, "viewsCount", 1);
+    mascota.viewsCount = (mascota.viewsCount ?? 0) + 1;
+  }
+
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(mascota, catalogValuesById));
 }

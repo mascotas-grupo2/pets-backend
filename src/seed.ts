@@ -515,45 +515,6 @@ async function seed() {
     "thor.png",
   ];
 
-  const extraPetTypes = [
-    CatalogIds.animalType.perro, // Bruno  - "Perro cariñoso..."
-    CatalogIds.animalType.gato, // Simba  - "Gato curioso..."
-    CatalogIds.animalType.perro, // Chispa - "Cachorro energético..."
-    CatalogIds.animalType.gato, // Maya   - "Gata tranquila..."
-    CatalogIds.animalType.perro, // Rambo  - "Perro protector..."
-    CatalogIds.animalType.gato, // Bella  - "Hembra dulce..."
-    CatalogIds.animalType.gato, // Kira   - "Gata activa..."
-    CatalogIds.animalType.perro, // Balto  - "Perro de tamaño mediano..."
-    CatalogIds.animalType.gato, // Zoe    - "Gatito pequeño..."
-    CatalogIds.animalType.perro, // Thor   - "Perro joven..."
-  ];
-  const extraPetSexes = [
-    CatalogIds.petSex.macho, // Bruno
-    CatalogIds.petSex.macho, // Simba
-    CatalogIds.petSex.macho, // Chispa
-    CatalogIds.petSex.hembra, // Maya
-    CatalogIds.petSex.macho, // Rambo
-    CatalogIds.petSex.hembra, // Bella
-    CatalogIds.petSex.hembra, // Kira
-    CatalogIds.petSex.macho, // Balto
-    CatalogIds.petSex.hembra, // Zoe
-    CatalogIds.petSex.macho, // Thor
-  ];
-
-  // Pesos explícitos para cubrir las 3 categorías del filtro de tamaño
-  // (pequeño ≤10kg, mediano ≤25kg, grande >25kg), coherentes con el tipo.
-  const extraPetWeights = [
-    30, // Bruno  - perro grande
-    5, // Simba  - gato
-    8, // Chispa - perro pequeño (cachorro)
-    4, // Maya   - gata
-    35, // Rambo  - perro grande
-    4, // Bella  - gata
-    5, // Kira   - gata
-    22, // Balto  - perro mediano
-    3, // Zoe    - gata
-    18, // Thor   - perro mediano
-  ];
 
   const extraPetTypes = [
     CatalogIds.animalType.perro, // Bruno  - "Perro cariñoso..."

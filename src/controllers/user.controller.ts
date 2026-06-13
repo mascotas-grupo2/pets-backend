@@ -99,6 +99,12 @@ async function resolveCatalogId(
   return resolveCatalogValueId(catalog, { id, code }, required);
 }
 
+function normalizeYesNoNAId(id: number | null | undefined) {
+  if (id === CatalogIds.yesNo.si) return CatalogIds.yesNoNA.si;
+  if (id === CatalogIds.yesNo.no) return CatalogIds.yesNoNA.no;
+  return id;
+}
+
 async function resolveAdoptionCatalogIds(values: AdoptionInput) {
   return {
     preferredAnimalTypeId: await resolveCatalogId(
@@ -139,8 +145,8 @@ async function resolveAdoptionCatalogIds(values: AdoptionInput) {
       true,
     ),
     otherAnimalsId: await resolveCatalogId(Catalog.YES_NO, values.otherAnimalsId, values.otherAnimals, true),
-    neuteredId: await resolveCatalogId(Catalog.YES_NO_NA, values.neuteredId, values.neutered, true),
-    vaccinatedId: await resolveCatalogId(Catalog.YES_NO_NA, values.vaccinatedId, values.vaccinated, true),
+    neuteredId: await resolveCatalogId(Catalog.YES_NO_NA, normalizeYesNoNAId(values.neuteredId), values.neutered, true),
+    vaccinatedId: await resolveCatalogId(Catalog.YES_NO_NA, normalizeYesNoNAId(values.vaccinatedId), values.vaccinated, true),
   };
 }
 
