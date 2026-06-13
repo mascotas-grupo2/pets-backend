@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
 	adminListAdoptionsPaged,
+	cancelMyAdoption,
 	createAdoption,
 	getAdoptionById,
 	getMyPetCompatibility,
@@ -21,6 +22,7 @@ adoptionRouter.get("/", requireAuth, listAdoptions);
 adoptionRouter.get("/my", requireAuth, listMyAdoptions);
 adoptionRouter.get("/match/:petId", requireAuth, getMyPetCompatibility);
 adoptionRouter.get("/admin/paged", requireAdmin, adminListAdoptionsPaged);
+adoptionRouter.patch("/:id/cancel", requireAuth, cancelMyAdoption);
 adoptionRouter.patch("/:id/status", requireAdmin, updateAdoptionStatus);
 adoptionRouter.get("/:id/evaluation", requireAdmin, getAdoptionEvaluation);
 adoptionRouter.patch("/:id/checks", requireAdmin, toggleAdoptionCheck);

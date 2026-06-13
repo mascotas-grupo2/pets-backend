@@ -16,6 +16,7 @@ import {
   updateMascota,
   approveMascota,
   finalizeMascota,
+  resolveMascota,
   rejectMascota,
   entregaDirecta,
 } from "../controllers/mascotas.controller.js";
@@ -38,9 +39,10 @@ mascotasRouter.post("/petsByIds", optionalAuth, listMascotasByIds);
 mascotasRouter.get("/:id", optionalAuth, getMascota);
 mascotasRouter.post("/", optionalAuth, multiple("photo", 6), multerErrorHandler, createMascota);
 mascotasRouter.put("/:id", requireAuth, updateMascota);
-mascotasRouter.delete("/:id", requireAdmin, deleteMascota);
+mascotasRouter.delete("/:id", requireAuth, deleteMascota);
 mascotasRouter.post("/:id/approve", requireAdmin, approveMascota);
 mascotasRouter.post("/:id/finalize", requireAdmin, finalizeMascota);
+mascotasRouter.post("/:id/resolve", requireAuth, resolveMascota);
 mascotasRouter.post("/:id/entrega-directa", requireAdmin, entregaDirecta);
 mascotasRouter.post("/:id/reject", requireAdmin, rejectMascota);
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);

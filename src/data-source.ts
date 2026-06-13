@@ -45,6 +45,7 @@ import { Comment } from "./entity/Comment.js";
 import { AddComment1749600000000 } from "./migration/1749600000000-AddComment.js";
 import { AddViewsCount1749700000000 } from "./migration/1749700000000-AddViewsCount.js";
 import { AddMessagePhoto1749500000000 } from "./migration/1749500000000-AddMessagePhoto.js";
+import { AddAdoptionKind1749600000000 } from "./migration/1749600000000-AddAdoptionKind.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -95,8 +96,7 @@ export const AppDataSource = new DataSource({
     AddFollowupStatusCompletado1749300000000,
     AddNotification1749400000000,
     AddMessagePhoto1749500000000,
-    AddComment1749600000000,
-    AddViewsCount1749700000000,
+    AddAdoptionKind1749600000000,
   ],
   synchronize: false,
 });
