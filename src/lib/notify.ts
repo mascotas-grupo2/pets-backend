@@ -1,5 +1,6 @@
 import { AppDataSource } from "../data-source.js";
 import { Notification } from "../entity/Notification.js";
+import { emitToUser } from "./realtime.js";
 
 export type NotificationType = "message" | "adoption_status" | "publication";
 
@@ -19,7 +20,7 @@ export async function notify(
   if (!Number.isInteger(userId)) return;
   try {
     const repo = AppDataSource.getRepository(Notification);
-    await repo.save(
+    const saved = await repo.save(
       repo.create({
         userId: userId as number,
         type: data.type,
@@ -28,6 +29,16 @@ export async function notify(
         link: data.link ?? null,
       }),
     );
+    // Push en tiempo real a las pestañas del usuario (si tiene el socket abierto).
+    emitToUser(userId, "notification:new", {
+      id: saved.id,
+      type: saved.type,
+      title: saved.title,
+      body: saved.body,
+      link: saved.link,
+      read: saved.read,
+      createdAt: saved.createdAt,
+    });
   } catch (e) {
     console.warn("[notify] no se pudo crear la notificación:", (e as Error).message);
   }
