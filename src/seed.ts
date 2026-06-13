@@ -555,46 +555,6 @@ async function seed() {
     18, // Thor   - perro mediano
   ];
 
-  const extraPetTypes = [
-    CatalogIds.animalType.perro, // Bruno  - "Perro cariñoso..."
-    CatalogIds.animalType.gato, // Simba  - "Gato curioso..."
-    CatalogIds.animalType.perro, // Chispa - "Cachorro energético..."
-    CatalogIds.animalType.gato, // Maya   - "Gata tranquila..."
-    CatalogIds.animalType.perro, // Rambo  - "Perro protector..."
-    CatalogIds.animalType.gato, // Bella  - "Hembra dulce..."
-    CatalogIds.animalType.gato, // Kira   - "Gata activa..."
-    CatalogIds.animalType.perro, // Balto  - "Perro de tamaño mediano..."
-    CatalogIds.animalType.gato, // Zoe    - "Gatito pequeño..."
-    CatalogIds.animalType.perro, // Thor   - "Perro joven..."
-  ];
-  const extraPetSexes = [
-    CatalogIds.petSex.macho, // Bruno
-    CatalogIds.petSex.macho, // Simba
-    CatalogIds.petSex.macho, // Chispa
-    CatalogIds.petSex.hembra, // Maya
-    CatalogIds.petSex.macho, // Rambo
-    CatalogIds.petSex.hembra, // Bella
-    CatalogIds.petSex.hembra, // Kira
-    CatalogIds.petSex.macho, // Balto
-    CatalogIds.petSex.hembra, // Zoe
-    CatalogIds.petSex.macho, // Thor
-  ];
-
-  // Pesos explícitos para cubrir las 3 categorías del filtro de tamaño
-  // (pequeño ≤10kg, mediano ≤25kg, grande >25kg), coherentes con el tipo.
-  const extraPetWeights = [
-    30, // Bruno  - perro grande
-    5, // Simba  - gato
-    8, // Chispa - perro pequeño (cachorro)
-    4, // Maya   - gata
-    35, // Rambo  - perro grande
-    4, // Bella  - gata
-    5, // Kira   - gata
-    22, // Balto  - perro mediano
-    3, // Zoe    - gata
-    18, // Thor   - perro mediano
-  ];
-
   // Ubicaciones reales de CABA (el front conoce sus coordenadas para la vista mapa).
   const extraPetLocations = [
     "Plaza Serrano, Palermo, CABA",
@@ -626,6 +586,21 @@ async function seed() {
   const isoDaysAgo = (n: number) =>
     new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
+  // Coordenadas reales (lat, lng) de cada ubicación → habilitan el mapa por
+  // cercanía (el front calcula la distancia a "Vos" con turf).
+  const extraPetCoords: [number, number][] = [
+    [-34.5889, -58.4306], // Plaza Serrano, Palermo
+    [-34.6064, -58.4356], // Parque Centenario, Caballito
+    [-34.628, -58.3697], // Parque Lezama, San Telmo
+    [-34.6184, -58.4357], // Parque Rivadavia, Caballito
+    [-34.561, -58.4546], // Barrancas de Belgrano
+    [-34.6357, -58.4316], // Parque Chacabuco
+    [-34.6156, -58.4456], // Plaza Irlanda, Caballito
+    [-34.5856, -58.4519], // Parque Los Andes, Chacarita
+    [-34.628, -58.4636], // Plaza Pueyrredón, Flores
+    [-34.5547, -58.4869], // Parque Saavedra
+  ];
+
   const extraPets = [] as any[];
   for (let i = 0; i < extraPetNames.length; i++) {
     const name = extraPetNames[i];
@@ -635,6 +610,8 @@ async function seed() {
       description: extraPetDescriptions[i],
       date: isoDaysAgo(extraPetDaysAgo[i]),
       location: extraPetLocations[i],
+      latitud: extraPetCoords[i][0],
+      longitud: extraPetCoords[i][1],
       contactPhone: `11500000${i + 1}`,
       contactEmail: `pet${i + 1}@example.com`,
       sexId: extraPetSexes[i],
