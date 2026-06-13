@@ -155,6 +155,17 @@ export async function verifyKeycloakToken(token: string) {
   return payload;
 }
 
+export async function getAuthUserFromToken(
+  token: string,
+): Promise<AuthUser | null> {
+  try {
+    const payload = await verifyToken(token);
+    return (await authUserFromPayload(payload)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function optionalAuth(
   req: Request,
   _res: Response,
