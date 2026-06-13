@@ -1,9 +1,15 @@
 import { Request, Response } from "express";
-import { ILike } from "typeorm";
+import { ILike, In } from "typeorm";
 import { z } from "zod";
 import { AppDataSource } from "../data-source.js";
 import { Adoption } from "../entity/Adoption.js";
+import { AdoptionCheck } from "../entity/AdoptionCheck.js";
+import { AdoptionNote } from "../entity/AdoptionNote.js";
+import { Followup } from "../entity/Followup.js";
+import { Message } from "../entity/Message.js";
+import { Notification } from "../entity/Notification.js";
 import { Pet } from "../entity/Pet.js";
+import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
 import { Catalog, CatalogIds, CatalogName, catalogItemForId } from "../lib/catalog-constants.js";
 import {
@@ -300,6 +306,7 @@ export async function submitAdoption(req: Request, res: Response) {
       otherAnimalsDetail: values.otherAnimalsDetail || null,
       experience: values.experience || null,
       acceptsTerms: values.acceptsTerms,
+      kind: values.kind,
       statusId: CatalogIds.adoptionStatus.nueva,
     });
 
@@ -312,12 +319,118 @@ export async function submitAdoption(req: Request, res: Response) {
 
     await adoptionRepo.save(adoption);
   } catch (e) {
-    console.warn("No se pudo guardar registro de adoption:", e);
+    // No tragamos el error: si la solicitud no se guardó, NO reportamos éxito
+    // (antes devolvía 201 igual y el usuario veía "¡Éxito!" sin que existiera).
+    console.error("No se pudo guardar la solicitud de adopción:", e);
+    return res
+      .status(500)
+      .json({ error: "No se pudo guardar tu solicitud. Por favor, intentá de nuevo." });
   }
 
+  // El usuario pasa a adoptante SOLO después de que la solicitud se guardó bien.
   const updated = await userRepo().save({ ...user, adopter: true });
 
   res.status(201).json(publicUser(updated));
+}
+
+// Campos de contacto/hogar que el form de Configuración manda. NO viven en User
+// sino en Adoption (la fila más reciente del usuario, que es de donde
+// `getUserDetails` los lee). Acá los persistimos para que dejen de descartarse
+// en silencio (antes updateUser solo guardaba name/photo).
+const PROFILE_STRING_FIELDS = [
+  "firstName",
+  "lastName",
+  "phone",
+  "addressLine1",
+  "addressLine2",
+  "postcode",
+  "town",
+  "allergies",
+  "otherAnimalsDetail",
+  "experience",
+] as const;
+
+// Campos del form que pueden quedar en null cuando llegan vacíos.
+const PROFILE_NULLABLE_STRINGS = new Set([
+  "addressLine2",
+  "allergies",
+  "otherAnimalsDetail",
+  "experience",
+]);
+
+// [columna de id en Adoption, catálogo, clave de código en el body, clave de id en el body]
+const PROFILE_CATALOG_FIELDS: Array<[string, CatalogName, string, string]> = [
+  ["livingSituationId", Catalog.LIVING_SITUATION, "livingSituation", "livingSituationId"],
+  ["householdSettingId", Catalog.HOUSEHOLD_SETTING, "householdSetting", "householdSettingId"],
+  ["activityLevelId", Catalog.ACTIVITY_LEVEL, "activityLevel", "activityLevelId"],
+  ["hasGardenId", Catalog.YES_NO, "hasGarden", "hasGardenId"],
+  ["otherAnimalsId", Catalog.YES_NO, "otherAnimals", "otherAnimalsId"],
+  ["visitingChildrenId", Catalog.YES_NO, "visitingChildren", "visitingChildrenId"],
+  ["hasFlatmatesId", Catalog.YES_NO, "hasFlatmates", "hasFlatmatesId"],
+  ["neuteredId", Catalog.YES_NO_NA, "neutered", "neuteredId"],
+  ["vaccinatedId", Catalog.YES_NO_NA, "vaccinated", "vaccinatedId"],
+  ["preferredAnimalTypeId", Catalog.ANIMAL_TYPE, "preferredAnimal", "preferredAnimalTypeId"],
+];
+
+/**
+ * Upsert de los datos de contacto/hogar en la fila Adoption más reciente del
+ * usuario (o crea una fila "perfil" sin petId si todavía no tiene ninguna).
+ * Solo toca los campos presentes en el body. Puede lanzar CatalogValidationError.
+ */
+async function saveUserProfileContact(user: User, body: Record<string, unknown>) {
+  const adoptionRepo = AppDataSource.getRepository(Adoption);
+  let profile = await adoptionRepo.findOne({
+    where: { userId: user.id },
+    order: { createdAt: "DESC" },
+  });
+  const isNew = !profile;
+  if (!profile) profile = adoptionRepo.create({ userId: user.id, petId: null });
+
+  for (const key of PROFILE_STRING_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+    const value = body[key];
+    const str = typeof value === "string" ? value : value == null ? "" : String(value);
+    (profile as any)[key] =
+      str === "" ? (PROFILE_NULLABLE_STRINGS.has(key) ? null : "") : str;
+  }
+
+  for (const key of ["adults", "children"] as const) {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+    const n = Number(body[key]);
+    (profile as any)[key] = Number.isFinite(n) ? n : null;
+  }
+
+  for (const [field, catalog, codeKey, idKey] of PROFILE_CATALOG_FIELDS) {
+    const hasCode = Object.prototype.hasOwnProperty.call(body, codeKey);
+    const hasId = Object.prototype.hasOwnProperty.call(body, idKey);
+    if (!hasCode && !hasId) continue;
+    const code = body[codeKey] as string | number | null | undefined;
+    const idVal = body[idKey] as string | number | null | undefined;
+    if ((code === "" || code == null) && (idVal === "" || idVal == null)) {
+      (profile as any)[field] = null;
+      continue;
+    }
+    const numericId = typeof idVal === "number" ? idVal : Number(idVal);
+    (profile as any)[field] = await resolveCatalogValueId(
+      catalog,
+      { id: Number.isFinite(numericId) ? numericId : undefined, code },
+      false,
+    );
+  }
+
+  // Defaults para las columnas NOT NULL cuando se crea la fila de perfil.
+  if (isNew) {
+    profile.firstName = profile.firstName || splitName(user.name).firstName || "";
+    profile.lastName = profile.lastName || splitName(user.name).lastName || "";
+    profile.phone = profile.phone || "";
+    profile.addressLine1 = profile.addressLine1 || "";
+    profile.postcode = profile.postcode || "";
+    profile.town = profile.town || "";
+  }
+  // El email del perfil siempre refleja el del usuario (no es editable acá).
+  profile.email = user.email;
+
+  await adoptionRepo.save(profile);
 }
 
 export async function updateUser(req: Request, res: Response) {
@@ -337,9 +450,117 @@ export async function updateUser(req: Request, res: Response) {
       updates[key] = body[key] === "" ? null : body[key];
     }
   }
+  // Si mandan nombre/apellido por separado (form de Configuración) y no `name`,
+  // recomponemos el name del usuario para que se mantenga sincronizado.
+  if (
+    !Object.prototype.hasOwnProperty.call(body, "name") &&
+    (Object.prototype.hasOwnProperty.call(body, "firstName") ||
+      Object.prototype.hasOwnProperty.call(body, "lastName"))
+  ) {
+    const fn = String((body as any).firstName ?? "").trim();
+    const ln = String((body as any).lastName ?? "").trim();
+    const composed = `${fn} ${ln}`.trim();
+    if (composed) updates.name = composed;
+  }
+
+  // Persistimos los datos de contacto/hogar ANTES de guardar el user, así si un
+  // catálogo es inválido devolvemos 400 sin haber modificado nada a medias.
+  try {
+    await saveUserProfileContact(user, body);
+  } catch (error) {
+    if (handleCatalogError(error, res)) return;
+    throw error;
+  }
 
   const merged = await userRepo().save({ ...user, ...updates });
   res.json(publicUser(merged));
+}
+
+/**
+ * Borra un usuario y todo lo asociado en una transacción: sus mascotas (con sus
+ * seguimientos/notas), sus solicitudes (con checks/notas), seguimientos donde es
+ * responsable, mensajes y notificaciones. Las notas/checks que creó en registros
+ * de otros se despersonalizan (authorId/checkedBy → null) para conservar la
+ * auditoría sin dejar FKs colgadas.
+ */
+export async function deleteUserCascade(userId: number) {
+  await AppDataSource.transaction(async (m) => {
+    const pets = await m.getRepository(Pet).find({ where: { userId } });
+    const petIds = pets.map((p) => p.id);
+    if (petIds.length) {
+      await m.getRepository(Followup).delete({ petId: In(petIds) });
+      await m.getRepository(PetNote).delete({ petId: In(petIds) });
+      await m.getRepository(Pet).delete({ id: In(petIds) });
+    }
+
+    await m.getRepository(Followup).delete({ userId });
+
+    const adoptions = await m.getRepository(Adoption).find({ where: { userId } });
+    const adoptionIds = adoptions.map((a) => a.id);
+    if (adoptionIds.length) {
+      await m.getRepository(AdoptionCheck).delete({ adoptionId: In(adoptionIds) });
+      await m.getRepository(AdoptionNote).delete({ adoptionId: In(adoptionIds) });
+      await m.getRepository(Adoption).delete({ id: In(adoptionIds) });
+    }
+
+    await m.getRepository(Message).delete([{ senderId: userId }, { receiverId: userId }]);
+    await m.getRepository(Notification).delete({ userId });
+
+    await m.getRepository(AdoptionNote).update({ authorId: userId }, { authorId: null });
+    await m.getRepository(PetNote).update({ authorId: userId }, { authorId: null });
+    await m.getRepository(AdoptionCheck).update({ checkedBy: userId }, { checkedBy: null });
+
+    await m.getRepository(User).delete({ id: userId });
+  });
+}
+
+/**
+ * Lista de admins contactables por cualquier usuario autenticado (para que un
+ * usuario común pueda iniciar una conversación con el refugio/soporte). Devuelve
+ * solo datos públicos mínimos.
+ */
+export async function listContactableAdmins(_req: Request, res: Response) {
+  const admins = await userRepo().find({
+    where: { roleId: CatalogIds.userRole.admin },
+    order: { name: "ASC" },
+  });
+  res.json(
+    admins.map((a) => ({
+      id: a.id,
+      name: a.name,
+      email: a.email,
+      photo: a.photo,
+      role: "admin",
+    })),
+  );
+}
+
+export async function adminDeleteUser(req: Request, res: Response) {
+  const targetId = Number(req.params.id);
+  if (!Number.isInteger(targetId)) return res.status(400).json({ error: "Id invalido" });
+
+  const target = await userRepo().findOneBy({ id: targetId });
+  if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  if (req.authUser?.id === targetId) {
+    return res
+      .status(400)
+      .json({ error: "No podés eliminar tu propia cuenta desde el panel." });
+  }
+
+  if (target.roleId === CatalogIds.userRole.admin) {
+    const adminCount = await userRepo().count({
+      where: { roleId: CatalogIds.userRole.admin },
+    });
+    if (adminCount <= 1) {
+      return res
+        .status(400)
+        .json({ error: "No podés dejar al sistema sin administradores." });
+    }
+  }
+
+  await deleteUserCascade(targetId);
+  res.status(204).send();
 }
 
 // Sort server-side (mismo patrón que solicitudes): ?sort=campo:ASC,campo2:DESC

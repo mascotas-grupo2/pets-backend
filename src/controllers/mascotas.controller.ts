@@ -1013,6 +1013,46 @@ export async function approveMascota(req: Request, res: Response) {
   res.json(serializeMascota(saved, catalogValuesById));
 }
 
+/**
+ * Cierre "reunido/encontrado": el dueño (o un admin) marca que una mascota
+ * perdida apareció. No todo termina en adopción; este es el cierre del flujo de
+ * pérdida. Deja la publicación finalizada y la mascota en estado "encontrado".
+ * No aplica a publicaciones de adopción (esas se cierran por el flujo de adopción).
+ */
+export async function resolveMascota(req: Request, res: Response) {
+  const id = req.params.id;
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const authUser = req.authUser;
+  const isAdmin = authUser?.role === "admin";
+  if (!isAdmin && (!authUser || authUser.id !== existing.userId)) {
+    return res.status(403).json({ error: "No autorizado" });
+  }
+
+  const S = CatalogIds.petStatus;
+  if (existing.statusId === S.adopcion || existing.statusId === S.adoptado) {
+    return res.status(409).json({
+      error:
+        "Esta publicación es de adopción; se cierra por el flujo de adopción, no como 'apareció'.",
+    });
+  }
+  if (existing.reportStatusId === CatalogIds.petReportStatus.finalizado) {
+    return res.status(409).json({ error: "La publicación ya está cerrada." });
+  }
+
+  existing.statusId = S.encontrado;
+  existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  const saved = await repo().save(existing);
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(saved, catalogValuesById));
+}
+
 export async function finalizeMascota(_req: Request, res: Response) {
   // Las publicaciones NO se finalizan a mano: solo pasan a "finalizado" de forma
   // automática cuando se concreta una adopción (solicitud ACEPTADA).
@@ -1130,6 +1170,14 @@ export async function deleteMascota(req: Request, res: Response) {
     return res.status(400).json({ error: "Id invalido" });
   }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  // El dueño puede eliminar su propia publicación; el admin puede eliminar
+  // cualquiera. (La ruta pasó de requireAdmin a requireAuth para habilitar esto.)
+  const authUser = req.authUser;
+  const isAdmin = authUser?.role === "admin";
+  if (!isAdmin && (!authUser || authUser.id !== existing.userId)) {
+    return res.status(403).json({ error: "No autorizado" });
+  }
 
   try {
     await AppDataSource.transaction(async (manager) => {
