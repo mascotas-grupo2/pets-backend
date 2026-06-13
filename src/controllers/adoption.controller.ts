@@ -398,6 +398,7 @@ async function mapAdoptionSummaries(items: Adoption[]) {
       petId: item.petId,
       statusId: item.statusId,
       status: getAdoptionStatusCode(item.statusId) ?? "NUEVA",
+      kind: item.kind ?? "adopcion",
       compatibilityScore: item.compatibilityScore ?? null,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
@@ -509,6 +510,7 @@ export async function createAdoption(req: Request, res: Response) {
     otherAnimalsDetail: values.otherAnimalsDetail || null,
     experience: values.experience || null,
     acceptsTerms: values.acceptsTerms,
+    kind: values.kind,
   });
 
   if (adoption.petId) {
@@ -538,9 +540,14 @@ export async function listAdoptions(req: Request, res: Response) {
 
   const userId = req.authUser?.id;
   if (!Number.isInteger(userId)) return res.status(401).json({ error: "Usuario no autenticado" });
-  const items = await repo.find({ where: { userId }, order: { createdAt: "DESC" } });
-  const catalogValuesById = await getCatalogValuesById();
-  res.json(items.map((item) => serializeAdoption(item, catalogValuesById)));
+  // Solo solicitudes reales (con mascota); el row sin petId es el "perfil de
+  // adoptante", no una solicitud. Devolvemos el summary enriquecido (nombre/foto
+  // de la mascota + fechas) para alimentar la vista "Mis Solicitudes".
+  const items = await repo.find({
+    where: { userId, petId: Not(IsNull()) },
+    order: { createdAt: "DESC" },
+  });
+  res.json(await mapAdoptionSummaries(items));
 }
 
 export async function adminListAdoptionsPaged(req: Request, res: Response) {
@@ -565,6 +572,17 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
     qb.andWhere("adoption.compatibilityScore <= :compatibilityMax", {
       compatibilityMax: filters.compatibilityMax,
     });
+  }
+
+  // Búsqueda de texto: filtra por nombre/apellido/email del solicitante o ciudad.
+  // (petName/userName viven en otras tablas y joinearlos rompería la paginación
+  // con DISTINCT de TypeORM; por eso no entran en el filtro de texto.)
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (q) {
+    qb.andWhere(
+      "(adoption.firstName ILIKE :q OR adoption.lastName ILIKE :q OR adoption.email ILIKE :q OR adoption.town ILIKE :q)",
+      { q: `%${q}%` },
+    );
   }
 
   const ordered = applySort(qb, sortOrders);
@@ -668,17 +686,22 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
   const pet = adoption.petId
     ? await petRepo().findOneBy({ id: adoption.petId })
     : null;
+  const esTransito = adoption.kind === "transito";
   if (
     statusId === A.entrevistaPendiente &&
     previousStatusId !== statusId &&
     pet
   ) {
-    const enAdopcion = pet.statusId === CatalogIds.petStatus.adopcion;
+    // Adopción: la mascota debe estar "en adopción". Tránsito: "en tránsito".
+    const disponible = esTransito
+      ? pet.statusId === CatalogIds.petStatus.transito
+      : pet.statusId === CatalogIds.petStatus.adopcion;
     const publicada = pet.reportStatusId === R.activo;
-    if (!enAdopcion || !publicada) {
+    if (!disponible || !publicada) {
       return res.status(409).json({
-        error:
-          "No se puede programar la entrevista: la mascota debe estar en adopción y publicada.",
+        error: esTransito
+          ? "No se puede programar la entrevista: la mascota debe estar en tránsito y publicada."
+          : "No se puede programar la entrevista: la mascota debe estar en adopción y publicada.",
       });
     }
   }
@@ -703,8 +726,11 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
         petChanged = true;
       }
     } else if (statusId === A.aceptada) {
-      // Adopción concretada → mascota adoptada y publicación cerrada.
-      pet.statusId = CatalogIds.petStatus.adoptado;
+      // Concretada: tránsito → la mascota queda "en tránsito"; adopción → "adoptado".
+      // En ambos casos la publicación se cierra (finalizado).
+      pet.statusId = esTransito
+        ? CatalogIds.petStatus.transito
+        : CatalogIds.petStatus.adoptado;
       pet.reportStatusId = R.finalizado;
       petChanged = true;
     }
@@ -726,6 +752,53 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
   }
 
   res.json(await serializeAdoptionDetail(saved));
+}
+
+/**
+ * Cancelar (retirar) una solicitud propia. Accesible para el usuario dueño de la
+ * solicitud (no admin): la pasa a DESCARTADA. Si la solicitud tenía la
+ * publicación reservada, la mascota vuelve a estar publicada/activa.
+ */
+export async function cancelMyAdoption(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const userId = req.authUser?.id;
+  if (!Number.isInteger(userId)) return res.status(401).json({ error: "Usuario no autenticado" });
+
+  const adoption = await adoptionRepo().findOneBy({ id });
+  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (adoption.userId !== userId) return res.status(403).json({ error: "No autorizado" });
+
+  const code = getAdoptionStatusCode(adoption.statusId);
+  if (code === "ACEPTADA" || code === "DESCARTADA") {
+    return res
+      .status(409)
+      .json({ error: "La solicitud ya está finalizada y no se puede cancelar." });
+  }
+
+  const A = CatalogIds.adoptionStatus;
+  const R = CatalogIds.petReportStatus;
+  const previousStatusId = adoption.statusId;
+  adoption.statusId = A.descartada;
+  const saved = await adoptionRepo().save(adoption);
+
+  // Si esta solicitud tenía la publicación reservada, se vuelve a publicar.
+  if (adoption.petId) {
+    const pet = await petRepo().findOneBy({ id: adoption.petId });
+    if (pet) {
+      const eraReservadora =
+        previousStatusId === A.entrevistaPendiente ||
+        previousStatusId === A.aceptadaConSeguimiento;
+      if (eraReservadora && pet.reportStatusId === R.reservada) {
+        pet.reportStatusId = R.activo;
+        await petRepo().save(pet);
+      }
+    }
+  }
+
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeAdoption(saved, catalogValuesById));
 }
 
 export async function deleteAdoption(req: Request, res: Response) {
