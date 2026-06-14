@@ -281,6 +281,56 @@ export async function resendVerification(req: Request, res: Response) {
   res.status(204).send();
 }
 
+export async function changeEmail(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(401).json({ error: "Usuario no autenticado" });
+
+  const newEmail =
+    typeof req.body?.newEmail === "string" ? req.body.newEmail.trim().toLowerCase() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+    return res.status(400).json({ error: "Email inválido." });
+  }
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  // Confirmación por contraseña (si tiene local).
+  const hash = crypto
+    .pbkdf2Sync(password, user.passwordSalt, 310000, 32, "sha256")
+    .toString("hex");
+  if (hash !== user.passwordHash) {
+    return res.status(400).json({ error: "La contraseña es incorrecta." });
+  }
+
+  if (newEmail === user.email.toLowerCase()) {
+    return res.status(400).json({ error: "Ese ya es tu email actual." });
+  }
+  const taken = await userRepo().findOneBy({ email: newEmail });
+  if (taken) return res.status(409).json({ error: "Ese email ya está en uso." });
+
+  // Cambiamos el email y pedimos re-verificación.
+  const verificationToken = createRefreshToken();
+  user.email = newEmail;
+  user.emailVerified = false;
+  user.emailVerificationTokenHash = hashToken(verificationToken);
+  await userRepo().save(user);
+
+  const url = verificationUrl(verificationToken);
+  if (url) {
+    try {
+      await sendVerificationMail(user.email, user.name, url);
+    } catch (error) {
+      console.error(`[changeEmail] Error al enviar verificación a ${user.email}:`, error);
+    }
+  }
+
+  res.json({
+    email: user.email,
+    message: "Email actualizado. Te enviamos un correo para verificar la nueva dirección.",
+  });
+}
+
 export async function changePassword(req: Request, res: Response) {
   const id = req.authUser?.id;
   if (!Number.isInteger(id)) return res.status(401).json({ error: "Usuario no autenticado" });
