@@ -389,6 +389,25 @@ async function mapAdoptionSummaries(items: Adoption[]) {
   const usersById = new Map(users.map((u) => [u.id, u]));
   const petsById = new Map(pets.map((p) => [p.id, p]));
 
+  // Motivo de rechazo (nota "Rechazo: ...") para las solicitudes descartadas.
+  const descartadaIds = items
+    .filter((i) => i.statusId === CatalogIds.adoptionStatus.descartada)
+    .map((i) => i.id);
+  const reasonByAdoption = new Map<number, string>();
+  if (descartadaIds.length) {
+    const notes = await adoptionNoteRepo()
+      .createQueryBuilder("note")
+      .where("note.adoptionId IN (:...ids)", { ids: descartadaIds })
+      .andWhere("note.text LIKE :prefix", { prefix: "Rechazo:%" })
+      .orderBy("note.createdAt", "DESC")
+      .getMany();
+    for (const n of notes) {
+      if (!reasonByAdoption.has(n.adoptionId)) {
+        reasonByAdoption.set(n.adoptionId, n.text.replace(/^Rechazo:\s*/, ""));
+      }
+    }
+  }
+
   return items.map((item) => {
     const user = item.userId != null ? usersById.get(item.userId) : undefined;
     const pet = item.petId ? petsById.get(item.petId) : undefined;
@@ -410,6 +429,7 @@ async function mapAdoptionSummaries(items: Adoption[]) {
       petName: pet?.name ?? null,
       petPhoto: pet?.photos?.[0] ?? pet?.photo ?? null,
       petAnimalTypeId: pet?.animalTypeId ?? null,
+      rejectionReason: reasonByAdoption.get(item.id) ?? null,
     };
   });
 }
@@ -832,12 +852,35 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
     await createFollowupsForAdoption(saved);
   }
 
+  // Al descartar, si el admin dejó un motivo, lo guardamos como nota "Rechazo:"
+  // para mostrárselo al solicitante en "Mis Solicitudes".
+  const reason = typeof values.reason === "string" ? values.reason.trim() : "";
+  if (statusId === A.descartada && reason) {
+    const authorId = req.authUser?.id ?? null;
+    let authorName: string | null = null;
+    if (authorId) {
+      const author = await userRepo().findOneBy({ id: authorId });
+      authorName = author?.name ?? author?.email ?? null;
+    }
+    await adoptionNoteRepo().save(
+      adoptionNoteRepo().create({
+        adoptionId: id,
+        text: `Rechazo: ${reason}`,
+        authorId,
+        authorName,
+      }),
+    );
+  }
+
   // Notificar al solicitante el cambio de estado de su solicitud.
   if (previousStatusId !== statusId) {
     await notify(saved.userId, {
       type: "adoption_status",
       title: "Tu solicitud de adopción cambió de estado",
-      body: `Ahora está: ${ADOPTION_STATUS_LABELS[statusCode] ?? statusCode}`,
+      body:
+        statusId === A.descartada && reason
+          ? `Descartada. Motivo: ${reason.slice(0, 100)}`
+          : `Ahora está: ${ADOPTION_STATUS_LABELS[statusCode] ?? statusCode}`,
       link: "/account",
     });
   }
