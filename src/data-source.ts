@@ -14,6 +14,7 @@ import { AdoptionNote } from "./entity/AdoptionNote.js";
 import { Notification } from "./entity/Notification.js";
 import { PetComment } from "./entity/PetComment.js";
 import { Activity } from "./entity/Activity.js";
+import { Sighting } from "./entity/Sighting.js";
 import { InitPetTable1744402212000 } from "./migration/1744402212000-Init.js";
 import { AddUser1744402213000 } from "./migration/1744402213000-AddUser.js";
 import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTokens.js";
@@ -47,6 +48,7 @@ import { AddMessagePhoto1749500000000 } from "./migration/1749500000000-AddMessa
 import { AddAdoptionKind1749600000000 } from "./migration/1749600000000-AddAdoptionKind.js";
 import { AddViewsAndComments1749700000000 } from "./migration/1749700000000-AddViewsAndComments.js";
 import { AddActivity1749800000000 } from "./migration/1749800000000-AddActivity.js";
+import { AddSighting1749900000000 } from "./migration/1749900000000-AddSighting.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -66,6 +68,7 @@ export const AppDataSource = new DataSource({
     Notification,
     PetComment,
     Activity,
+    Sighting,
   ],
   migrations: [
     InitPetTable1744402212000,
@@ -101,6 +104,7 @@ export const AppDataSource = new DataSource({
     AddAdoptionKind1749600000000,
     AddViewsAndComments1749700000000,
     AddActivity1749800000000,
+    AddSighting1749900000000,
   ],
   synchronize: false,
 });
