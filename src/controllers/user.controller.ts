@@ -20,6 +20,7 @@ import {
 import { uploadFileToMinio } from "../lib/minio.js";
 import { adoptionSchema, AdoptionInput } from "../schemas/adoption.schema.js";
 import { calculateCompatibility } from "../lib/matching.js";
+import { recordActivity } from "../lib/activity.js";
 
 const optionalPositiveInt = z.preprocess(
   (value) => (value === "" || value === null ? undefined : value),
@@ -324,6 +325,14 @@ export async function submitAdoption(req: Request, res: Response) {
     }
 
     await adoptionRepo.save(adoption);
+    await recordActivity({
+      type: "solicitud",
+      title: `Nueva ${values.kind === "transito" ? "oferta de tránsito" : "solicitud"} de ${values.firstName} ${values.lastName}`.trim(),
+      actorUserId: id as number,
+      refType: "adoption",
+      refId: adoption.id,
+      link: `/admin/solicitudes?requestId=${adoption.id}`,
+    });
   } catch (e) {
     // No tragamos el error: si la solicitud no se guardó, NO reportamos éxito
     // (antes devolvía 201 igual y el usuario veía "¡Éxito!" sin que existiera).
@@ -334,7 +343,18 @@ export async function submitAdoption(req: Request, res: Response) {
   }
 
   // El usuario pasa a adoptante SOLO después de que la solicitud se guardó bien.
+  const wasAdopter = user.adopter;
   const updated = await userRepo().save({ ...user, adopter: true });
+  if (!wasAdopter) {
+    await recordActivity({
+      type: "adoptante_nuevo",
+      title: `Nuevo adoptante: ${updated.name}`,
+      actorUserId: updated.id,
+      refType: "user",
+      refId: updated.id,
+      link: "/admin/personas",
+    });
+  }
 
   res.status(201).json(publicUser(updated));
 }

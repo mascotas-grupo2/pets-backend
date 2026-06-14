@@ -11,7 +11,8 @@
     "migration:generate": "typeorm-ts-node-esm migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-esm migration:run -d src/data-source.ts",
     "migration:revert": "typeorm-ts-node-esm migration:revert -d src/data-source.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "backfill:activity": "tsx src/scripts/backfill-activity.ts"
   },
   "dependencies": {
     "body-parser": "^1.20.4",

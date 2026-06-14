@@ -3,6 +3,7 @@ import { AppDataSource } from "../data-source.js";
 import { PetComment } from "../entity/PetComment.js";
 import { Pet } from "../entity/Pet.js";
 import { notify } from "../lib/notify.js";
+import { recordActivity } from "../lib/activity.js";
 
 function commentRepo() {
   return AppDataSource.getRepository(PetComment);
@@ -83,6 +84,15 @@ export async function createComment(req: Request, res: Response) {
       status: "pending",
     }),
   );
+
+  await recordActivity({
+    type: "comentario",
+    title: `Comentario en ${pet.name ?? "una publicación"}`,
+    actorUserId: req.authUser?.id ?? null,
+    refType: "comment",
+    refId: saved.id,
+    link: `/mascotas-perdidas/${petId}`,
+  });
 
   // Avisar al dueño que tiene un comentario para moderar.
   await notify(pet.userId, {

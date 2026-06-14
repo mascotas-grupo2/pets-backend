@@ -4,6 +4,7 @@ import { Followup } from "../entity/Followup.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import { FollowupCreateInput, followupCreateSchema, followupListQuerySchema, FollowupUpdateInput, followupUpdateSchema } from "../schemas/followup.schema.js";
 import { getCatalogValuesById } from "../lib/catalog-values.js";
+import { recordActivity } from "../lib/activity.js";
 import { parseOptionalInt } from "../controllers/_shared_parsers.js";
 
 function repo() {
@@ -29,6 +30,14 @@ export async function createFollowup(req: Request, res: Response) {
     appointmentAt: values.appointmentAt,
   });
   const saved = await repo().save(followup);
+  await recordActivity({
+    type: "seguimiento",
+    title: "Nuevo seguimiento agendado",
+    actorUserId: req.authUser?.id ?? null,
+    refType: "followup",
+    refId: saved.id,
+    link: "/admin/seguimientos",
+  });
   const catalogValuesById = await getCatalogValuesById();
   res.status(201).json({ ...saved, type: catalogValuesById.get(saved.typeId) ?? null, status: catalogValuesById.get(saved.statusId) ?? null });
 }

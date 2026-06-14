@@ -9,6 +9,7 @@ import { PetNote } from "../entity/PetNote.js";
 import { CatalogIds, catalogItemForId } from "../lib/catalog-constants.js";
 import { publicUser } from "./user.controller.js";
 import { notify } from "../lib/notify.js";
+import { recordActivity } from "../lib/activity.js";
 import { uploadFileToMinio } from "../lib/minio.js";
 
 function messageRepo() {
@@ -114,6 +115,15 @@ export async function sendMessage(req: Request, res: Response) {
     });
 
     await messageRepo().save(msg);
+
+    await recordActivity({
+      type: "mensaje",
+      title: `Nuevo mensaje de ${sender.name}`,
+      actorUserId: sender.id,
+      refType: "message",
+      refId: msg.id,
+      link: `/admin/mensajes?user=${sender.id}`,
+    });
 
     // Notificar al receptor del mensaje nuevo (link según su rol).
     const receiverIsAdmin = receiver.roleId === CatalogIds.userRole.admin;

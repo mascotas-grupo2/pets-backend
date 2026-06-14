@@ -25,6 +25,7 @@ import { isAdminEmail } from "../lib/bootstrap-admins.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import crypto from "crypto";
 import { sendPasswordResetMail, sendVerificationMail } from "../lib/mailer.js";
+import { recordActivity } from "../lib/activity.js";
 
 function userRepo() {
   return AppDataSource.getRepository(User);
@@ -93,6 +94,14 @@ export async function register(req: Request, res: Response) {
     roleId: isAdminEmail(email) ? CatalogIds.userRole.admin : CatalogIds.userRole.user,
   });
   const saved = await userRepo().save(user);
+  await recordActivity({
+    type: "usuario_nuevo",
+    title: `Nuevo usuario: ${saved.name}`,
+    actorUserId: saved.id,
+    refType: "user",
+    refId: saved.id,
+    link: "/admin/personas",
+  });
 
   // Enviar correo de verificación
   const url = verificationUrl(verificationToken);

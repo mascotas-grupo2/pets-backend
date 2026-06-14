@@ -21,6 +21,7 @@ import {
 } from "../lib/minio.js";
 import { geocodificarDireccion } from "../lib/geocoding.js";
 import { notify } from "../lib/notify.js";
+import { recordActivity } from "../lib/activity.js";
 import {
   CatalogValidationError,
   getCatalogValuesById,
@@ -787,6 +788,14 @@ export async function createMascota(req: Request, res: Response) {
 
   const updated = await repo().save({ ...saved, ...updatePayload });
   const reloaded = await repo().findOneByOrFail({ id: updated.id });
+  await recordActivity({
+    type: "publicacion",
+    title: `Nueva publicación: ${reloaded.name ?? "mascota"}`,
+    actorUserId: userId,
+    refType: "pet",
+    refId: reloaded.id,
+    link: "/admin/publicacion",
+  });
   const catalogValuesById = await getCatalogValuesById();
   res.status(201).json(serializeMascota(reloaded, catalogValuesById));
 }
