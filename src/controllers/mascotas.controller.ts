@@ -6,6 +6,8 @@ import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
 import { Followup } from "../entity/Followup.js";
+import { Adoption } from "../entity/Adoption.js";
+import { calculateCompatibility } from "../lib/matching.js";
 import {
   petCreateSchema,
   petNoteCreateSchema,
@@ -476,8 +478,61 @@ export async function getMascota(req: Request, res: Response) {
   if (!canViewPet(mascota, req.authUser)) {
     return res.status(404).json({ error: "Pet no encontrada" });
   }
+  // Conteo de vistas: incrementamos si NO es el dueño (no infla sus propias vistas).
+  // Await para que persista y el valor devuelto sea consistente.
+  if (mascota.userId == null || mascota.userId !== req.authUser?.id) {
+    try {
+      await repo().increment({ id }, "viewsCount", 1);
+      mascota.viewsCount = (mascota.viewsCount ?? 0) + 1;
+    } catch {
+      /* el conteo de vistas es best-effort */
+    }
+  }
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(mascota, catalogValuesById));
+}
+
+/**
+ * Compatibilidad entre el usuario logueado y una mascota (para el detalle
+ * público). Usa la solicitud para esa mascota si existe; sino, el perfil de
+ * adoptante más reciente del usuario.
+ */
+export async function getMascotaCompatibility(req: Request, res: Response) {
+  const id = req.params.id;
+  const userId = req.authUser?.id;
+  if (!Number.isInteger(userId)) {
+    return res.status(401).json({ error: "No autenticado" });
+  }
+  let pet;
+  try {
+    pet = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const adoptionRepo = AppDataSource.getRepository(Adoption);
+  const forPet = await adoptionRepo.findOne({
+    where: { userId: userId as number, petId: id },
+    order: { createdAt: "DESC" },
+  });
+  const latest =
+    forPet ??
+    (await adoptionRepo.findOne({
+      where: { userId: userId as number },
+      order: { createdAt: "DESC" },
+    }));
+
+  if (!latest) {
+    return res.json({ score: null, factors: [], source: "none", adoptionId: null });
+  }
+  const { score, factors } = calculateCompatibility(latest, pet);
+  res.json({
+    score,
+    factors,
+    source: forPet ? "application" : "profile",
+    adoptionId: latest.id,
+  });
 }
 
 export async function createMascota(req: Request, res: Response) {
