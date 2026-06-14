@@ -28,6 +28,7 @@ import {
   approveComment,
   rejectComment,
 } from "../controllers/comments.controller.js";
+import { createSighting, listSightings } from "../controllers/sightings.controller.js";
 import { optionalAuth, requireAdmin, requireAuth } from "../lib/auth.js";
 
 export const mascotasRouter = Router();
@@ -61,3 +62,7 @@ mascotasRouter.get("/:id/comments/admin", requireAuth, listOwnerComments);
 mascotasRouter.post("/:id/comments", optionalAuth, createComment);
 mascotasRouter.post("/:id/comments/:commentId/approve", requireAuth, approveComment);
 mascotasRouter.post("/:id/comments/:commentId/reject", requireAuth, rejectComment);
+
+// Avistamientos ("La vi").
+mascotasRouter.post("/:id/sightings", optionalAuth, createSighting);
+mascotasRouter.get("/:id/sightings", requireAuth, listSightings);
