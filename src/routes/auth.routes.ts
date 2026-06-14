@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  changeEmail,
   changePassword,
   deleteAccount,
   forgotPassword,
@@ -29,6 +30,7 @@ authRouter.post("/resend-verification", resendVerification);
 authRouter.post("/forgot-password", forgotPassword);
 authRouter.post("/reset-password", resetPassword);
 authRouter.get("/ws-token", requireAuth, wsToken);
+authRouter.post("/change-email", requireAuth, changeEmail);
 authRouter.post("/change-password", requireAuth, changePassword);
 authRouter.delete("/account", requireAuth, deleteAccount);
 authRouter.post("/sso-sync", ssoSync);
