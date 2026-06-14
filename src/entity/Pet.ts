@@ -106,4 +106,8 @@ export class Pet {
 
   @Column({ type: "int", default: CatalogIds.petReportStatus.pendiente })
   reportStatusId: number;
+
+  // Conteo de vistas del detalle público (se incrementa al verlo un tercero).
+  @Column({ type: "int", default: 0 })
+  viewsCount: number;
 }
