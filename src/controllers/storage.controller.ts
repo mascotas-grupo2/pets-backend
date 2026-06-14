@@ -57,7 +57,7 @@ export async function storageProxyHandler(req: Request, res: Response) {
       if (target.origin !== base.origin) {
         return res.status(400).json({ error: "Destino inválido" });
       }
-
+      // nosemgrep: tainted-redirect-express
       return res.redirect(target.toString());
     } catch {
       return res.status(400).json({ error: "Destino inválido" });
