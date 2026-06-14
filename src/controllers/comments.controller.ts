@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { PetComment } from "../entity/PetComment.js";
 import { Pet } from "../entity/Pet.js";
@@ -116,6 +117,18 @@ async function setStatus(req: Request, res: Response, status: "approved" | "reje
   c.status = status;
   const saved = await commentRepo().save(c);
   res.json(serialize(saved));
+}
+
+/** Cola global de comentarios pendientes (para moderación centralizada del admin). */
+export async function listPendingComments(_req: Request, res: Response) {
+  const items = await commentRepo().find({
+    where: { status: "pending" },
+    order: { createdAt: "DESC" },
+  });
+  const petIds = [...new Set(items.map((c) => c.petId))];
+  const pets = petIds.length ? await petRepo().findBy({ id: In(petIds) }) : [];
+  const nameById = new Map(pets.map((p) => [p.id, p.name ?? "una mascota"]));
+  res.json(items.map((c) => ({ ...serialize(c), petName: nameById.get(c.petId) ?? null })));
 }
 
 export function approveComment(req: Request, res: Response) {
