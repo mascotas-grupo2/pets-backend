@@ -515,6 +515,19 @@ async function seed() {
     "thor.png",
   ];
 
+  // Ubicaciones reales de CABA (el front conoce sus coordenadas para la vista mapa).
+  const extraPetLocations = [
+    "Plaza Serrano, Palermo, CABA",
+    "Parque Centenario, Caballito, CABA",
+    "Parque Lezama, San Telmo, CABA",
+    "Parque Rivadavia, Caballito, CABA",
+    "Barrancas de Belgrano, CABA",
+    "Parque Chacabuco, CABA",
+    "Plaza Irlanda, Caballito, CABA",
+    "Parque Los Andes, Chacarita, CABA",
+    "Plaza Pueyrredón, Flores, CABA",
+    "Parque Saavedra, CABA",
+  ];
   const extraPetTypes = [
     CatalogIds.animalType.perro, // Bruno  - "Perro cariñoso..."
     CatalogIds.animalType.gato, // Simba  - "Gato curioso..."
@@ -555,19 +568,6 @@ async function seed() {
     18, // Thor   - perro mediano
   ];
 
-  // Ubicaciones reales de CABA (el front conoce sus coordenadas para la vista mapa).
-  const extraPetLocations = [
-    "Plaza Serrano, Palermo, CABA",
-    "Parque Centenario, Caballito, CABA",
-    "Parque Lezama, San Telmo, CABA",
-    "Parque Rivadavia, Caballito, CABA",
-    "Barrancas de Belgrano, CABA",
-    "Parque Chacabuco, CABA",
-    "Plaza Irlanda, Caballito, CABA",
-    "Parque Los Andes, Chacarita, CABA",
-    "Plaza Pueyrredón, Flores, CABA",
-    "Parque Saavedra, CABA",
-  ];
   // Estados variados (perdido/encontrado/tránsito/adopción) para enriquecer el listado.
   const extraPetStatuses = [
     CatalogIds.petStatus.perdido,

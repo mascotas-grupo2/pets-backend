@@ -66,6 +66,7 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
 
   return {
     ...payload,
+    viewsCount: mascota.viewsCount ?? 0,
     animalType: animalType?.code ?? null,
     animalTypeLabel: animalType?.label ?? null,
     animalTypeInfo: animalType,

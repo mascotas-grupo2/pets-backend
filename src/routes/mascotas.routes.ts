@@ -32,7 +32,6 @@ import { optionalAuth, requireAdmin, requireAuth } from "../lib/auth.js";
 
 export const mascotasRouter = Router();
 
-
 mascotasRouter.get("/", optionalAuth, listMascotas);
 mascotasRouter.get("/admin/list", requireAdmin, adminListMascotas);
 mascotasRouter.get("/admin/paged", requireAdmin, adminListMascotasPaged);

@@ -19,7 +19,7 @@ export class Notification {
   @Column({ type: "int" })
   userId!: number;
 
-  /** "message" | "adoption_status" | "publication" */
+  /** "message" | "adoption_status" | "publication" | "comment" */
   @Column({ type: "varchar", length: 40 })
   type!: string;
 

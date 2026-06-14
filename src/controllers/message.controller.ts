@@ -120,7 +120,7 @@ export async function sendMessage(req: Request, res: Response) {
     await notify(receiver.id, {
       type: "message",
       title: `Nuevo mensaje de ${sender.name}`,
-      body: typeof content === "string" ? content.slice(0, 140) : null,
+      body: typeof content === "string" ? content.slice(0, 140) : undefined,
       link: receiverIsAdmin
         ? `/admin/mensajes?user=${sender.id}`
         : `/account?tab=messages&user=${sender.id}`,
