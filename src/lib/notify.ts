@@ -2,7 +2,11 @@ import { AppDataSource } from "../data-source.js";
 import { Notification } from "../entity/Notification.js";
 import { emitToUser } from "./realtime.js";
 
-export type NotificationType = "message" | "adoption_status" | "publication";
+export type NotificationType =
+  | "message"
+  | "adoption_status"
+  | "publication"
+  | "comment";
 
 /**
  * Crea una notificación in-app para un usuario. Es best-effort: si falla no
