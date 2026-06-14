@@ -42,9 +42,6 @@ import { AddAdoptionUpdatedAt1749100000000 } from "./migration/1749100000000-Add
 import { AddAdoptionEvaluation1749200000000 } from "./migration/1749200000000-AddAdoptionEvaluation.js";
 import { AddFollowupStatusCompletado1749300000000 } from "./migration/1749300000000-AddFollowupStatusCompletado.js";
 import { AddNotification1749400000000 } from "./migration/1749400000000-AddNotification.js";
-import { Comment } from "./entity/Comment.js";
-import { AddComment1749600000000 } from "./migration/1749600000000-AddComment.js";
-import { AddViewsCount1749700000000 } from "./migration/1749700000000-AddViewsCount.js";
 import { AddMessagePhoto1749500000000 } from "./migration/1749500000000-AddMessagePhoto.js";
 import { AddAdoptionKind1749600000000 } from "./migration/1749600000000-AddAdoptionKind.js";
 import { AddViewsAndComments1749700000000 } from "./migration/1749700000000-AddViewsAndComments.js";
