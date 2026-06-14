@@ -1,0 +1,40 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
+} from "typeorm";
+
+/**
+ * Avistamiento ("La vi") reportado sobre una mascota perdida. Lo deja cualquiera
+ * (anónimo o logueado). Queda registrado y notifica al dueño.
+ */
+@Entity()
+@Index(["petId"])
+export class Sighting {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Column({ name: "pet_id", type: "uuid" })
+  petId!: string;
+
+  @Column({ name: "reporter_user_id", type: "int", nullable: true })
+  reporterUserId!: number | null;
+
+  @Column({ type: "varchar", length: 200, nullable: true })
+  place!: string | null;
+
+  /** Fecha del avistamiento como la cargó el usuario (YYYY-MM-DD). */
+  @Column({ name: "sighted_on", type: "varchar", length: 40, nullable: true })
+  sightedOn!: string | null;
+
+  @Column({ type: "text", nullable: true })
+  note!: string | null;
+
+  @Column({ type: "varchar", length: 200, nullable: true })
+  contact!: string | null;
+
+  @CreateDateColumn({ name: "created_at" })
+  createdAt!: Date;
+}
