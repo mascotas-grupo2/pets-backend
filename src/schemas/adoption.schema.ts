@@ -69,6 +69,8 @@ export type AdoptionInput = z.infer<typeof adoptionSchema>;
 
 export const adoptionStatusUpdateSchema = z.object({
   status: z.string().trim().min(1).max(120),
+  // Motivo opcional (se usa al DESCARTAR para comunicárselo al solicitante).
+  reason: z.string().max(2000).optional(),
 });
 
 export type AdoptionStatusUpdateInput = z.infer<typeof adoptionStatusUpdateSchema>;
