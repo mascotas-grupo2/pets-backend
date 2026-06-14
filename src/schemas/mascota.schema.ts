@@ -5,6 +5,15 @@ const optionalPositiveInt = z.preprocess(
   z.coerce.number().int().positive().optional(),
 );
 
+
+const optionalNonEmptyString = z.preprocess(
+  (value) => {
+    if (value === "" || value === null) return undefined;
+    return value;
+  },
+  z.string().min(1).max(120).optional(),
+);
+
 const catalogReference = z.preprocess(
   (value) => {
     if (value === "" || value === null) return undefined;
@@ -23,7 +32,7 @@ const petBaseSchema = z.object({
   id: z.string().optional(),
   createdAt: z.string().optional(),
   userId: z.number().int().positive().optional(),
-  name: z.string().min(1).max(120).optional(),
+  name: optionalNonEmptyString,
   photo: z.string().min(1).nullable().optional(),
   photos: z.array(z.string().url()).optional(),
   description: z.string().min(1).max(2000),
