@@ -19,7 +19,15 @@ import {
   resolveMascota,
   rejectMascota,
   entregaDirecta,
+  getMascotaCompatibility,
 } from "../controllers/mascotas.controller.js";
+import {
+  listApprovedComments,
+  listOwnerComments,
+  createComment,
+  approveComment,
+  rejectComment,
+} from "../controllers/comments.controller.js";
 import { optionalAuth, requireAdmin, requireAuth } from "../lib/auth.js";
 
 export const mascotasRouter = Router();
@@ -44,3 +52,13 @@ mascotasRouter.post("/:id/entrega-directa", requireAdmin, entregaDirecta);
 mascotasRouter.post("/:id/reject", requireAdmin, rejectMascota);
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
 mascotasRouter.post("/:id/notes", requireAdmin, createPetNote);
+
+// Compatibilidad usuario↔mascota (detalle público).
+mascotasRouter.get("/:id/compatibility", requireAuth, getMascotaCompatibility);
+
+// Comentarios públicos moderados por el dueño.
+mascotasRouter.get("/:id/comments", optionalAuth, listApprovedComments);
+mascotasRouter.get("/:id/comments/admin", requireAuth, listOwnerComments);
+mascotasRouter.post("/:id/comments", optionalAuth, createComment);
+mascotasRouter.post("/:id/comments/:commentId/approve", requireAuth, approveComment);
+mascotasRouter.post("/:id/comments/:commentId/reject", requireAuth, rejectComment);
