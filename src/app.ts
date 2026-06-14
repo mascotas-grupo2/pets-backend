@@ -10,6 +10,7 @@ import { followupRouter } from "./routes/followup.routes.js";
 import { messageRouter } from "./routes/message.routes.js";
 import { dashboardRouter } from "./routes/dashboard.routes.js";
 import { notificationRouter } from "./routes/notification.routes.js";
+import { commentsRouter } from "./routes/comments.routes.js";
 import {
   createMascota,
   listAnimalTypeCatalog,
@@ -52,6 +53,7 @@ app.use("/api/followups", followupRouter);
 app.use("/api/messages", messageRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/notifications", notificationRouter);
+app.use("/api/comments", commentsRouter);
 app.post("/api/pet/reportar", optionalAuth, multiple("photo", 10), multerErrorHandler, createMascota);
 app.get("/api/pet/adoptar", requireAuth, (_req, res) => {
   res.status(405).json({ error: "Usá POST /api/pet/adoptar para enviar una solicitud de adopción." });
