@@ -10,6 +10,16 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+/** Escapa datos del usuario (nombre) antes de incrustarlos en el HTML del correo. */
+function escapeHtml(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // Verificar la conexión al inicio para detectar errores de SMTP rápido
 transporter.verify((error) => {
   if (error) {
@@ -28,7 +38,7 @@ export async function sendVerificationMail(to: string, name: string, url: string
       to,
       subject: "Verifica tu cuenta en Huellitas Unidas - NO RESPONDER",
       html: `
-        <h1>Hola, ${name}!</h1>
+        <h1>Hola, ${escapeHtml(name)}!</h1>
         <p>Gracias por unirte. Para activar tu cuenta, haz clic en el siguiente enlace:</p>
         <p><a href="${url}">${url}</a></p>
         <p>Si no creaste esta cuenta, puedes ignorar este correo.</p>
@@ -51,7 +61,7 @@ export async function sendPasswordResetMail(to: string, name: string, url: strin
     to,
     subject: "Restablece tu contraseña en Huellitas Unidas - NO RESPONDER",
     html: `
-      <h1>Hola, ${name}!</h1>
+      <h1>Hola, ${escapeHtml(name)}!</h1>
       <p>Recibimos una solicitud para restablecer tu contraseña.</p>
       <p>Para crear una nueva, haz clic en el siguiente enlace:</p>
       <p><a href="${url}">${url}</a></p>
