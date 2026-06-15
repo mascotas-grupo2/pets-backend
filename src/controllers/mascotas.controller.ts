@@ -991,12 +991,13 @@ export async function updateMascota(req: Request, res: Response) {
   ) {
     const S = CatalogIds.petStatus;
     const PET_STATUS_NEXT: Record<number, number[]> = {
-      [S.perdido]: [S.encontrado],
-      [S.encontrado]: [S.transito, S.medico, S.adopcion],
-      [S.transito]: [S.medico, S.adopcion],
-      [S.medico]: [S.transito, S.adopcion],
-      [S.adopcion]: [S.adoptado],
+      [S.perdido]: [S.encontrado, S.devueltaAlDueno],
+      [S.encontrado]: [S.transito, S.medico, S.adopcion, S.devueltaAlDueno],
+      [S.transito]: [S.medico, S.adopcion, S.devueltaAlDueno],
+      [S.medico]: [S.transito, S.adopcion, S.devueltaAlDueno],
+      [S.adopcion]: [S.adoptado, S.devueltaAlDueno],
       [S.adoptado]: [],
+      [S.devueltaAlDueno]: [],
     };
     const permitidos = PET_STATUS_NEXT[existing.statusId] ?? [];
     if (!permitidos.includes(catalogIds.statusId)) {
@@ -1257,6 +1258,172 @@ export async function deleteMascota(req: Request, res: Response) {
     });
   }
   res.status(204).send();
+}
+
+/**
+ * Reclamo de mascota: un usuario reporta que una mascota podría ser suya.
+ * Crea una nota de tipo "reclamo" en la publicación y notifica al admin.
+ */
+export async function claimPet(req: Request, res: Response) {
+  const id = req.params.id;
+  const { claimantName, claimantPhone, claimantEmail, description } = req.body ?? {};
+
+  if (!claimantName || !claimantPhone) {
+    return res.status(400).json({ error: "Nombre y teléfono son requeridos." });
+  }
+
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  // No se puede reclamar una mascota que ya está en estado final
+  const S = CatalogIds.petStatus;
+  if (existing.statusId === S.adoptado || existing.statusId === S.devueltaAlDueno) {
+    return res.status(409).json({
+      error: "Esta mascota ya tiene un desenlace registrado (adoptada o devuelta).",
+    });
+  }
+
+  if (existing.reportStatusId === CatalogIds.petReportStatus.finalizado) {
+    return res.status(409).json({ error: "La publicación ya está cerrada." });
+  }
+
+  const noteText = [
+    `🔔 RECLAMO de ${claimantName}`,
+    `Tel: ${claimantPhone}`,
+    claimantEmail ? `Email: ${claimantEmail}` : null,
+    description ? `Mensaje: ${description}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  await noteRepo().save(
+    noteRepo().create({
+      petId: existing.id,
+      authorName: claimantName,
+      text: noteText,
+      kindId: CatalogIds.petNoteKind.general,
+    }),
+  );
+
+  // Notificar a los admins
+  const admins = await userRepo().find({ where: { roleId: CatalogIds.userRole.admin } });
+  for (const admin of admins) {
+    await notify(admin.id, {
+      type: "publication",
+      title: `🔔 Reclamo de mascota: ${existing.name ?? "sin nombre"}`,
+      body: `${claimantName} reclama ser el dueño. Revisalo en el panel.`,
+      link: `/admin/publicacion?id=${existing.id}`,
+    });
+  }
+
+  // Notificar al dueño de la publicación si está registrado
+  if (existing.userId) {
+    await notify(existing.userId, {
+      type: "publication",
+      title: `Alguien reclama ser el dueño de ${existing.name ?? "tu mascota"}`,
+      body: `Comunicate con el refugio para coordinar el reencuentro.`,
+      link: `/mascotas-perdidas/${existing.id}`,
+    });
+  }
+
+  const catalogValuesById = await getCatalogValuesById();
+  res.json({ ok: true, message: "Reclamo registrado. El refugio se comunicará con vos." });
+}
+
+/**
+ * Confirmar devolución: el admin verifica el reclamo y marca la mascota
+ * como devuelta al dueño. Cierra la publicación y cancela adopciones activas.
+ */
+export async function confirmReturn(req: Request, res: Response) {
+  const id = req.params.id;
+  const { returnedTo } = req.body ?? {};
+
+  if (!returnedTo || typeof returnedTo !== "string") {
+    return res.status(400).json({ error: "Indicá a quién se devolvió la mascota." });
+  }
+
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  if (existing.reportStatusId === CatalogIds.petReportStatus.finalizado) {
+    return res.status(409).json({ error: "La publicación ya está cerrada." });
+  }
+
+  const S = CatalogIds.petStatus;
+  if (existing.statusId === S.devueltaAlDueno) {
+    return res.status(409).json({ error: "La mascota ya fue devuelta a su dueño." });
+  }
+
+  // Transacción: cambiar estado + cerrar + cancelar adopciones activas + nota
+  await AppDataSource.transaction(async (manager) => {
+    const petRepo = manager.getRepository(Pet);
+    const adoptionRepo = manager.getRepository(Adoption);
+    const followupRepo = manager.getRepository(Followup);
+    const noteRepo = manager.getRepository(PetNote);
+
+    // Cambiar estado
+    existing.statusId = S.devueltaAlDueno;
+    existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+    await petRepo.save(existing);
+
+    // Cancelar adopciones activas
+    await adoptionRepo.update(
+      { petId: id, statusId: CatalogIds.adoptionStatus.nueva },
+      { statusId: CatalogIds.adoptionStatus.descartada },
+    );
+    await adoptionRepo.update(
+      { petId: id, statusId: CatalogIds.adoptionStatus.enEvaluacion },
+      { statusId: CatalogIds.adoptionStatus.descartada },
+    );
+
+    // Cancelar seguimientos pendientes relacionados con adopción
+    await followupRepo.update(
+      { petId: id, statusId: CatalogIds.followupStatus.pendiente },
+      { statusId: CatalogIds.followupStatus.completado },
+    );
+
+    // Nota de auditoría
+    const adminId = req.authUser?.id ?? null;
+    let adminName: string | null = null;
+    if (adminId) {
+      const admin = await userRepo().findOneBy({ id: adminId });
+      adminName = admin?.name ?? admin?.email ?? null;
+    }
+    await noteRepo.save(
+      noteRepo.create({
+        petId: existing.id,
+        authorId: adminId,
+        authorName: adminName,
+        text: `✅ Devuelta al dueño: entregada a ${returnedTo}${adminName ? ` por ${adminName}` : ""}. Reclamo gestionado por el refugio.`,
+        kindId: CatalogIds.petNoteKind.general,
+      }),
+    );
+  });
+
+  // Notificar
+  if (existing.userId) {
+    await notify(existing.userId, {
+      type: "publication",
+      title: `${existing.name ?? "Tu mascota"} fue devuelta a su familia`,
+      body: `El refugio confirmó la devolución. Gracias por usar la plataforma.`,
+      link: `/mascotas-perdidas/${existing.id}`,
+    });
+  }
+
+  // Recargar y devolver
+  const reloaded = await repo().findOneByOrFail({ id });
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(reloaded, catalogValuesById));
 }
 
 export async function listPetNotes(req: Request, res: Response) {
