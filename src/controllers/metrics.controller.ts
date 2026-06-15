@@ -20,8 +20,13 @@ export async function getMetricas(req: Request, res: Response) {
       mascotasPerdidas,
       seguimientosPendientes,
       usuariosRegistrados,
+      mascotasEnAdopcion,
     ] = await Promise.all([
-      AppDataSource.getRepository(Pet).count(),
+      AppDataSource.getRepository(Pet).count({
+        where: {
+          reportStatusId: CatalogIds.petReportStatus.activo,
+        },
+      }),
 
       AppDataSource.getRepository(Pet).count({
         where: {
@@ -42,11 +47,20 @@ export async function getMetricas(req: Request, res: Response) {
       }),
 
       AppDataSource.getRepository(User).count(),
+
+      AppDataSource.getRepository(Pet).count({
+        where: {
+          statusId: CatalogIds.petStatus.adopcion,
+        },
+      }),
     ]);
 
+    // Para el KPI "mascotasPublicadas" y la "tasaAdopcion", es más relevante considerar
+    // las mascotas que están o estuvieron en el proceso de adopción.
+    const mascotasPublicadasParaAdopcion = mascotasAdoptadas + mascotasEnAdopcion;
     const tasaAdopcion =
-      mascotasPublicadas > 0
-        ? Number(((mascotasAdoptadas / mascotasPublicadas) * 100).toFixed(1))
+      mascotasPublicadasParaAdopcion > 0
+        ? Number(((mascotasAdoptadas / mascotasPublicadasParaAdopcion) * 100).toFixed(1))
         : 0;
 
     // ==========================
