@@ -21,6 +21,7 @@ import {
   entregaDirecta,
   getMascotaCompatibility,
 } from "../controllers/mascotas.controller.js";
+import { getMetricas } from "../controllers/metrics.controller.js";
 import {
   listApprovedComments,
   listOwnerComments,
@@ -34,6 +35,8 @@ import { optionalAuth, requireAdmin, requireAuth } from "../lib/auth.js";
 export const mascotasRouter = Router();
 
 mascotasRouter.get("/", optionalAuth, listMascotas);
+// Nuevo endpoint para métricas administrativas
+mascotasRouter.get("/admin/metricas", requireAdmin, getMetricas);
 mascotasRouter.get("/admin/list", requireAdmin, adminListMascotas);
 mascotasRouter.get("/admin/paged", requireAdmin, adminListMascotasPaged);
 mascotasRouter.get("/admin/status/:status", requireAdmin, adminListMascotasByStatus);
