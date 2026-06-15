@@ -1,15 +1,33 @@
 import { Request, Response } from "express";
-import { AppDataSource } from "../data-source";
+import { AppDataSource } from "../data-source"; // Importa AppDataSource
+import { MoreThanOrEqual } from "typeorm"; // Importa MoreThanOrEqual para filtros de fecha
 
 import { Pet } from "../entity/Pet";
 import { Adoption } from "../entity/Adoption";
 import { Followup } from "../entity/Followup";
 import { User } from "../entity/User";
 
-import { CatalogIds } from "../lib/catalog-constants";
+import { CatalogIds } from "../lib/catalog-constants"; // Importa CatalogIds
+
+// Define el tipo MetricasFilter para consistencia con el frontend
+type MetricasFilter = "7d" | "30d" | "90d" | "1y";
 
 export async function getMetricas(req: Request, res: Response) {
   try {
+    const periodo = req.query.periodo as MetricasFilter | undefined;
+    let startDate: Date | undefined;
+
+    if (periodo) {
+      startDate = new Date();
+      switch (periodo) {
+        case "7d": startDate.setDate(startDate.getDate() - 7); break;
+        case "30d": startDate.setDate(startDate.getDate() - 30); break;
+        case "90d": startDate.setDate(startDate.getDate() - 90); break;
+        case "1y": startDate.setFullYear(startDate.getFullYear() - 1); break;
+        default: startDate = undefined; // No aplicar filtro si el período es inválido
+      }
+    }
+    const dateFilter = startDate ? MoreThanOrEqual(startDate) : undefined;
     // ==========================
     // KPI SUPERIORES
     // ==========================
@@ -25,32 +43,41 @@ export async function getMetricas(req: Request, res: Response) {
       AppDataSource.getRepository(Pet).count({
         where: {
           reportStatusId: CatalogIds.petReportStatus.activo,
+          ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
       AppDataSource.getRepository(Pet).count({
         where: {
           statusId: CatalogIds.petStatus.adoptado,
+          ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
       AppDataSource.getRepository(Pet).count({
         where: {
           statusId: CatalogIds.petStatus.perdido,
+          ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
       AppDataSource.getRepository(Followup).count({
         where: {
           statusId: CatalogIds.followupStatus.pendiente,
+          ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
-      AppDataSource.getRepository(User).count(),
+      AppDataSource.getRepository(User).count({
+        where: {
+          ...(dateFilter && { createdAt: dateFilter }),
+        },
+      }),
 
       AppDataSource.getRepository(Pet).count({
         where: {
           statusId: CatalogIds.petStatus.adopcion,
+          ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
     ]);
@@ -67,14 +94,16 @@ export async function getMetricas(req: Request, res: Response) {
     // MASCOTAS POR ESTADO
     // ==========================
 
-    const mascotasPorEstadoRaw = await AppDataSource.createQueryBuilder(
-      Pet,
-      "p",
-    )
+    const mascotasPorEstadoQb = AppDataSource.createQueryBuilder(Pet, "p")
       .select("p.statusId", "statusId")
       .addSelect("COUNT(*)", "cantidad")
-      .groupBy("p.statusId")
-      .getRawMany();
+      .groupBy("p.statusId");
+
+    if (startDate) {
+      mascotasPorEstadoQb.andWhere("p.createdAt >= :startDate", { startDate });
+    }
+
+    const mascotasPorEstadoRaw = await mascotasPorEstadoQb.getRawMany();
 
     const mascotasPorEstado = mascotasPorEstadoRaw.map((item) => ({
       estado: getPetStatusLabel(Number(item.statusId)),
@@ -85,14 +114,16 @@ export async function getMetricas(req: Request, res: Response) {
     // SOLICITUDES POR ESTADO
     // ==========================
 
-    const solicitudesPorEstadoRaw = await AppDataSource.createQueryBuilder(
-      Adoption,
-      "a",
-    )
+    const solicitudesPorEstadoQb = AppDataSource.createQueryBuilder(Adoption, "a")
       .select("a.statusId", "statusId")
       .addSelect("COUNT(*)", "cantidad")
-      .groupBy("a.statusId")
-      .getRawMany();
+      .groupBy("a.statusId");
+
+    if (startDate) {
+      solicitudesPorEstadoQb.andWhere("a.createdAt >= :startDate", { startDate });
+    }
+
+    const solicitudesPorEstadoRaw = await solicitudesPorEstadoQb.getRawMany();
 
     const solicitudesPorEstado = solicitudesPorEstadoRaw.map((item) => ({
       estado: getAdoptionStatusLabel(Number(item.statusId)),
@@ -103,14 +134,16 @@ export async function getMetricas(req: Request, res: Response) {
     // SEGUIMIENTOS POR ESTADO
     // ==========================
 
-    const seguimientosPorEstadoRaw = await AppDataSource.createQueryBuilder(
-      Followup,
-      "f",
-    )
+    const seguimientosPorEstadoQb = AppDataSource.createQueryBuilder(Followup, "f")
       .select("f.statusId", "statusId")
       .addSelect("COUNT(*)", "cantidad")
-      .groupBy("f.statusId")
-      .getRawMany();
+      .groupBy("f.statusId");
+
+    if (startDate) {
+      seguimientosPorEstadoQb.andWhere("f.createdAt >= :startDate", { startDate });
+    }
+
+    const seguimientosPorEstadoRaw = await seguimientosPorEstadoQb.getRawMany();
 
     const seguimientosPorEstado = seguimientosPorEstadoRaw.map((item) => ({
       estado: getFollowupStatusLabel(Number(item.statusId)),
@@ -121,22 +154,31 @@ export async function getMetricas(req: Request, res: Response) {
     // USUARIOS POR MES
     // ==========================
 
-    const usuariosPorMes = await AppDataSource.createQueryBuilder(User, "u")
+    const usuariosPorMesQb = AppDataSource.createQueryBuilder(User, "u")
       .select("TO_CHAR(DATE_TRUNC('month', u.createdAt), 'YYYY-MM')", "mes")
       .addSelect("COUNT(*)", "cantidad")
       .groupBy("DATE_TRUNC('month', u.createdAt)")
-      .orderBy("DATE_TRUNC('month', u.createdAt)", "ASC")
-      .getRawMany();
+      .orderBy("DATE_TRUNC('month', u.createdAt)", "ASC");
+
+    if (startDate) {
+      usuariosPorMesQb.andWhere("u.createdAt >= :startDate", { startDate });
+    }
+    const usuariosPorMes = await usuariosPorMesQb.getRawMany();
 
     // ==========================
     // MASCOTAS POR TIPO
     // ==========================
 
-    const mascotasPorTipoRaw = await AppDataSource.createQueryBuilder(Pet, "p")
+    const mascotasPorTipoQb = AppDataSource.createQueryBuilder(Pet, "p")
       .select("p.animalTypeId", "animalTypeId")
       .addSelect("COUNT(*)", "cantidad")
-      .groupBy("p.animalTypeId")
-      .getRawMany();
+      .groupBy("p.animalTypeId");
+
+    if (startDate) {
+      mascotasPorTipoQb.andWhere("p.createdAt >= :startDate", { startDate });
+    }
+
+    const mascotasPorTipoRaw = await mascotasPorTipoQb.getRawMany();
 
     const mascotasPorTipo = mascotasPorTipoRaw.map((item) => ({
       tipo: getAnimalTypeLabel(Number(item.animalTypeId)),
@@ -147,10 +189,15 @@ export async function getMetricas(req: Request, res: Response) {
     // TOP PUBLICACIONES
     // ==========================
 
-    const topPublicacionesRaw = await AppDataSource.createQueryBuilder(Pet, "p")
+    const topPublicacionesQb = AppDataSource.createQueryBuilder(Pet, "p")
       .orderBy("p.viewsCount", "DESC")
-      .limit(5)
-      .getMany();
+      .limit(5);
+
+    if (startDate) {
+      topPublicacionesQb.andWhere("p.createdAt >= :startDate", { startDate });
+    }
+
+    const topPublicacionesRaw = await topPublicacionesQb.getMany();
 
     const topPublicaciones = topPublicacionesRaw.map((pet) => ({
       id: pet.id,
@@ -165,7 +212,7 @@ export async function getMetricas(req: Request, res: Response) {
     // MAPA REPORTES
     // ==========================
 
-    const mapaReportesRaw = await AppDataSource.createQueryBuilder(Pet, "p")
+    const mapaReportesQb = AppDataSource.createQueryBuilder(Pet, "p")
       .select([
         "p.id as id",
         "p.name as nombre",
@@ -175,8 +222,13 @@ export async function getMetricas(req: Request, res: Response) {
         "p.animalTypeId as animalTypeId",
       ])
       .where("p.latitud IS NOT NULL")
-      .andWhere("p.longitud IS NOT NULL")
-      .getRawMany();
+      .andWhere("p.longitud IS NOT NULL");
+
+    if (startDate) {
+      mapaReportesQb.andWhere("p.createdAt >= :startDate", { startDate });
+    }
+
+    const mapaReportesRaw = await mapaReportesQb.getRawMany();
 
     const mapaReportes = mapaReportesRaw.map((item) => ({
       id: item.id,
