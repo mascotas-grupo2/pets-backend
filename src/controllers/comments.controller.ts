@@ -13,12 +13,13 @@ function petRepo() {
   return AppDataSource.getRepository(Pet);
 }
 
-function serialize(c: PetComment) {
+function serialize(c: PetComment, includeEmail = false) {
   return {
     id: c.id,
     petId: c.petId,
     authorName: c.authorName,
-    authorEmail: c.authorEmail,
+
+    ...(includeEmail ? { authorEmail: c.authorEmail } : {}),
     text: c.text,
     status: c.status,
     createdAt: c.createdAt,
@@ -42,7 +43,7 @@ export async function listApprovedComments(req: Request, res: Response) {
     where: { petId, status: "approved" },
     order: { createdAt: "DESC" },
   });
-  res.json(items.map(serialize));
+  res.json(items.map((c) => serialize(c)));
 }
 
 /** Todos los comentarios (pending + aprobados) para el dueño/admin a moderar. */
@@ -55,7 +56,7 @@ export async function listOwnerComments(req: Request, res: Response) {
     where: { petId },
     order: { createdAt: "DESC" },
   });
-  res.json(items.map(serialize));
+  res.json(items.map((c) => serialize(c, true)));
 }
 
 /** Crear comentario (anónimo o logueado). Queda pending y notifica al dueño. */
@@ -72,7 +73,9 @@ export async function createComment(req: Request, res: Response) {
       ? req.body.authorEmail.trim().slice(0, 200)
       : null;
   if (!authorName || !text) {
-    return res.status(400).json({ error: "Nombre y comentario son obligatorios." });
+    return res
+      .status(400)
+      .json({ error: "Nombre y comentario son obligatorios." });
   }
 
   const saved = await commentRepo().save(
@@ -106,7 +109,11 @@ export async function createComment(req: Request, res: Response) {
   res.status(201).json(serialize(saved));
 }
 
-async function setStatus(req: Request, res: Response, status: "approved" | "rejected") {
+async function setStatus(
+  req: Request,
+  res: Response,
+  status: "approved" | "rejected",
+) {
   const petId = req.params.id;
   const commentId = req.params.commentId;
   if (!(await isOwnerOrAdmin(petId, req.authUser))) {
@@ -128,7 +135,12 @@ export async function listPendingComments(_req: Request, res: Response) {
   const petIds = [...new Set(items.map((c) => c.petId))];
   const pets = petIds.length ? await petRepo().findBy({ id: In(petIds) }) : [];
   const nameById = new Map(pets.map((p) => [p.id, p.name ?? "una mascota"]));
-  res.json(items.map((c) => ({ ...serialize(c), petName: nameById.get(c.petId) ?? null })));
+  res.json(
+    items.map((c) => ({
+      ...serialize(c),
+      petName: nameById.get(c.petId) ?? null,
+    })),
+  );
 }
 
 export function approveComment(req: Request, res: Response) {
