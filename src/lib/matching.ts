@@ -52,7 +52,7 @@ export function calculateCompatibility(adoption: Adoption, pet: Pet): Compatibil
     }
   } else {
     score += 20;
-    factors.push({ criteria: "Niños en el hogar", applicantValue: "Sin niños", petValue: "N/A", scoreImpact: 20, isPositive: true, label: "Sin niños en el hogar" });
+    factors.push({ criteria: "Niños en el hogar", applicantValue: "Sin niños", petValue: pet.friendlyWithKids === true ? "Amigable con niños" : pet.friendlyWithKids === false ? "No apta para niños" : "Sin datos", scoreImpact: 20, isPositive: true, label: "Sin niños en el hogar" });
   }
 
   // 2. Espacio y Vivienda (Max 20)
@@ -122,30 +122,17 @@ export function calculateCompatibility(adoption: Adoption, pet: Pet): Compatibil
   const hasOtherAnimals = adoption.otherAnimalsId === CatalogIds.yesNo.si;
   if (hasOtherAnimals) {
     if (pet.friendlyWithPets === false) {
-      factors.push({ criteria: "Otras mascotas (Amigabilidad)", applicantValue: "Tiene otras mascotas", petValue: "No apta con otros animales", scoreImpact: 0, isPositive: false, label: "Mascota no apta con otros animales" });
+      factors.push({ criteria: "Otras mascotas", applicantValue: "Tiene otras mascotas", petValue: "No apta con otros animales", scoreImpact: 0, isPositive: false, label: "Mascota no apta con otros animales" });
     } else if (pet.friendlyWithPets === true) {
-      score += 10;
-      factors.push({ criteria: "Otras mascotas (Amigabilidad)", applicantValue: "Tiene otras mascotas", petValue: "Amigable con otros animales", scoreImpact: 10, isPositive: true, label: "Mascota amigable con otros animales" });
+      score += 20;
+      factors.push({ criteria: "Otras mascotas", applicantValue: "Tiene otras mascotas", petValue: "Amigable con otros animales", scoreImpact: 20, isPositive: true, label: "Mascota amigable con otros animales" });
     } else {
-      score += 5;
-      factors.push({ criteria: "Otras mascotas (Amigabilidad)", applicantValue: "Tiene otras mascotas", petValue: "Sin datos", scoreImpact: 5, isPositive: true, label: "Sin datos de convivencia con mascotas" });
-    }
-
-    const allNeutered = adoption.neuteredId === CatalogIds.yesNoNA.si;
-    const allVaccinated = adoption.vaccinatedId === CatalogIds.yesNoNA.si;
-
-    if (allNeutered && allVaccinated) {
       score += 10;
-      factors.push({ criteria: "Otras mascotas (Salud)", applicantValue: "Mascotas vacunadas y castradas", petValue: "N/A", scoreImpact: 10, isPositive: true, label: "Otras mascotas al día" });
-    } else if (adoption.neuteredId === CatalogIds.yesNoNA.no || adoption.vaccinatedId === CatalogIds.yesNoNA.no) {
-      factors.push({ criteria: "Otras mascotas (Salud)", applicantValue: "Falta vacunas o castración", petValue: "N/A", scoreImpact: 0, isPositive: false, label: "Otras mascotas no están al día" });
-    } else {
-      score += 5;
-      factors.push({ criteria: "Otras mascotas (Salud)", applicantValue: "Información incompleta de salud", petValue: "N/A", scoreImpact: 5, isPositive: true, label: "Estado de salud de otras mascotas incierto" });
+      factors.push({ criteria: "Otras mascotas", applicantValue: "Tiene otras mascotas", petValue: "Sin datos", scoreImpact: 10, isPositive: true, label: "Sin datos de convivencia con mascotas" });
     }
   } else {
     score += 20;
-    factors.push({ criteria: "Otras mascotas", applicantValue: "Sin otras mascotas", petValue: "N/A", scoreImpact: 20, isPositive: true, label: "Sin otras mascotas en casa" });
+    factors.push({ criteria: "Otras mascotas", applicantValue: "Sin otras mascotas", petValue: pet.friendlyWithPets === true ? "Amigable con otros animales" : pet.friendlyWithPets === false ? "No apta con otros animales" : "Sin datos", scoreImpact: 20, isPositive: true, label: "Sin otras mascotas en casa" });
   }
 
   // 5. Experiencia Previa (Max 20)
