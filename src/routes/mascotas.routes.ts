@@ -4,6 +4,8 @@ import {
   adminListMascotas,
   adminListMascotasByStatus,
   adminListMascotasPaged,
+  claimPet,
+  confirmReturn,
   createMascota,
   createPetNote,
   deleteMascota,
@@ -53,6 +55,10 @@ mascotasRouter.post("/:id/finalize", requireAdmin, finalizeMascota);
 mascotasRouter.post("/:id/resolve", requireAuth, resolveMascota);
 mascotasRouter.post("/:id/entrega-directa", requireAdmin, entregaDirecta);
 mascotasRouter.post("/:id/reject", requireAdmin, rejectMascota);
+
+// Reclamo de mascota (público) y confirmación de devolución (solo admin).
+mascotasRouter.post("/:id/claim", optionalAuth, claimPet);
+mascotasRouter.post("/:id/confirm-return", requireAdmin, confirmReturn);
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
 mascotasRouter.post("/:id/notes", requireAdmin, createPetNote);
 

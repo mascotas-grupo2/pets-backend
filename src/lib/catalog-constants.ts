@@ -35,6 +35,7 @@ export const CatalogIds = {
     medico: 204,
     adopcion: 205,
     adoptado: 206,
+    devueltaAlDueno: 207,
   },
   petMedicalStatus: {
     sano: 301,
@@ -140,6 +141,7 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 204, catalog: Catalog.PET_STATUS, code: "en tratamiento médico", label: "En tratamiento médico" },
   { id: 205, catalog: Catalog.PET_STATUS, code: "en adopción", label: "En adopción" },
   { id: 206, catalog: Catalog.PET_STATUS, code: "adoptado", label: "Adoptado" },
+  { id: 207, catalog: Catalog.PET_STATUS, code: "devuelta al dueño", label: "Devuelta al dueño" },
 
   { id: 301, catalog: Catalog.PET_MEDICAL_STATUS, code: "sano", label: "Sano" },
   { id: 302, catalog: Catalog.PET_MEDICAL_STATUS, code: "en evaluación", label: "En evaluación" },
