@@ -794,6 +794,7 @@ export async function createMascota(req: Request, res: Response) {
 
   const updated = await repo().save({ ...saved, ...updatePayload });
   const reloaded = await repo().findOneByOrFail({ id: updated.id });
+  // recordActivity ya notifica a los admins (centralizado en lib/activity.ts).
   await recordActivity({
     type: "publicacion",
     title: `Nueva publicación: ${reloaded.name ?? "mascota"}`,
@@ -802,20 +803,6 @@ export async function createMascota(req: Request, res: Response) {
     refId: reloaded.id,
     link: "/admin/publicacion",
   });
-
-  // Avisar a los admins que hay una publicación pendiente de moderar.
-  const admins = await userRepo().find({
-    where: { roleId: CatalogIds.userRole.admin },
-  });
-  for (const admin of admins) {
-    if (admin.id === userId) continue; // no auto-notificar al autor si es admin
-    await notify(admin.id, {
-      type: "publication",
-      title: `Nueva publicación para revisar: ${reloaded.name ?? "mascota"}`,
-      body: "Quedó pendiente de moderación en el panel.",
-      link: "/admin/publicacion",
-    });
-  }
 
   const catalogValuesById = await getCatalogValuesById();
   res.status(201).json(serializeMascota(reloaded, catalogValuesById));

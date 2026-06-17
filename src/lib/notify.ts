@@ -7,7 +7,8 @@ export type NotificationType =
   | "adoption_status"
   | "publication"
   | "comment"
-  | "avistamiento";
+  | "avistamiento"
+  | "actividad";
 
 /**
  * Crea una notificación in-app para un usuario. Es best-effort: si falla no
