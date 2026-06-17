@@ -1440,15 +1440,63 @@ export async function claimPet(req: Request, res: Response) {
     }),
   );
 
-  // Notificar a los admins
-  const admins = await userRepo().find({ where: { roleId: CatalogIds.userRole.admin } });
-  for (const admin of admins) {
-    await notify(admin.id, {
-      type: "publication",
-      title: `🔔 Reclamo de mascota: ${existing.name ?? "sin nombre"}`,
-      body: `${claimantName} reclama ser el dueño. Revisalo en el panel.`,
-      link: `/admin/publicacion?id=${existing.id}`,
-    });
+  const ownerName = existing.userId
+    ? (await userRepo().findOneBy({ id: existing.userId }))?.name ?? "dueño registrado"
+    : null;
+
+  const msgContent = [
+    `🔔 RECLAMO DE MASCOTA`,
+    ``,
+    `Mascota: ${existing.name ?? "sin nombre"}`,
+    `Link: /mascotas-perdidas/${existing.id}`,
+    ``,
+    `— Datos de quien reclama —`,
+    `Nombre: ${claimantName}`,
+    `Teléfono: ${claimantPhone}`,
+    ...(claimantEmail ? [`Email: ${claimantEmail}`] : []),
+    ...(description ? [`Motivo: ${description}`] : []),
+    ``,
+    `— Dueño de la publicación —`,
+    ownerName ? `Nombre: ${ownerName}` : `Publicación sin dueño registrado`,
+    ``,
+    `Respondé a este mensaje para coordinar el reencuentro.`,
+  ].join("\n");
+
+  // Obtener admins
+  const admins = await userRepo().find({
+    where: { roleId: CatalogIds.userRole.admin },
+  });
+  const messageRepo = AppDataSource.getRepository(Message);
+
+  if (req.authUser?.id) {
+    // Usuario autenticado: enviamos el mensaje desde él a los admins
+    for (const admin of admins) {
+      const msg = messageRepo.create({
+        senderId: req.authUser.id,
+        receiverId: admin.id,
+        content: msgContent,
+        photo: null,
+        read: false,
+      });
+      await messageRepo.save(msg);
+
+      await notify(admin.id, {
+        type: "message",
+        title: `🔔 Reclamo: ${existing.name ?? "mascota"} – ${claimantName}`,
+        body: `Reclama ser el dueño de ${existing.name ?? "mascota"}. Respondé desde Mensajes.`,
+        link: `/admin/mensajes?user=${req.authUser.id}`,
+      });
+    }
+  } else {
+    // Usuario no autenticado: solo creamos la notificación (no se puede responder)
+    for (const admin of admins) {
+      await notify(admin.id, {
+        type: "publication",
+        title: `🔔 Reclamo de mascota: ${existing.name ?? "sin nombre"}`,
+        body: `${claimantName} reclama ser el dueño (sin cuenta). Tel: ${claimantPhone}.`,
+        link: `/mascotas-perdidas/${existing.id}`,
+      });
+    }
   }
 
   // Notificar al dueño de la publicación si está registrado
@@ -1462,7 +1510,10 @@ export async function claimPet(req: Request, res: Response) {
   }
 
   const catalogValuesById = await getCatalogValuesById();
-  res.json({ ok: true, message: "Reclamo registrado. El refugio se comunicará con vos." });
+  res.json({
+    ok: true,
+    message: "Reclamo registrado. El refugio se comunicará con vos.",
+  });
 }
 
 /**
