@@ -1139,8 +1139,14 @@ export async function updatePetPhotos(req: Request, res: Response) {
   }
 
   const nextPhotos = [...keep, ...uploaded];
-  existing.photos = nextPhotos.length > 0 ? nextPhotos : null;
-  existing.photo = nextPhotos[0] ?? null;
+  // Una publicación no puede quedarse sin ninguna foto.
+  if (nextPhotos.length === 0) {
+    return res
+      .status(400)
+      .json({ error: "La publicación debe tener al menos una foto." });
+  }
+  existing.photos = nextPhotos;
+  existing.photo = nextPhotos[0];
   // Editar contenido de un usuario común reabre la moderación.
   if (!isAdmin) {
     existing.reportStatusId = CatalogIds.petReportStatus.pendiente;
@@ -1161,7 +1167,19 @@ export async function approveMascota(req: Request, res: Response) {
     return res.status(400).json({ error: "Id invalido" });
   }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
-  existing.reportStatusId = CatalogIds.petReportStatus.activo;
+  const R = CatalogIds.petReportStatus;
+  if (existing.reportStatusId === R.activo) {
+    return res.status(409).json({ error: "La publicación ya está activa." });
+  }
+  if (
+    existing.reportStatusId === R.finalizado ||
+    existing.reportStatusId === R.reservada
+  ) {
+    return res.status(409).json({
+      error: "No se puede aprobar una publicación finalizada o reservada.",
+    });
+  }
+  existing.reportStatusId = R.activo;
   const saved = await repo().save(existing);
   await notify(existing.userId, {
     type: "publication",
@@ -1286,7 +1304,16 @@ export async function rejectMascota(req: Request, res: Response) {
     return res.status(400).json({ error: "Id invalido" });
   }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
-  existing.reportStatusId = CatalogIds.petReportStatus.rechazado;
+  const R = CatalogIds.petReportStatus;
+  if (
+    existing.reportStatusId === R.finalizado ||
+    existing.reportStatusId === R.reservada
+  ) {
+    return res.status(409).json({
+      error: "No se puede rechazar una publicación finalizada o reservada.",
+    });
+  }
+  existing.reportStatusId = R.rechazado;
   const saved = await repo().save(existing);
 
   // Si el admin envió un motivo, lo dejamos registrado como nota de la publicación.
@@ -1432,7 +1459,6 @@ export async function claimPet(req: Request, res: Response) {
     });
   }
 
-  const catalogValuesById = await getCatalogValuesById();
   res.json({
     ok: true,
     message: "Reclamo registrado. El refugio se comunicará con vos.",
