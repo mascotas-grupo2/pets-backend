@@ -1064,6 +1064,101 @@ export async function updateMascota(req: Request, res: Response) {
   res.json(serializeMascota(reloaded, catalogValuesById));
 }
 
+export async function updatePetPhotos(req: Request, res: Response) {
+  const id = req.params.id;
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const authUser = req.authUser;
+  const isAdmin = authUser?.role === "admin";
+  if (!isAdmin) {
+    if (!authUser || authUser.id !== existing.userId) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+  } else {
+    const owner =
+      existing.userId != null
+        ? await userRepo().findOneBy({ id: existing.userId })
+        : null;
+    const ownerIsAdmin = owner?.roleId === CatalogIds.userRole.admin;
+    if (!ownerIsAdmin) {
+      return res.status(403).json({
+        error:
+          "Las fotos de publicaciones de usuarios no se editan, solo se moderan",
+      });
+    }
+  }
+
+  // URLs a conservar: solo las que realmente pertenecen a esta mascota.
+  const current = Array.isArray(existing.photos)
+    ? existing.photos
+    : existing.photo
+      ? [existing.photo]
+      : [];
+  let keep: string[] = [];
+  const rawKeep = (req.body as any)?.keep;
+  try {
+    const arr = typeof rawKeep === "string" ? JSON.parse(rawKeep) : rawKeep;
+    if (Array.isArray(arr)) {
+      keep = arr.filter((u: unknown): u is string => typeof u === "string");
+    }
+  } catch {
+    keep = [];
+  }
+  keep = keep.filter((u) => current.includes(u));
+
+  // Subir las imágenes nuevas a MinIO (carpeta = id de la mascota).
+  const files = (req as any).files as Express.Multer.File[] | undefined;
+  const bucket = process.env.MINIO_BUCKET ?? "report-images";
+  const uploaded: string[] = [];
+  if (Array.isArray(files) && files.length > 0) {
+    try {
+      await createFolderInBucket(bucket, String(existing.id));
+    } catch {
+      /* la carpeta puede existir ya */
+    }
+    for (const f of files) {
+      try {
+        const url = await uploadFileToMinio(
+          bucket,
+          String(existing.id),
+          f.originalname,
+          f.buffer,
+          f.mimetype,
+        );
+        if (url) uploaded.push(url);
+      } catch (e) {
+        console.warn("Error subiendo foto de mascota:", e);
+        return res.status(500).json({ error: "No se pudo subir la foto" });
+      }
+    }
+  }
+
+  const nextPhotos = [...keep, ...uploaded];
+  // Una publicación no puede quedarse sin ninguna foto.
+  if (nextPhotos.length === 0) {
+    return res
+      .status(400)
+      .json({ error: "La publicación debe tener al menos una foto." });
+  }
+  existing.photos = nextPhotos;
+  existing.photo = nextPhotos[0];
+  // Editar contenido de un usuario común reabre la moderación.
+  if (!isAdmin) {
+    existing.reportStatusId = CatalogIds.petReportStatus.pendiente;
+  }
+
+  const updated = await repo().save(existing);
+  const reloaded = await repo().findOneByOrFail({ id: updated.id });
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(reloaded, catalogValuesById));
+}
+
 export async function approveMascota(req: Request, res: Response) {
   const id = req.params.id;
   let existing;
@@ -1073,7 +1168,19 @@ export async function approveMascota(req: Request, res: Response) {
     return res.status(400).json({ error: "Id invalido" });
   }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
-  existing.reportStatusId = CatalogIds.petReportStatus.activo;
+  const R = CatalogIds.petReportStatus;
+  if (existing.reportStatusId === R.activo) {
+    return res.status(409).json({ error: "La publicación ya está activa." });
+  }
+  if (
+    existing.reportStatusId === R.finalizado ||
+    existing.reportStatusId === R.reservada
+  ) {
+    return res.status(409).json({
+      error: "No se puede aprobar una publicación finalizada o reservada.",
+    });
+  }
+  existing.reportStatusId = R.activo;
   const saved = await repo().save(existing);
   await notify(existing.userId, {
     type: "publication",
@@ -1198,7 +1305,16 @@ export async function rejectMascota(req: Request, res: Response) {
     return res.status(400).json({ error: "Id invalido" });
   }
   if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
-  existing.reportStatusId = CatalogIds.petReportStatus.rechazado;
+  const R = CatalogIds.petReportStatus;
+  if (
+    existing.reportStatusId === R.finalizado ||
+    existing.reportStatusId === R.reservada
+  ) {
+    return res.status(409).json({
+      error: "No se puede rechazar una publicación finalizada o reservada.",
+    });
+  }
+  existing.reportStatusId = R.rechazado;
   const saved = await repo().save(existing);
 
   // Si el admin envió un motivo, lo dejamos registrado como nota de la publicación.
@@ -1324,63 +1440,15 @@ export async function claimPet(req: Request, res: Response) {
     }),
   );
 
-  const ownerName = existing.userId
-    ? (await userRepo().findOneBy({ id: existing.userId }))?.name ?? "dueño registrado"
-    : null;
-
-  const msgContent = [
-    `🔔 RECLAMO DE MASCOTA`,
-    ``,
-    `Mascota: ${existing.name ?? "sin nombre"}`,
-    `Link: /mascotas-perdidas/${existing.id}`,
-    ``,
-    `— Datos de quien reclama —`,
-    `Nombre: ${claimantName}`,
-    `Teléfono: ${claimantPhone}`,
-    ...(claimantEmail ? [`Email: ${claimantEmail}`] : []),
-    ...(description ? [`Motivo: ${description}`] : []),
-    ``,
-    `— Dueño de la publicación —`,
-    ownerName ? `Nombre: ${ownerName}` : `Publicación sin dueño registrado`,
-    ``,
-    `Respondé a este mensaje para coordinar el reencuentro.`,
-  ].join("\n");
-
-  // Obtener admins
-  const admins = await userRepo().find({
-    where: { roleId: CatalogIds.userRole.admin },
-  });
-  const messageRepo = AppDataSource.getRepository(Message);
-
-  if (req.authUser?.id) {
-    // Usuario autenticado: enviamos el mensaje desde él a los admins
-    for (const admin of admins) {
-      const msg = messageRepo.create({
-        senderId: req.authUser.id,
-        receiverId: admin.id,
-        content: msgContent,
-        photo: null,
-        read: false,
-      });
-      await messageRepo.save(msg);
-
-      await notify(admin.id, {
-        type: "message",
-        title: `🔔 Reclamo: ${existing.name ?? "mascota"} – ${claimantName}`,
-        body: `Reclama ser el dueño de ${existing.name ?? "mascota"}. Respondé desde Mensajes.`,
-        link: `/admin/mensajes?user=${req.authUser.id}`,
-      });
-    }
-  } else {
-    // Usuario no autenticado: solo creamos la notificación (no se puede responder)
-    for (const admin of admins) {
-      await notify(admin.id, {
-        type: "publication",
-        title: `🔔 Reclamo de mascota: ${existing.name ?? "sin nombre"}`,
-        body: `${claimantName} reclama ser el dueño (sin cuenta). Tel: ${claimantPhone}.`,
-        link: `/mascotas-perdidas/${existing.id}`,
-      });
-    }
+  // Notificar a los admins
+  const admins = await userRepo().find({ where: { roleId: CatalogIds.userRole.admin } });
+  for (const admin of admins) {
+    await notify(admin.id, {
+      type: "publication",
+      title: `🔔 Reclamo de mascota: ${existing.name ?? "sin nombre"}`,
+      body: `${claimantName} reclama ser el dueño. Revisalo en el panel.`,
+      link: `/admin/publicacion?id=${existing.id}`,
+    });
   }
 
   // Notificar al dueño de la publicación si está registrado
@@ -1394,10 +1462,7 @@ export async function claimPet(req: Request, res: Response) {
   }
 
   const catalogValuesById = await getCatalogValuesById();
-  res.json({
-    ok: true,
-    message: "Reclamo registrado. El refugio se comunicará con vos.",
-  });
+  res.json({ ok: true, message: "Reclamo registrado. El refugio se comunicará con vos." });
 }
 
 /**
