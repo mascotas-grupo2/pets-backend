@@ -70,7 +70,12 @@ export async function confirmFollowup(req: Request, res: Response) {
 
   const item = await repo().findOneBy({ id });
   if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
-  
+
+  if (item.statusId !== CatalogIds.followupStatus.pendiente) {
+    return res
+      .status(409)
+      .json({ error: "Solo se puede confirmar un seguimiento pendiente." });
+  }
   item.statusId = CatalogIds.followupStatus.confirmado;
   await repo().save(item);
   res.json(item);
@@ -83,6 +88,9 @@ export async function completeFollowup(req: Request, res: Response) {
   const item = await repo().findOneBy({ id });
   if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
 
+  if (item.statusId === CatalogIds.followupStatus.completado) {
+    return res.status(409).json({ error: "El seguimiento ya está completado." });
+  }
   item.statusId = CatalogIds.followupStatus.completado;
   await repo().save(item);
   res.json(item);
@@ -114,6 +122,16 @@ export async function updateFollowup(req: Request, res: Response) {
   if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
 
   const values: FollowupUpdateInput = parsed.data;
+
+  const validStatusIds = Object.values(CatalogIds.followupStatus) as number[];
+  const validTypeIds = Object.values(CatalogIds.followupType) as number[];
+  if (values.statusId !== undefined && !validStatusIds.includes(values.statusId)) {
+    return res.status(400).json({ error: "Estado de seguimiento inválido." });
+  }
+  if (values.typeId !== undefined && !validTypeIds.includes(values.typeId)) {
+    return res.status(400).json({ error: "Tipo de seguimiento inválido." });
+  }
+
   if (values.petId !== undefined) item.petId = values.petId;
   if (values.userId !== undefined) item.userId = values.userId;
   if (values.typeId !== undefined) item.typeId = values.typeId;
