@@ -16,6 +16,7 @@ import {
   listMascotas,
   listPetNotes,
   updateMascota,
+  updatePetPhotos,
   approveMascota,
   finalizeMascota,
   resolveMascota,
@@ -46,6 +47,7 @@ mascotasRouter.post("/petsByIds", optionalAuth, listMascotasByIds);
 mascotasRouter.get("/:id", optionalAuth, getMascota);
 mascotasRouter.post("/", optionalAuth, multiple("photo", 6), multerErrorHandler, createMascota);
 mascotasRouter.put("/:id", requireAuth, updateMascota);
+mascotasRouter.put("/:id/photos", requireAuth, multiple("photo", 6), multerErrorHandler, updatePetPhotos);
 mascotasRouter.delete("/:id", requireAuth, deleteMascota);
 mascotasRouter.post("/:id/approve", requireAdmin, approveMascota);
 mascotasRouter.post("/:id/finalize", requireAdmin, finalizeMascota);

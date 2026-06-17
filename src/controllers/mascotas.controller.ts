@@ -526,7 +526,12 @@ export async function getMascotaCompatibility(req: Request, res: Response) {
     }));
 
   if (!latest) {
-    return res.json({ score: null, factors: [], source: "none", adoptionId: null });
+    return res.json({
+      score: null,
+      factors: [],
+      source: "none",
+      adoptionId: null,
+    });
   }
   const { score, factors } = calculateCompatibility(latest, pet);
   res.json({
@@ -1058,6 +1063,95 @@ export async function updateMascota(req: Request, res: Response) {
   res.json(serializeMascota(reloaded, catalogValuesById));
 }
 
+export async function updatePetPhotos(req: Request, res: Response) {
+  const id = req.params.id;
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const authUser = req.authUser;
+  const isAdmin = authUser?.role === "admin";
+  if (!isAdmin) {
+    if (!authUser || authUser.id !== existing.userId) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+  } else {
+    const owner =
+      existing.userId != null
+        ? await userRepo().findOneBy({ id: existing.userId })
+        : null;
+    const ownerIsAdmin = owner?.roleId === CatalogIds.userRole.admin;
+    if (!ownerIsAdmin) {
+      return res.status(403).json({
+        error:
+          "Las fotos de publicaciones de usuarios no se editan, solo se moderan",
+      });
+    }
+  }
+
+  // URLs a conservar: solo las que realmente pertenecen a esta mascota.
+  const current = Array.isArray(existing.photos)
+    ? existing.photos
+    : existing.photo
+      ? [existing.photo]
+      : [];
+  let keep: string[] = [];
+  const rawKeep = (req.body as any)?.keep;
+  try {
+    const arr = typeof rawKeep === "string" ? JSON.parse(rawKeep) : rawKeep;
+    if (Array.isArray(arr)) {
+      keep = arr.filter((u: unknown): u is string => typeof u === "string");
+    }
+  } catch {
+    keep = [];
+  }
+  keep = keep.filter((u) => current.includes(u));
+
+  // Subir las imágenes nuevas a MinIO (carpeta = id de la mascota).
+  const files = (req as any).files as Express.Multer.File[] | undefined;
+  const bucket = process.env.MINIO_BUCKET ?? "report-images";
+  const uploaded: string[] = [];
+  if (Array.isArray(files) && files.length > 0) {
+    try {
+      await createFolderInBucket(bucket, String(existing.id));
+    } catch {
+      /* la carpeta puede existir ya */
+    }
+    for (const f of files) {
+      try {
+        const url = await uploadFileToMinio(
+          bucket,
+          String(existing.id),
+          f.originalname,
+          f.buffer,
+          f.mimetype,
+        );
+        if (url) uploaded.push(url);
+      } catch (e) {
+        console.warn("Error subiendo foto de mascota:", e);
+        return res.status(500).json({ error: "No se pudo subir la foto" });
+      }
+    }
+  }
+
+  const nextPhotos = [...keep, ...uploaded];
+  existing.photos = nextPhotos.length > 0 ? nextPhotos : null;
+  existing.photo = nextPhotos[0] ?? null;
+  // Editar contenido de un usuario común reabre la moderación.
+  if (!isAdmin) {
+    existing.reportStatusId = CatalogIds.petReportStatus.pendiente;
+  }
+
+  const updated = await repo().save(existing);
+  const reloaded = await repo().findOneByOrFail({ id: updated.id });
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(reloaded, catalogValuesById));
+}
+
 export async function approveMascota(req: Request, res: Response) {
   const id = req.params.id;
   let existing;
@@ -1266,7 +1360,8 @@ export async function deleteMascota(req: Request, res: Response) {
  */
 export async function claimPet(req: Request, res: Response) {
   const id = req.params.id;
-  const { claimantName, claimantPhone, claimantEmail, description } = req.body ?? {};
+  const { claimantName, claimantPhone, claimantEmail, description } =
+    req.body ?? {};
 
   if (!claimantName || !claimantPhone) {
     return res.status(400).json({ error: "Nombre y teléfono son requeridos." });
@@ -1282,9 +1377,13 @@ export async function claimPet(req: Request, res: Response) {
 
   // No se puede reclamar una mascota que ya está en estado final
   const S = CatalogIds.petStatus;
-  if (existing.statusId === S.adoptado || existing.statusId === S.devueltaAlDueno) {
+  if (
+    existing.statusId === S.adoptado ||
+    existing.statusId === S.devueltaAlDueno
+  ) {
     return res.status(409).json({
-      error: "Esta mascota ya tiene un desenlace registrado (adoptada o devuelta).",
+      error:
+        "Esta mascota ya tiene un desenlace registrado (adoptada o devuelta).",
     });
   }
 
@@ -1311,7 +1410,9 @@ export async function claimPet(req: Request, res: Response) {
   );
 
   // Notificar a los admins
-  const admins = await userRepo().find({ where: { roleId: CatalogIds.userRole.admin } });
+  const admins = await userRepo().find({
+    where: { roleId: CatalogIds.userRole.admin },
+  });
   for (const admin of admins) {
     await notify(admin.id, {
       type: "publication",
@@ -1332,7 +1433,10 @@ export async function claimPet(req: Request, res: Response) {
   }
 
   const catalogValuesById = await getCatalogValuesById();
-  res.json({ ok: true, message: "Reclamo registrado. El refugio se comunicará con vos." });
+  res.json({
+    ok: true,
+    message: "Reclamo registrado. El refugio se comunicará con vos.",
+  });
 }
 
 /**
@@ -1344,7 +1448,9 @@ export async function confirmReturn(req: Request, res: Response) {
   const { returnedTo } = req.body ?? {};
 
   if (!returnedTo || typeof returnedTo !== "string") {
-    return res.status(400).json({ error: "Indicá a quién se devolvió la mascota." });
+    return res
+      .status(400)
+      .json({ error: "Indicá a quién se devolvió la mascota." });
   }
 
   let existing;
@@ -1361,7 +1467,9 @@ export async function confirmReturn(req: Request, res: Response) {
 
   const S = CatalogIds.petStatus;
   if (existing.statusId === S.devueltaAlDueno) {
-    return res.status(409).json({ error: "La mascota ya fue devuelta a su dueño." });
+    return res
+      .status(409)
+      .json({ error: "La mascota ya fue devuelta a su dueño." });
   }
 
   // Transacción: cambiar estado + cerrar + cancelar adopciones activas + nota
