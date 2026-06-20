@@ -68,6 +68,7 @@ const petBaseSchema = z.object({
   reportStatus: catalogReference.optional(),
   medicalStatusId: optionalPositiveInt,
   medicalStatus: catalogReference.optional(),
+  isOwner: z.boolean().optional(),
 });
 
 export const petCreateSchema = petBaseSchema.superRefine((value, ctx) => {

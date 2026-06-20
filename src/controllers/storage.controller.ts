@@ -24,6 +24,12 @@ const ALLOWED_BUCKETS = new Set(
 );
 
 export async function storageProxyHandler(req: Request, res: Response) {
+  // Enable CORS for image retrieval
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Optionally allow specific methods and headers if needed
+  // res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  // res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   const { bucket, object } = req.params;
 
   if (!ALLOWED_BUCKETS.has(bucket)) {

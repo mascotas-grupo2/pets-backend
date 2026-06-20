@@ -110,4 +110,13 @@ export class Pet {
   // Conteo de vistas del detalle público (se incrementa al verlo un tercero).
   @Column({ type: "int", default: 0 })
   viewsCount: number;
+
+  /** true = un dueño fue verificado por el admin vía approveClaim. */
+  @Column({ type: "boolean", default: false })
+  isOwner: boolean;
+
+  /** ID del usuario verificado como dueño (distinto del publicador original userId).
+   *  Se asigna en approveClaim. El publicador original sigue siendo userId. */
+  @Column({ nullable: true, type: "int" })
+  ownerUserId: number | null;
 }

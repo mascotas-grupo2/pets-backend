@@ -8,7 +8,7 @@ import { User } from "./entity/User.js";
 import { Followup } from "./entity/Followup.js";
 import { Adoption } from "./entity/Adoption.js";
 import { Message } from "./entity/Message.js";
-import { CatalogIds } from "./lib/catalog-constants.js";
+import { CatalogIds, catalogIdForCode } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 import { calculateCompatibility } from "./lib/matching.js";
 
@@ -66,7 +66,7 @@ async function seed() {
     {
       name: "Toby",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.perdido,
+      statusId: catalogIdForCode("pet_status", "perdido"),
       description:
         "Perro labrador color dorado, muy cariñoso. Lleva collar rojo. Tiene una pequeña cicatriz en la oreja derecha.",
       date: "2026-05-26",
@@ -117,7 +117,7 @@ async function seed() {
     {
       name: "Bobi",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: catalogIdForCode("pet_status", "encontrado"),
       description:
         "Perro mestizo tamaño mediano, marrón con patas blancas. Sin collar. Muy amigable, parece bien cuidado.",
       date: "2026-05-26",
@@ -163,14 +163,14 @@ async function seed() {
     {
       name: "Max",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.adopcion,
+      statusId: catalogIdForCode("pet_status", "en adopción"),
       description:
         "Perro mestizo de 2 años rescatado de la calle. Castrado, vacunado, desparasitado. Bueno con chicos y otros perros. Necesita una familia paciente que le dé tiempo de adaptación.",
       date: "2026-05-15",
       location: "Refugio Patitas Felices, Villa Crespo, CABA",
       contactPhone: "1155667788",
       contactEmail: "adopciones@patitasfelices.example.com",
-      sexId: CatalogIds.petSex.macho,
+      sexId: catalogIdForCode("pet_sex", "macho"),
       breed: "Mestizo",
       ageMonths: 24,
       color: "Negro",
@@ -218,7 +218,7 @@ async function seed() {
       location: "Av. Rivadavia 5400, Caballito, CABA",
       contactPhone: "1166778899",
       contactEmail: "matias.pelusa@example.com",
-      sexId: CatalogIds.petSex.hembra,
+      sexId: catalogIdForCode("pet_sex", "hembra"),
       breed: "Común europeo",
       ageMonths: 24,
       color: "Blanco y gris",
@@ -255,7 +255,7 @@ async function seed() {
       friendlyWithKids: true,
       friendlyWithPets: false,
       trained: true,
-      activityLevelId: CatalogIds.activityLevel.moderado,
+      activityLevelId: catalogIdForCode("activity_level", "moderado"),
       seedImage: "simba.png",
     },
 
@@ -279,7 +279,7 @@ async function seed() {
       friendlyWithKids: true,
       friendlyWithPets: true,
       trained: false,
-      activityLevelId: CatalogIds.activityLevel.activo,
+      activityLevelId: catalogIdForCode("activity_level", "activo"),
       seedImage: "michi.png",
     },
     {
@@ -300,7 +300,7 @@ async function seed() {
       friendlyWithKids: false,
       friendlyWithPets: false,
       trained: true,
-      activityLevelId: CatalogIds.activityLevel.tranquilo,
+      activityLevelId: catalogIdForCode("activity_level", "tranquilo"),
       seedImage: "salem.png",
     },
 
