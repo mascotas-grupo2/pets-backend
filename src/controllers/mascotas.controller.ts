@@ -1625,7 +1625,7 @@ export async function claimPet(req: Request, res: Response) {
   // Nota de respaldo en la publicación
   const noteText = [
     `🔔 RECLAMO de ${claimantName}`,
-    `Tel: ${claimantPhone}`,
+    claimantPhone ? `Tel: ${claimantPhone}` : null,
     claimantEmail ? `Email: ${claimantEmail}` : null,
     description ? `Mensaje: ${description}` : null,
     proofUrls.length ? `Fotos de prueba: ${proofUrls.join(" | ")}` : null,
@@ -1655,7 +1655,7 @@ export async function claimPet(req: Request, res: Response) {
     ``,
     `— Datos de quien reclama —`,
     `Nombre: ${claimantName}`,
-    `Teléfono: ${claimantPhone}`,
+    ...(claimantPhone ? [`Teléfono: ${claimantPhone}`] : []),
     ...(claimantEmail ? [`Email: ${claimantEmail}`] : []),
     ...(description ? [`Motivo: ${description}`] : []),
     ...(req.authUser?.id ? [`Usuario ID: ${req.authUser.id}`] : []),
@@ -1713,7 +1713,7 @@ export async function claimPet(req: Request, res: Response) {
         await notify(admin.id, {
           type: "publication",
           title: `🔔 Reclamo de mascota: ${existing.name ?? "sin nombre"}`,
-          body: `${claimantName} reclama ser el dueño (sin cuenta). Tel: ${claimantPhone}.`,
+          body: `${claimantName} reclama ser el dueño (sin cuenta).${claimantPhone ? ` Tel: ${claimantPhone}.` : ""}`,
           link: `/mascotas-perdidas/${existing.id}`,
         });
       }
@@ -1940,6 +1940,44 @@ export async function confirmReturn(req: Request, res: Response) {
         link: `/mascotas-perdidas/${reloaded.id}`,
       });
     }
+  }
+
+  // Cerrar el caso con quien(es) reclamaron: mensaje automático en el chat +
+  // notificación, así la otra parte ve el cierre (no solo el cartel del admin).
+  // Best-effort: no debe romper la respuesta principal.
+  try {
+    const adminId = req.authUser?.id;
+    if (adminId) {
+      const allNotes = await noteRepo().find({ where: { petId: id } });
+      const claimantIds = new Set<number>();
+      for (const n of allNotes) {
+        const m = n.text.match(/Usuario ID:\s*(\d+)/);
+        if (m && n.text.includes("🔔 RECLAMO")) claimantIds.add(Number(m[1]));
+      }
+      const messageRepo = AppDataSource.getRepository(Message);
+      for (const cid of claimantIds) {
+        if (cid === adminId) continue;
+        const exists = await userRepo().findOneBy({ id: cid });
+        if (!exists) continue;
+        await messageRepo.save(
+          messageRepo.create({
+            senderId: adminId,
+            receiverId: cid,
+            content: `✅ Confirmamos la devolución de ${reloaded.name ?? "la mascota"}. ¡Gracias por avisar! Cerramos la publicación.`,
+            photo: null,
+            read: false,
+          }),
+        );
+        await notify(cid, {
+          type: "message",
+          title: `✅ Devolución confirmada: ${reloaded.name ?? "mascota"}`,
+          body: "El refugio confirmó la devolución. Revisá el chat.",
+          link: `/account?tab=messages&user=${adminId}`,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn("[confirmReturn] no se pudo avisar al reclamante:", (e as Error).message);
   }
 
   res.json(serializeMascota(reloaded, catalogValuesById));
