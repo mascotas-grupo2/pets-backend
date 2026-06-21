@@ -7,6 +7,13 @@ import { initRealtime } from "./lib/realtime.js";
 
 const port = Number(process.env.PORT) || 3001;
 
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+});
+
 AppDataSource.initialize()
   .then(async () => {
     await AppDataSource.runMigrations();
