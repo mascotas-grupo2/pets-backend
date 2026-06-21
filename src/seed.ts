@@ -729,6 +729,37 @@ async function seed() {
     );
   }
 
+  // Backfill de coordenadas: las 12 mascotas principales no traen lat/lng, así que
+  // no aparecían en el mapa de métricas. Las geocodificamos por su ubicación.
+  const GEO_SEED: Record<string, [number, number]> = {
+    "Plaza Serrano, Palermo, CABA": [-34.5889, -58.4306],
+    "Triunvirato 4200, Villa Urquiza, CABA": [-34.5736, -58.4869],
+    "Parque Barrancas de Belgrano, CABA": [-34.561, -58.4546],
+    "Av. Rivadavia 4800, Almagro, CABA": [-34.6126, -58.4257],
+    "Refugio Patitas Felices, Villa Crespo, CABA": [-34.599, -58.438],
+    "Hogar Canino San Telmo, CABA": [-34.6212, -58.3716],
+    "Av. Rivadavia 5400, Caballito, CABA": [-34.6184, -58.4357],
+    "Junín 1800, Recoleta, CABA": [-34.5875, -58.396],
+    "Bulnes 800, Almagro, CABA": [-34.6035, -58.42],
+    "Av. Rivadavia 7300, Flores, CABA": [-34.628, -58.4636],
+    "Hogar Felino, Boedo, CABA": [-34.628, -58.417],
+    "Refugio Huellitas Mininas, Palermo, CABA": [-34.578, -58.425],
+  };
+  const sinCoords = await repoPets.find();
+  let geocodadas = 0;
+  for (const p of sinCoords) {
+    if ((p.latitud == null || p.longitud == null) && p.location) {
+      const c = GEO_SEED[p.location];
+      if (c) {
+        p.latitud = c[0];
+        p.longitud = c[1];
+        await repoPets.save(p);
+        geocodadas++;
+      }
+    }
+  }
+  console.log(`Seed completed: ${geocodadas} mascotas geocodificadas (mapa de métricas).`);
+
   // --- Fechas variadas para los filtros del listado ---
   // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
   // inserta todo junto, sin esto todas quedarían en "hoy". Espaciamos `createdAt`
