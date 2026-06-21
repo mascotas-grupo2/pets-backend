@@ -249,7 +249,9 @@ export async function wsToken(req: Request, res: Response) {
   const id = req.authUser?.id;
   if (!Number.isInteger(id)) return res.status(401).json({ error: "No autenticado" });
   const user = await userRepo().findOneBy({ id });
-  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+  // Token válido pero el usuario ya no existe (p. ej. sesión vieja): es un
+  // problema de sesión → 401 para que el front fuerce re-login, no 404.
+  if (!user) return res.status(401).json({ error: "Sesión inválida" });
   const token = await createAccessToken(user);
   res.json({ token });
 }
