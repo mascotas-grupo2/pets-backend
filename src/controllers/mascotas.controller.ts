@@ -492,7 +492,19 @@ export async function getMascota(req: Request, res: Response) {
     }
   }
   const catalogValuesById = await getCatalogValuesById();
-  res.json(serializeMascota(mascota, catalogValuesById));
+
+  // ¿El usuario autenticado ya reclamó esta mascota? (para que el front muestre
+  // "reclamo en revisión" en vez de habilitar el botón de reclamar otra vez).
+  let claimedByMe = false;
+  if (req.authUser?.id) {
+    const userTag = `Usuario ID: ${req.authUser.id}`;
+    const notes = await noteRepo().find({ where: { petId: id } });
+    claimedByMe = notes.some(
+      (n) => n.text.includes("🔔 RECLAMO") && n.text.includes(userTag),
+    );
+  }
+
+  res.json({ ...serializeMascota(mascota, catalogValuesById), claimedByMe });
 }
 
 /**
@@ -900,28 +912,17 @@ export async function updateMascota(req: Request, res: Response) {
   const isAdmin = authUser?.role === "admin";
 
   let adminManageOnly = false;
-  // Solo el dueño verificado (ownerUserId) o el creador original pueden editar.
-  // Si hay dueño verificado, SOLO él edita. Si no, el creador original edita.
-  const isVerifiedOwner =
-    authUser != null &&
-    !isAdmin &&
-    existing.isOwner &&
-    existing.ownerUserId !== null &&
-    existing.ownerUserId === authUser.id;
-  const isOriginalCreator =
-    authUser != null &&
-    !isAdmin &&
-    existing.userId === authUser.id;
-
+  // Opción A: una vez que la publicación tiene dueño verificado (isOwner), solo
+  // el refugio (admin) edita el contenido —ni el dueño verificado ni el
+  // publicador original—. Antes de la verificación, el publicador original
+  // edita su propia publicación.
   if (!isAdmin) {
-    if (isVerifiedOwner) {
-      // El dueño verificado edita libremente (no puede modificar reportStatus ni isOwner)
-    } else if (isOriginalCreator) {
-      // El creador original solo VE; no edita contenido una vez aprobado el reclamo.
+    if (existing.isOwner) {
       return res.status(403).json({
-        error: "Esta publicación ya tiene dueño verificado. Solo el dueño puede editar el contenido.",
+        error: "Esta publicación ya fue verificada por el refugio. Solo el refugio puede editarla.",
       });
-    } else {
+    }
+    if (existing.userId !== authUser?.id) {
       return res.status(403).json({ error: "No autorizado" });
     }
   } else {
@@ -1194,15 +1195,8 @@ export async function updateMascota(req: Request, res: Response) {
     });
   }
 
-  // Notificar al publicador original cuando el dueño verificado edita la publicación
-  if (originalUserId != null && isVerifiedOwner && !isAdmin && data && Object.keys(data).length > 0) {
-    await notify(originalUserId!, {
-      type: "publication",
-      title: `📝 ${reloaded.name ?? "Una mascota"} de tu publicación fue actualizada por el dueño`,
-      body: `El dueño verificado actualizó los datos de la publicación. La información puede haber cambiado.`,
-      link: `/mascotas-perdidas/${reloaded.id}`,
-    });
-  }
+  // (Opción A: el dueño verificado no edita; solo el admin/refugio. El aviso al
+  // publicador original ya se maneja arriba en isAdminEditingUserContent.)
 
   res.json(serializeMascota(reloaded, catalogValuesById));
 }
@@ -1220,6 +1214,12 @@ export async function updatePetPhotos(req: Request, res: Response) {
   const authUser = req.authUser;
   const isAdmin = authUser?.role === "admin";
   if (!isAdmin) {
+    // Opción A: verificada → solo admin; sin verificar → solo el publicador original.
+    if (existing.isOwner) {
+      return res.status(403).json({
+        error: "Esta publicación ya fue verificada por el refugio. Solo el refugio puede editar las fotos.",
+      });
+    }
     if (!authUser || authUser.id !== existing.userId) {
       return res.status(403).json({ error: "No autorizado" });
     }
@@ -1229,10 +1229,11 @@ export async function updatePetPhotos(req: Request, res: Response) {
         ? await userRepo().findOneBy({ id: existing.userId })
         : null;
     const ownerIsAdmin = owner?.roleId === CatalogIds.userRole.admin;
-    if (!ownerIsAdmin) {
+    // El admin edita fotos de publicaciones verificadas (enriquecer) o de otro admin.
+    if (!existing.isOwner && !ownerIsAdmin) {
       return res.status(403).json({
         error:
-          "Las fotos de publicaciones de usuarios no se editan, solo se moderan",
+          "Las fotos de publicaciones de usuarios sin verificar no se editan, solo se moderan",
       });
     }
   }
@@ -1594,6 +1595,32 @@ export async function claimPet(req: Request, res: Response) {
 
   // El reclamo queda pendiente de validación por un admin.
 
+  // Fotos de prueba (opcionales): el reclamante adjunta evidencia de propiedad.
+  const proofFiles = (req as any).files as Express.Multer.File[] | undefined;
+  // Las fotos de prueba son obligatorias para reclamar.
+  if (!Array.isArray(proofFiles) || proofFiles.length === 0) {
+    return res
+      .status(400)
+      .json({ error: "Subí al menos una foto que pruebe que la mascota es tuya." });
+  }
+  const proofUrls: string[] = [];
+  if (Array.isArray(proofFiles) && proofFiles.length > 0) {
+    const bucket = process.env.MINIO_BUCKET ?? "report-images";
+    for (const f of proofFiles) {
+      try {
+        const url = await uploadFileToMinio(
+          bucket,
+          `claims/${existing.id}`,
+          f.originalname,
+          f.buffer,
+          f.mimetype,
+        );
+        proofUrls.push(url);
+      } catch (e) {
+        console.warn("[claim] no se pudo subir foto de prueba:", (e as Error).message);
+      }
+    }
+  }
 
   // Nota de respaldo en la publicación
   const noteText = [
@@ -1601,6 +1628,7 @@ export async function claimPet(req: Request, res: Response) {
     `Tel: ${claimantPhone}`,
     claimantEmail ? `Email: ${claimantEmail}` : null,
     description ? `Mensaje: ${description}` : null,
+    proofUrls.length ? `Fotos de prueba: ${proofUrls.join(" | ")}` : null,
     req.authUser?.id ? `Usuario ID: ${req.authUser.id}` : null,
   ]
     .filter(Boolean)
@@ -1630,7 +1658,10 @@ export async function claimPet(req: Request, res: Response) {
     `Teléfono: ${claimantPhone}`,
     ...(claimantEmail ? [`Email: ${claimantEmail}`] : []),
     ...(description ? [`Motivo: ${description}`] : []),
-    req.authUser?.id ? [`Usuario ID: ${req.authUser.id}`] : [],
+    ...(req.authUser?.id ? [`Usuario ID: ${req.authUser.id}`] : []),
+    ...(proofUrls.length
+      ? [``, `— Fotos de prueba (${proofUrls.length}) —`, ...proofUrls]
+      : []),
     ``,
     `— Situación —`,
     existing.userId
@@ -1650,19 +1681,24 @@ export async function claimPet(req: Request, res: Response) {
   });
   const messageRepo = AppDataSource.getRepository(Message);
 
-  // Notify admins when a claim is made on a lost pet
-
+  // Aviso a los admins: best-effort. La nota del reclamo ya quedó guardada, así
+  // que un fallo acá (p. ej. una sesión vieja cuyo usuario ya no existe) NO debe
+  // tumbar el reclamo con un 500.
+  try {
     if (req.authUser?.id) {
-      // Authenticated user: send message from them to admins
+      // Usuario autenticado: mensaje del reclamante a cada admin.
+      const senderExists = await userRepo().findOneBy({ id: req.authUser.id });
       for (const admin of admins) {
-        const msg = messageRepo.create({
-          senderId: req.authUser.id,
-          receiverId: admin.id,
-          content: msgContent,
-          photo: null,
-          read: false,
-        });
-        await messageRepo.save(msg);
+        if (senderExists) {
+          const msg = messageRepo.create({
+            senderId: req.authUser.id,
+            receiverId: admin.id,
+            content: msgContent,
+            photo: proofUrls[0] ?? null,
+            read: false,
+          });
+          await messageRepo.save(msg);
+        }
 
         await notify(admin.id, {
           type: "message",
@@ -1672,7 +1708,7 @@ export async function claimPet(req: Request, res: Response) {
         });
       }
     } else {
-      // Unauthenticated user: only create notifications (no reply possible)
+      // Sin cuenta: solo notificaciones (no hay con quién abrir conversación).
       for (const admin of admins) {
         await notify(admin.id, {
           type: "publication",
@@ -1681,7 +1717,9 @@ export async function claimPet(req: Request, res: Response) {
           link: `/mascotas-perdidas/${existing.id}`,
         });
       }
-
+    }
+  } catch (e) {
+    console.warn("[claim] no se pudo avisar a los admins:", (e as Error).message);
   }
 
     res.json({
@@ -1776,7 +1814,7 @@ export async function approveClaim(req: Request, res: Response) {
     await notify(ownerUserId, {
       type: "publication",
       title: `✅ Tu reclamo de ${existing.name ?? "la mascota"} fue aprobado`,
-      body: `El refugio confirmó que sos el dueño. Podés editar la info de la mascota. Cuando aparezca, avisanos para coordinar la devolución.`,
+      body: `El refugio confirmó que sos el dueño. Ya figura en "Mis publicaciones". Cuando aparezca, el refugio coordina la devolución con vos.`,
       link: `/mascotas-perdidas/${existing.id}`,
     });
   }
