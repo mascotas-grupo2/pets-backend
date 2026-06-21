@@ -705,6 +705,30 @@ async function seed() {
     `Seed completed: ${createdExtraPets.length} mascotas adicionales insertadas (reportStatus=activo).`,
   );
 
+  // Asignar un publicador (userId) SOLO a las mascotas PERDIDAS. Son reportes
+  // personales de un usuario que busca a su mascota, así los comentarios y
+  // avistamientos ("La vi") le notifican al dueño (notify() corta si es null).
+  // Las de adopción/refugio/tránsito son institucionales (del refugio) y quedan
+  // sin dueño para no aparecer en el "Mis reportes" de un usuario común.
+  // (Las mascotas se crean antes que los usuarios, por eso se asigna acá.)
+  const publisherIds = createdUsers
+    .filter((u) => u.email !== "admin@admin.com")
+    .map((u) => u.id);
+  if (publisherIds.length > 0) {
+    const lostPets = await repoPets.find({
+      where: { statusId: CatalogIds.petStatus.perdido },
+    });
+    for (let i = 0; i < lostPets.length; i++) {
+      await repoPets.update(
+        { id: lostPets[i].id },
+        { userId: publisherIds[i % publisherIds.length] },
+      );
+    }
+    console.log(
+      `Seed completed: publicador (userId) asignado a ${lostPets.length} mascotas perdidas (comentarios y avistamientos notifican al dueño).`,
+    );
+  }
+
   // --- Fechas variadas para los filtros del listado ---
   // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
   // inserta todo junto, sin esto todas quedarían en "hoy". Espaciamos `createdAt`
