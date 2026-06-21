@@ -231,6 +231,15 @@ export async function getConversation(req: Request, res: Response) {
         ? extractClaimPetId(firstMsg.content)
         : null;
 
+      // ¿La mascota reclamada ya fue devuelta al dueño? (para que el chat deje
+      // de ofrecer "Confirmar devolución" y muestre el estado).
+      let claimPetReturned = false;
+      if (claimPetId) {
+        const claimedPet = await petRepo().findOneBy({ id: claimPetId });
+        claimPetReturned =
+          claimedPet?.statusId === CatalogIds.petStatus.devueltaAlDueno;
+      }
+
       // Notas reales: las de la mascota de la solicitud (médicas, rechazo, etc.).
       const notes = ctx?.petId
         ? await noteRepo().find({
@@ -253,7 +262,8 @@ export async function getConversation(req: Request, res: Response) {
           adoptionId: ctx?.adoptionId ?? null,
           phone: ctx?.phone ?? null,
           town: ctx?.town ?? null,
-          claimPetId, // 👈 nuevo campo: ID de la mascota reclamada
+          claimPetId, // 👈 ID de la mascota reclamada
+          claimPetReturned, // 👈 true si ya se confirmó la devolución
           notes: notes.map((n) => ({
             id: n.id,
             text: n.text,
