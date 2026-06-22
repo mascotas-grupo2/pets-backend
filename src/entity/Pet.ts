@@ -47,6 +47,14 @@ export class Pet {
   @CreateDateColumn()
   createdAt: Date;
 
+  /** Cuándo vence la publicación. Null = sin vencimiento (estados terminales). */
+  @Column({ nullable: true, type: "timestamp" })
+  expiresAt: Date | null;
+
+  /** Cuándo se avisó del vencimiento (para no notificar dos veces). Se resetea al renovar. */
+  @Column({ nullable: true, type: "timestamp" })
+  expiryNotifiedAt: Date | null;
+
   @Column({ nullable: true, type: "int" })
   sexId: number | null;
 
