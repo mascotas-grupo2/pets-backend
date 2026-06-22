@@ -51,6 +51,7 @@ import { AddActivity1749800000000 } from "./migration/1749800000000-AddActivity.
 import { AddSighting1749900000000 } from "./migration/1749900000000-AddSighting.js";
 import { AddIsOwnerToPet1750000000000 } from "./migration/1750000000000-AddIsOwnerToPet.js";
 import { AddOwnerUserIdToPet1750000000001 } from "./migration/1750000000001-AddOwnerUserIdToPet.js";
+import { AddPetExpiresAt1750000002000 } from "./migration/1750000002000-AddPetExpiresAt.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -109,6 +110,7 @@ export const AppDataSource = new DataSource({
     AddSighting1749900000000,
     AddIsOwnerToPet1750000000000,
     AddOwnerUserIdToPet1750000000001,
+    AddPetExpiresAt1750000002000,
   ],
   synchronize: false,
 });
