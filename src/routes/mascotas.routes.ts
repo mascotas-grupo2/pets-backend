@@ -6,6 +6,7 @@ import {
   adminListMascotasPaged,
   approveClaim,
   claimPet,
+  renewMascota,
   confirmReturn,
   createMascota,
   createPetNote,
@@ -62,6 +63,7 @@ mascotasRouter.post("/:id/reject", requireAdmin, rejectMascota);
 
 // Reclamo de mascota (público) y aprobación / confirmación (solo admin).
 mascotasRouter.post("/:id/claim", optionalAuth, multiple("photo", 5), multerErrorHandler, claimPet);
+mascotasRouter.post("/:id/renew", requireAuth, renewMascota);
 mascotasRouter.post("/:id/approve-claim", requireAdmin, approveClaim);
 mascotasRouter.post("/:id/confirm-return", requireAdmin, confirmReturn);
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
