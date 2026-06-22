@@ -57,6 +57,29 @@ function catalogInfo(
   return item ? { id: item.id, code: item.code, label: item.label } : null;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Días que una publicación vencida sigue visible al público antes de ocultarse. */
+const EXPIRY_GRACE_DAYS = 15;
+
+/**
+ * Duración de una publicación según su estado. Las perdidas son urgentes (30
+ * días); el resto de los estados activos duran más (60 días). Los estados
+ * terminales (adoptada, devuelta al dueño) no vencen → null.
+ */
+function expiryFromStatus(statusId: number | null | undefined, from: Date): Date | null {
+  const S = CatalogIds.petStatus;
+  if (statusId === S.adoptado || statusId === S.devueltaAlDueno) return null;
+  const days = statusId === S.perdido ? 30 : 60;
+  return new Date(from.getTime() + days * DAY_MS);
+}
+
+/** Días restantes (enteros, puede ser negativo) y si ya venció. */
+function expiryInfo(expiresAt: Date | null | undefined) {
+  if (!expiresAt) return { daysLeft: null as number | null, expired: false };
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  return { daysLeft: Math.ceil(ms / DAY_MS), expired: ms <= 0 };
+}
+
 function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
   const animalType = catalogInfo(catalogValuesById, mascota.animalTypeId);
   const sex = catalogInfo(catalogValuesById, mascota.sexId);
@@ -66,9 +89,13 @@ function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
   const activityLevel = catalogInfo(catalogValuesById, mascota.activityLevelId);
   const payload = { ...(mascota as any) };
 
+  const exp = expiryInfo(mascota.expiresAt);
   return {
     ...payload,
     viewsCount: mascota.viewsCount ?? 0,
+    expiresAt: mascota.expiresAt ?? null,
+    daysLeft: exp.daysLeft,
+    expired: exp.expired,
     animalType: animalType?.code ?? null,
     animalTypeLabel: animalType?.label ?? null,
     animalTypeInfo: animalType,
@@ -167,9 +194,19 @@ export async function listMascotas(req: Request, res: Response) {
       : { reportStatusId: CatalogIds.petReportStatus.activo },
     order: { id: "DESC" },
   });
+  // Ocultar del público las publicaciones vencidas hace más que la gracia
+  // (siguen en la DB y en "Mis reportes"; reaparecen si el dueño renueva).
+  const graceMs = EXPIRY_GRACE_DAYS * DAY_MS;
+  const visibles = mascotas.filter((m) => {
+    if (!m.expiresAt) return true;
+    const overdueMs = Date.now() - new Date(m.expiresAt).getTime();
+    if (overdueMs <= graceMs) return true;
+    // Las propias del usuario sí se le muestran (para que pueda renovarlas).
+    return userId != null && (m.userId === userId || m.ownerUserId === userId);
+  });
   const catalogValuesById = await getCatalogValuesById();
   res.json(
-    mascotas.map((mascota) => serializeMascota(mascota, catalogValuesById)),
+    visibles.map((mascota) => serializeMascota(mascota, catalogValuesById)),
   );
 }
 
@@ -709,6 +746,7 @@ export async function createMascota(req: Request, res: Response) {
       ? { activityLevelId: catalogIds.activityLevelId }
       : {}),
     userId,
+    expiresAt: expiryFromStatus(catalogIds.statusId, new Date()),
     ...coords,
   });
   const saved = await repo().save(mascota);
@@ -1538,6 +1576,87 @@ export async function deleteMascota(req: Request, res: Response) {
     });
   }
   res.status(204).send();
+}
+
+/**
+/**
+ * Renueva (extiende) el vencimiento de una publicación. Pueden hacerlo el admin,
+ * el publicador original o el dueño verificado. Resetea expiresAt según el estado.
+ */
+export async function renewMascota(req: Request, res: Response) {
+  const id = req.params.id;
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const authUser = req.authUser;
+  const isAdmin = authUser?.role === "admin";
+  const isPublisher = authUser != null && existing.userId === authUser.id;
+  const isVerifiedOwner =
+    authUser != null && existing.ownerUserId != null && existing.ownerUserId === authUser.id;
+  if (!isAdmin && !isPublisher && !isVerifiedOwner) {
+    return res.status(403).json({ error: "No autorizado" });
+  }
+
+  const nextExpiry = expiryFromStatus(existing.statusId, new Date());
+  if (!nextExpiry) {
+    return res
+      .status(409)
+      .json({ error: "Esta publicación está finalizada y no se puede renovar." });
+  }
+
+  existing.expiresAt = nextExpiry;
+  existing.expiryNotifiedAt = null; // re-armar el aviso para el nuevo período
+  await repo().save(existing);
+
+  const catalogValuesById = await getCatalogValuesById();
+  res.json(serializeMascota(existing, catalogValuesById));
+}
+
+/**
+ * Barrido de vencimientos: notifica UNA vez al dueño/publicador cuando su
+ * publicación venció (y todavía no se avisó). No borra ni archiva en DB: el
+ * ocultamiento al público es lazy en listMascotas. Se corre periódicamente.
+ */
+export async function notifyExpiredPublications(): Promise<void> {
+  try {
+    const now = new Date();
+    const vencidas = await repo()
+      .createQueryBuilder("p")
+      .where("p.expiresAt IS NOT NULL")
+      .andWhere("p.expiresAt < :now", { now })
+      .andWhere("p.expiryNotifiedAt IS NULL")
+      .andWhere("p.reportStatusId = :activo", {
+        activo: CatalogIds.petReportStatus.activo,
+      })
+      .getMany();
+
+    for (const pet of vencidas) {
+      const destinatarios = new Set<number>();
+      if (Number.isInteger(pet.userId)) destinatarios.add(pet.userId as number);
+      if (Number.isInteger(pet.ownerUserId))
+        destinatarios.add(pet.ownerUserId as number);
+      for (const uid of destinatarios) {
+        await notify(uid, {
+          type: "publication",
+          title: `⏳ Tu publicación de ${pet.name ?? "una mascota"} venció`,
+          body: "Renovala para que siga visible, o el refugio la archivará.",
+          link: `/mascotas-perdidas/${pet.id}`,
+        });
+      }
+      pet.expiryNotifiedAt = now;
+      await repo().save(pet);
+    }
+    if (vencidas.length > 0) {
+      console.log(`[expiry] avisadas ${vencidas.length} publicaciones vencidas`);
+    }
+  } catch (e) {
+    console.warn("[expiry] barrido fallo:", (e as Error).message);
+  }
 }
 
 /**
