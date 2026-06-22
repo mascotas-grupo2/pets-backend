@@ -78,7 +78,17 @@ async function buildUserContexts(
       town: a.town ?? null,
     });
   }
+
   return map;
+}
+
+/**
+ * Extrae el petId del contenido de un mensaje de reclamo.
+ * Busca "Link: /mascotas-perdidas/<petId>" que se incluye en el mensaje automático.
+ */
+function extractClaimPetId(content: string): string | null {
+  const match = content.match(/Link:\s*\/mascotas-perdidas\/([a-zA-Z0-9-]+)/i);
+  return match ? match[1] : null;
 }
 
 export async function sendMessage(req: Request, res: Response) {
@@ -213,6 +223,23 @@ export async function getConversation(req: Request, res: Response) {
       const ctx = (await buildUserContexts([userProfile.id])).get(
         userProfile.id,
       );
+
+      // Detectar si la conversación inició con un reclamo de mascota
+      // Buscamos en el primer mensaje (el más viejo) si contiene el formato de reclamo
+      const firstMsg = messages.length > 0 ? messages[0] : null;
+      const claimPetId = firstMsg?.content
+        ? extractClaimPetId(firstMsg.content)
+        : null;
+
+      // ¿La mascota reclamada ya fue devuelta al dueño? (para que el chat deje
+      // de ofrecer "Confirmar devolución" y muestre el estado).
+      let claimPetReturned = false;
+      if (claimPetId) {
+        const claimedPet = await petRepo().findOneBy({ id: claimPetId });
+        claimPetReturned =
+          claimedPet?.statusId === CatalogIds.petStatus.devueltaAlDueno;
+      }
+
       // Notas reales: las de la mascota de la solicitud (médicas, rechazo, etc.).
       const notes = ctx?.petId
         ? await noteRepo().find({
@@ -235,6 +262,8 @@ export async function getConversation(req: Request, res: Response) {
           adoptionId: ctx?.adoptionId ?? null,
           phone: ctx?.phone ?? null,
           town: ctx?.town ?? null,
+          claimPetId, // 👈 ID de la mascota reclamada
+          claimPetReturned, // 👈 true si ya se confirmó la devolución
           notes: notes.map((n) => ({
             id: n.id,
             text: n.text,
@@ -259,153 +288,182 @@ export async function deleteMessage(req: Request, res: Response) {
   const msg = await messageRepo().findOneBy({ id });
   if (!msg) return res.status(404).json({ error: "Mensaje no encontrado" });
 
-  // Puede borrar el remitente del mensaje o un admin.
-  const isAdmin = req.authUser?.role === "admin";
-  const isSender = msg.senderId === userId;
-  if (!isSender && !isAdmin) {
-    return res.status(403).json({ error: "No autorizado para borrar este mensaje" });
+  // Solo el emisor, el receptor o un admin pueden borrar el mensaje.
+  const user = await userRepo().findOneBy({ id: userId });
+  const isAdmin = user?.roleId === CatalogIds.userRole.admin;
+  if (msg.senderId !== userId && msg.receiverId !== userId && !isAdmin) {
+    return res
+      .status(403)
+      .json({ error: "No tenés permiso para borrar este mensaje" });
   }
 
-  await messageRepo().remove(msg);
-  res.status(204).send();
+  try {
+    await messageRepo().remove(msg);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Error deleting message:", error);
+    res
+      .status(500)
+      .json({ error: "Error interno del servidor al eliminar el mensaje" });
+  }
 }
 
 export async function getInbox(req: Request, res: Response) {
   const userId = req.authUser?.id;
   if (!userId) return res.status(401).json({ error: "No autenticado" });
 
-  const messages = await messageRepo()
+  // Obtener los ids de usuarios con los que he intercambiado mensajes, junto con
+  // el último mensaje de cada conversación y el conteo no leídos.
+  const raw = await messageRepo()
     .createQueryBuilder("msg")
-    .where("msg.senderId = :userId OR msg.receiverId = :userId", { userId })
-    .orderBy("msg.createdAt", "DESC")
-    .getMany();
+    .select("CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END", "otherUserId")
+    .addSelect("MAX(msg.id)", "latestId")
+    .addSelect(
+      `SUM(CASE WHEN msg.receiverId = :userId AND msg.read = false THEN 1 ELSE 0 END)`,
+      "unread",
+    )
+    .where("(msg.senderId = :userId OR msg.receiverId = :userId)", { userId })
+    .groupBy(`CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END`)
+    .orderBy('MAX(msg.id)', "DESC")
+    .getRawMany<{ otherUserId: number; latestId: number; unread: number }>();
 
-  const userIds = new Set<number>();
-  const latestMessageMap = new Map<number, Message>();
-  let unreadCount = 0;
+  const otherIds = raw.map((r) => r.otherUserId);
 
-  for (const m of messages) {
-    const otherId = m.senderId === userId ? m.receiverId : m.senderId;
-    userIds.add(otherId);
-    if (!latestMessageMap.has(otherId)) {
-      latestMessageMap.set(otherId, m);
-    }
-    if (m.receiverId === userId && !m.read) {
-      unreadCount++;
-    }
+  if (otherIds.length === 0) {
+    return res.json({ totalUnread: 0, conversations: [] });
   }
 
-  let users: User[] = [];
-  if (userIds.size > 0) {
-    users = await userRepo().findBy({ id: In(Array.from(userIds)) });
-  }
+  const users = await userRepo().findBy({ id: In(otherIds) });
+  const userMap = new Map(users.map((u) => [u.id, u]));
 
-  const userMap = new Map(users.map((u) => [u.id, publicUser(u)]));
-  const contexts = await buildUserContexts(Array.from(userIds));
-
-  const inbox = Array.from(userIds).map((otherId) => {
-    const base = userMap.get(otherId);
-    const ctx = contexts.get(otherId);
-    return {
-      user: base ? { ...base, context: ctx?.context ?? null } : base,
-      latestMessage: latestMessageMap.get(otherId),
-      unread: messages.filter(
-        (m) => m.receiverId === userId && m.senderId === otherId && !m.read,
-      ).length,
-    };
+  // Traer el último mensaje de cada conversación
+  const latestMessageIds = raw.map((r) => r.latestId);
+  const latestMessages = await messageRepo().findBy({
+    id: In(latestMessageIds),
   });
+  const latestMap = new Map(latestMessages.map((m) => [m.id, m]));
 
-  res.json({
-    totalUnread: unreadCount,
-    conversations: inbox,
-  });
+  // Contexto para cada conversación (para mostrar en la bandeja).
+  const contexts = await buildUserContexts(otherIds);
+
+  const conversations = raw
+    .map((r) => {
+      const u = userMap.get(r.otherUserId);
+      if (!u) return null;
+      const latest = latestMap.get(r.latestId);
+      if (!latest) return null;
+      return {
+        user: {
+          id: u.id,
+          name: u.name,
+          photo: u.photo,
+          email: u.email,
+          role: u.roleId === CatalogIds.userRole.admin ? "admin" : "user",
+          context: contexts.get(u.id)?.context ?? null,
+        },
+        latestMessage: latest,
+        unread: Number(r.unread),
+      };
+    })
+    .filter(Boolean);
+
+  const totalUnread = conversations.reduce((sum, c) => sum + (c?.unread ?? 0), 0);
+
+  res.json({ totalUnread, conversations });
 }
 
 export async function getAdminConversations(req: Request, res: Response) {
   const userId = req.authUser?.id;
   if (!userId) return res.status(401).json({ error: "No autenticado" });
 
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 20;
+  // El admin ve todos los usuarios con los que algún admin haya conversado, más
+  // todos los usuarios registrados. Paginamos.
+
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
   const skip = (page - 1) * limit;
 
-  // For global admin conversations: all conversations in the system or just the admin's?
-  // User asked for "tabla paginada, cant de mensajes" for Admin inbox.
-  // Let's assume it's for the admin's own inbox, but paginated, OR it's global.
-  // I will make it for the admin's inbox, but returning more details.
-  // Wait, if it's admin inbox, it's just their messages.
-  // Let's do a paginated query of conversations where admin is part of.
-
-  const subQuery = messageRepo()
+  // Paso 1: obtener ids de usuarios con mensajes en el sistema (admin o no)
+  const raw = await messageRepo()
     .createQueryBuilder("msg")
-    .select("MAX(msg.id)", "max_id")
-    .where("msg.senderId = :userId OR msg.receiverId = :userId", { userId })
-    .groupBy(
-      "LEAST(msg.senderId, msg.receiverId), GREATEST(msg.senderId, msg.receiverId)",
-    );
+    .select(
+      "CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END",
+      "otherUserId",
+    )
+    .addSelect("MAX(msg.id)", "latestId")
+    .addSelect(
+      `SUM(CASE WHEN msg.receiverId = :userId AND msg.read = false THEN 1 ELSE 0 END)`,
+      "unread",
+    )
+    .addSelect("COUNT(msg.id)", "totalMessages")
+    .where("(msg.senderId = :userId OR msg.receiverId = :userId)", { userId })
+    .groupBy("otherUserId")
+    .orderBy("MAX(msg.id)", "DESC")
+    .getRawMany<{
+      otherUserId: number;
+      latestId: number;
+      unread: number;
+      totalMessages: number;
+    }>();
 
-  const [latestMessages, totalConversations] = await Promise.all([
-    messageRepo()
-      .createQueryBuilder("msg")
-      .innerJoin(`(${subQuery.getQuery()})`, "latest", "msg.id = latest.max_id")
-      .setParameters(subQuery.getParameters())
-      .orderBy("msg.createdAt", "DESC")
-      .skip(skip)
-      .take(limit)
-      .getMany(),
-    messageRepo()
-      .createQueryBuilder("msg")
-      .select(
-        "COUNT(DISTINCT LEAST(msg.senderId, msg.receiverId) || '-' || GREATEST(msg.senderId, msg.receiverId))",
-        "count",
-      )
-      .where("msg.senderId = :userId OR msg.receiverId = :userId", { userId })
-      .getRawOne(),
-  ]);
+  /* Una vez que el admin tiene una conversación con un usuario, el admin puede
+   * ver ese usuario en la bandeja aunque el usuario nunca haya respondido.
+   * Para que la UX no sea confusa, volvemos a la lógica anterior: la bandeja
+   * incluye a los usuarios con los que el admin ha conversado.
+   * Si en el futuro queremos mostrar también usuarios sin conversación previa,
+   * deberíamos unir con usuarios registrados y filtrar por rol user.
+   */
 
-  const total = parseInt(totalConversations.count || "0");
+  const otherIds = raw.map((r) => r.otherUserId);
 
-  const otherUserIds = latestMessages.map((m) =>
-    m.senderId === userId ? m.receiverId : m.senderId,
-  );
-  const users =
-    otherUserIds.length > 0
-      ? await userRepo().findBy({ id: In(otherUserIds) })
-      : [];
-  const userMap = new Map(users.map((u) => [u.id, publicUser(u)]));
+  if (otherIds.length === 0) {
+    return res.json({ page, limit, total: 0, conversations: [] });
+  }
 
-  const conversations = await Promise.all(
-    latestMessages.map(async (m) => {
-      const otherId = m.senderId === userId ? m.receiverId : m.senderId;
-      const count = await messageRepo()
-        .createQueryBuilder("msg")
-        .where(
-          "(msg.senderId = :userId AND msg.receiverId = :otherId) OR (msg.senderId = :otherId AND msg.receiverId = :userId)",
-          { userId, otherId },
-        )
-        .getCount();
+  const users = await userRepo().findBy({ id: In(otherIds) });
+  const userMap = new Map(users.map((u) => [u.id, u]));
 
-      const unreadCount = await messageRepo()
-        .createQueryBuilder("msg")
-        .where(
-          "msg.senderId = :otherId AND msg.receiverId = :userId AND msg.read = false",
-          { userId, otherId },
-        )
-        .getCount();
-
-      return {
-        user: userMap.get(otherId),
-        latestMessage: m,
-        totalMessages: count,
-        unread: unreadCount,
-      };
-    }),
-  );
-
-  res.json({
-    page,
-    limit,
-    total,
-    conversations,
+  // Traer el último mensaje de cada conversación
+  const latestMessageIds = raw.map((r) => r.latestId);
+  const latestMessages = await messageRepo().findBy({
+    id: In(latestMessageIds),
   });
+  const latestMap = new Map(latestMessages.map((m) => [m.id, m]));
+
+  // Contexto para cada conversación
+  const contexts = await buildUserContexts(otherIds);
+
+  const all = raw
+    .map((r) => {
+      const u = userMap.get(r.otherUserId);
+      if (!u) return null;
+      const latest = latestMap.get(r.latestId);
+      if (!latest) return null;
+      return {
+        user: {
+          id: u.id,
+          name: u.name,
+          photo: u.photo,
+          email: u.email,
+          role: u.roleId === CatalogIds.userRole.admin ? "admin" : "user",
+          context: contexts.get(u.id)?.context ?? null,
+        },
+        latestMessage: latest,
+        totalMessages: Number(r.totalMessages),
+        unread: Number(r.unread),
+      };
+    })
+    .filter(Boolean);
+
+  // Ordenar por latestMessage.createdAt descendente
+  all.sort(
+    (a, b) =>
+      new Date(b!.latestMessage.createdAt).getTime() -
+      new Date(a!.latestMessage.createdAt).getTime(),
+  );
+
+  const total = all.length;
+  const conversations = all.slice(skip, skip + limit);
+
+  res.json({ page, limit, total, conversations });
 }

@@ -4,7 +4,9 @@ import {
   adminListMascotas,
   adminListMascotasByStatus,
   adminListMascotasPaged,
+  approveClaim,
   claimPet,
+  renewMascota,
   confirmReturn,
   createMascota,
   createPetNote,
@@ -24,7 +26,7 @@ import {
   entregaDirecta,
   getMascotaCompatibility,
 } from "../controllers/mascotas.controller.js";
-import { getMetricas } from "../controllers/metrics.controller.js";
+import { getMetricas, getMapaReportes } from "../controllers/metrics.controller.js";
 import {
   listApprovedComments,
   listOwnerComments,
@@ -40,6 +42,7 @@ export const mascotasRouter = Router();
 mascotasRouter.get("/", optionalAuth, listMascotas);
 // Nuevo endpoint para métricas administrativas
 mascotasRouter.get("/admin/metricas", requireAdmin, getMetricas);
+mascotasRouter.get("/admin/mapa", requireAdmin, getMapaReportes);
 mascotasRouter.get("/admin/list", requireAdmin, adminListMascotas);
 mascotasRouter.get("/admin/paged", requireAdmin, adminListMascotasPaged);
 mascotasRouter.get("/admin/status/:status", requireAdmin, adminListMascotasByStatus);
@@ -58,8 +61,10 @@ mascotasRouter.post("/:id/resolve", requireAuth, resolveMascota);
 mascotasRouter.post("/:id/entrega-directa", requireAdmin, entregaDirecta);
 mascotasRouter.post("/:id/reject", requireAdmin, rejectMascota);
 
-// Reclamo de mascota (público) y confirmación de devolución (solo admin).
-mascotasRouter.post("/:id/claim", optionalAuth, claimPet);
+// Reclamo de mascota (público) y aprobación / confirmación (solo admin).
+mascotasRouter.post("/:id/claim", optionalAuth, multiple("photo", 5), multerErrorHandler, claimPet);
+mascotasRouter.post("/:id/renew", requireAuth, renewMascota);
+mascotasRouter.post("/:id/approve-claim", requireAdmin, approveClaim);
 mascotasRouter.post("/:id/confirm-return", requireAdmin, confirmReturn);
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
 mascotasRouter.post("/:id/notes", requireAdmin, createPetNote);

@@ -8,7 +8,7 @@ import { User } from "./entity/User.js";
 import { Followup } from "./entity/Followup.js";
 import { Adoption } from "./entity/Adoption.js";
 import { Message } from "./entity/Message.js";
-import { CatalogIds } from "./lib/catalog-constants.js";
+import { CatalogIds, catalogIdForCode } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 import { calculateCompatibility } from "./lib/matching.js";
 
@@ -66,7 +66,7 @@ async function seed() {
     {
       name: "Toby",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.perdido,
+      statusId: catalogIdForCode("pet_status", "perdido"),
       description:
         "Perro labrador color dorado, muy cariñoso. Lleva collar rojo. Tiene una pequeña cicatriz en la oreja derecha.",
       date: "2026-05-26",
@@ -117,7 +117,7 @@ async function seed() {
     {
       name: "Bobi",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: catalogIdForCode("pet_status", "encontrado"),
       description:
         "Perro mestizo tamaño mediano, marrón con patas blancas. Sin collar. Muy amigable, parece bien cuidado.",
       date: "2026-05-26",
@@ -163,14 +163,14 @@ async function seed() {
     {
       name: "Max",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.adopcion,
+      statusId: catalogIdForCode("pet_status", "en adopción"),
       description:
         "Perro mestizo de 2 años rescatado de la calle. Castrado, vacunado, desparasitado. Bueno con chicos y otros perros. Necesita una familia paciente que le dé tiempo de adaptación.",
       date: "2026-05-15",
       location: "Refugio Patitas Felices, Villa Crespo, CABA",
       contactPhone: "1155667788",
       contactEmail: "adopciones@patitasfelices.example.com",
-      sexId: CatalogIds.petSex.macho,
+      sexId: catalogIdForCode("pet_sex", "macho"),
       breed: "Mestizo",
       ageMonths: 24,
       color: "Negro",
@@ -218,7 +218,7 @@ async function seed() {
       location: "Av. Rivadavia 5400, Caballito, CABA",
       contactPhone: "1166778899",
       contactEmail: "matias.pelusa@example.com",
-      sexId: CatalogIds.petSex.hembra,
+      sexId: catalogIdForCode("pet_sex", "hembra"),
       breed: "Común europeo",
       ageMonths: 24,
       color: "Blanco y gris",
@@ -255,7 +255,7 @@ async function seed() {
       friendlyWithKids: true,
       friendlyWithPets: false,
       trained: true,
-      activityLevelId: CatalogIds.activityLevel.moderado,
+      activityLevelId: catalogIdForCode("activity_level", "moderado"),
       seedImage: "simba.png",
     },
 
@@ -279,7 +279,7 @@ async function seed() {
       friendlyWithKids: true,
       friendlyWithPets: true,
       trained: false,
-      activityLevelId: CatalogIds.activityLevel.activo,
+      activityLevelId: catalogIdForCode("activity_level", "activo"),
       seedImage: "michi.png",
     },
     {
@@ -300,7 +300,7 @@ async function seed() {
       friendlyWithKids: false,
       friendlyWithPets: false,
       trained: true,
-      activityLevelId: CatalogIds.activityLevel.tranquilo,
+      activityLevelId: catalogIdForCode("activity_level", "tranquilo"),
       seedImage: "salem.png",
     },
 
@@ -704,6 +704,81 @@ async function seed() {
   console.log(
     `Seed completed: ${createdExtraPets.length} mascotas adicionales insertadas (reportStatus=activo).`,
   );
+
+  // Asignar un publicador (userId) SOLO a las mascotas PERDIDAS. Son reportes
+  // personales de un usuario que busca a su mascota, así los comentarios y
+  // avistamientos ("La vi") le notifican al dueño (notify() corta si es null).
+  // Las de adopción/refugio/tránsito son institucionales (del refugio) y quedan
+  // sin dueño para no aparecer en el "Mis reportes" de un usuario común.
+  // (Las mascotas se crean antes que los usuarios, por eso se asigna acá.)
+  const publisherIds = createdUsers
+    .filter((u) => u.email !== "admin@admin.com")
+    .map((u) => u.id);
+  if (publisherIds.length > 0) {
+    const lostPets = await repoPets.find({
+      where: { statusId: CatalogIds.petStatus.perdido },
+    });
+    for (let i = 0; i < lostPets.length; i++) {
+      await repoPets.update(
+        { id: lostPets[i].id },
+        { userId: publisherIds[i % publisherIds.length] },
+      );
+    }
+    console.log(
+      `Seed completed: publicador (userId) asignado a ${lostPets.length} mascotas perdidas (comentarios y avistamientos notifican al dueño).`,
+    );
+  }
+
+  // Backfill de coordenadas: las 12 mascotas principales no traen lat/lng, así que
+  // no aparecían en el mapa de métricas. Las geocodificamos por su ubicación.
+  const GEO_SEED: Record<string, [number, number]> = {
+    "Plaza Serrano, Palermo, CABA": [-34.5889, -58.4306],
+    "Triunvirato 4200, Villa Urquiza, CABA": [-34.5736, -58.4869],
+    "Parque Barrancas de Belgrano, CABA": [-34.561, -58.4546],
+    "Av. Rivadavia 4800, Almagro, CABA": [-34.6126, -58.4257],
+    "Refugio Patitas Felices, Villa Crespo, CABA": [-34.599, -58.438],
+    "Hogar Canino San Telmo, CABA": [-34.6212, -58.3716],
+    "Av. Rivadavia 5400, Caballito, CABA": [-34.6184, -58.4357],
+    "Junín 1800, Recoleta, CABA": [-34.5875, -58.396],
+    "Bulnes 800, Almagro, CABA": [-34.6035, -58.42],
+    "Av. Rivadavia 7300, Flores, CABA": [-34.628, -58.4636],
+    "Hogar Felino, Boedo, CABA": [-34.628, -58.417],
+    "Refugio Huellitas Mininas, Palermo, CABA": [-34.578, -58.425],
+  };
+  const sinCoords = await repoPets.find();
+  let geocodadas = 0;
+  for (const p of sinCoords) {
+    if ((p.latitud == null || p.longitud == null) && p.location) {
+      const c = GEO_SEED[p.location];
+      if (c) {
+        p.latitud = c[0];
+        p.longitud = c[1];
+        await repoPets.save(p);
+        geocodadas++;
+      }
+    }
+  }
+  console.log(`Seed completed: ${geocodadas} mascotas geocodificadas (mapa de métricas).`);
+
+  // Vencimiento de publicaciones: 30 días (perdidas) / 60 días (resto activo) /
+  // null (estados terminales). Base = createdAt de cada mascota (así quedan
+  // algunas vigentes y otras vencidas para la demo).
+  const DAY = 24 * 60 * 60 * 1000;
+  const todasMascotas = await repoPets.find();
+  let conVencimiento = 0;
+  for (const p of todasMascotas) {
+    const sid = p.statusId;
+    let exp: Date | null = null;
+    if (sid !== CatalogIds.petStatus.adoptado && sid !== CatalogIds.petStatus.devueltaAlDueno) {
+      const dias = sid === CatalogIds.petStatus.perdido ? 30 : 60;
+      const base = p.createdAt ? new Date(p.createdAt) : new Date();
+      exp = new Date(base.getTime() + dias * DAY);
+      conVencimiento++;
+    }
+    p.expiresAt = exp;
+    await repoPets.save(p);
+  }
+  console.log(`Seed completed: vencimiento asignado a ${conVencimiento} publicaciones.`);
 
   // --- Fechas variadas para los filtros del listado ---
   // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
