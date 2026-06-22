@@ -760,6 +760,26 @@ async function seed() {
   }
   console.log(`Seed completed: ${geocodadas} mascotas geocodificadas (mapa de métricas).`);
 
+  // Vencimiento de publicaciones: 30 días (perdidas) / 60 días (resto activo) /
+  // null (estados terminales). Base = createdAt de cada mascota (así quedan
+  // algunas vigentes y otras vencidas para la demo).
+  const DAY = 24 * 60 * 60 * 1000;
+  const todasMascotas = await repoPets.find();
+  let conVencimiento = 0;
+  for (const p of todasMascotas) {
+    const sid = p.statusId;
+    let exp: Date | null = null;
+    if (sid !== CatalogIds.petStatus.adoptado && sid !== CatalogIds.petStatus.devueltaAlDueno) {
+      const dias = sid === CatalogIds.petStatus.perdido ? 30 : 60;
+      const base = p.createdAt ? new Date(p.createdAt) : new Date();
+      exp = new Date(base.getTime() + dias * DAY);
+      conVencimiento++;
+    }
+    p.expiresAt = exp;
+    await repoPets.save(p);
+  }
+  console.log(`Seed completed: vencimiento asignado a ${conVencimiento} publicaciones.`);
+
   // --- Fechas variadas para los filtros del listado ---
   // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
   // inserta todo junto, sin esto todas quedarían en "hoy". Espaciamos `createdAt`
