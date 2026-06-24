@@ -6,6 +6,7 @@ import { User } from "../entity/User.js";
 import { Adoption } from "../entity/Adoption.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
+import { Notification } from "../entity/Notification.js";
 import { CatalogIds, catalogItemForId } from "../lib/catalog-constants.js";
 import { publicUser } from "./user.controller.js";
 import { notify } from "../lib/notify.js";
@@ -30,6 +31,10 @@ function petRepo() {
 
 function noteRepo() {
   return AppDataSource.getRepository(PetNote);
+}
+
+function notificationRepo() {
+  return AppDataSource.getRepository(Notification);
 }
 
 type UserContext = {
@@ -122,7 +127,13 @@ export async function sendMessage(req: Request, res: Response) {
     let photoUrl = null;
     if (file) {
       const bucket = process.env.MINIO_MESSAGE_FILES_BUCKET ?? "message-files";
-      photoUrl = await uploadFileToMinio(bucket, `msg-${sender.id}-${Date.now()}`, file.originalname, file.buffer, file.mimetype);
+      photoUrl = await uploadFileToMinio(
+        bucket,
+        `msg-${sender.id}-${Date.now()}`,
+        file.originalname,
+        file.buffer,
+        file.mimetype,
+      );
     }
 
     const msg = messageRepo().create({
@@ -203,6 +214,15 @@ export async function getConversation(req: Request, res: Response) {
     );
     unreadMessages.forEach((m) => (m.read = true));
   }
+
+  await notificationRepo()
+    .createQueryBuilder()
+    .update()
+    .set({ read: true })
+    .where("userId = :uid", { uid: userId })
+    .andWhere("read = false")
+    .andWhere("link LIKE :pat", { pat: `%user=${otherUserId}` })
+    .execute();
 
   const currentUser = await userRepo().findOneBy({ id: userId });
   const otherUser = await userRepo().findOneBy({ id: otherUserId });
@@ -348,15 +368,20 @@ export async function getInbox(req: Request, res: Response) {
   // el último mensaje de cada conversación y el conteo no leídos.
   const raw = await messageRepo()
     .createQueryBuilder("msg")
-    .select("CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END", "otherUserId")
+    .select(
+      "CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END",
+      "otherUserId",
+    )
     .addSelect("MAX(msg.id)", "latestId")
     .addSelect(
       `SUM(CASE WHEN msg.receiverId = :userId AND msg.read = false THEN 1 ELSE 0 END)`,
       "unread",
     )
     .where("(msg.senderId = :userId OR msg.receiverId = :userId)", { userId })
-    .groupBy(`CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END`)
-    .orderBy('MAX(msg.id)', "DESC")
+    .groupBy(
+      `CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END`,
+    )
+    .orderBy("MAX(msg.id)", "DESC")
     .getRawMany<{ otherUserId: number; latestId: number; unread: number }>();
 
   const otherIds = raw.map((r) => r.otherUserId);
@@ -399,7 +424,10 @@ export async function getInbox(req: Request, res: Response) {
     })
     .filter(Boolean);
 
-  const totalUnread = conversations.reduce((sum, c) => sum + (c?.unread ?? 0), 0);
+  const totalUnread = conversations.reduce(
+    (sum, c) => sum + (c?.unread ?? 0),
+    0,
+  );
 
   res.json({ totalUnread, conversations });
 }
@@ -415,28 +443,34 @@ export async function getAdminConversations(req: Request, res: Response) {
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
   const skip = (page - 1) * limit;
 
-  // Paso 1: obtener ids de usuarios con mensajes en el sistema (admin o no)
-  const raw = await messageRepo()
-    .createQueryBuilder("msg")
-    .select(
-      "CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END",
-      "otherUserId",
-    )
-    .addSelect("MAX(msg.id)", "latestId")
-    .addSelect(
-      `SUM(CASE WHEN msg.receiverId = :userId AND msg.read = false THEN 1 ELSE 0 END)`,
-      "unread",
-    )
-    .addSelect("COUNT(msg.id)", "totalMessages")
-    .where("(msg.senderId = :userId OR msg.receiverId = :userId)", { userId })
-    .groupBy("otherUserId")
-    .orderBy("MAX(msg.id)", "DESC")
-    .getRawMany<{
-      otherUserId: number;
-      latestId: number;
-      unread: number;
-      totalMessages: number;
-    }>();
+  const otherUserExpr =
+    "CASE WHEN msg.senderId = :userId THEN msg.receiverId ELSE msg.senderId END";
+  let raw: Array<{
+    otherUserId: number;
+    latestId: number;
+    unread: number;
+    totalMessages: number;
+  }>;
+  try {
+    raw = await messageRepo()
+      .createQueryBuilder("msg")
+      .select(otherUserExpr, "otherUserId")
+      .addSelect("MAX(msg.id)", "latestId")
+      .addSelect(
+        `SUM(CASE WHEN msg.receiverId = :userId AND msg.read = false THEN 1 ELSE 0 END)`,
+        "unread",
+      )
+      .addSelect("COUNT(msg.id)", "totalMessages")
+      .where("(msg.senderId = :userId OR msg.receiverId = :userId)", { userId })
+      .groupBy(otherUserExpr)
+      .orderBy("MAX(msg.id)", "DESC")
+      .getRawMany();
+  } catch (error) {
+    console.error("Error en getAdminConversations:", error);
+    return res
+      .status(500)
+      .json({ error: "Error al cargar las conversaciones." });
+  }
 
   /* Una vez que el admin tiene una conversación con un usuario, el admin puede
    * ver ese usuario en la bandeja aunque el usuario nunca haya respondido.

@@ -258,6 +258,8 @@ export async function getMapaReportes(req: Request, res: Response) {
         // Postgres pasa a minúscula los alias sin comillas; los entrecomillamos.
         'p.statusId as "statusId"',
         'p.animalTypeId as "animalTypeId"',
+        "p.photo as photo",
+        "p.photos as photos",
       ])
       .where("p.latitud IS NOT NULL")
       .andWhere("p.longitud IS NOT NULL");
@@ -271,6 +273,10 @@ export async function getMapaReportes(req: Request, res: Response) {
       lng: Number(item.lng),
       estado: getPetStatusLabel(Number(item.statusId)),
       especie: getAnimalTypeLabel(Number(item.animalTypeId)),
+      // Imagen para el popup: foto principal o la primera del array.
+      foto:
+        item.photo ??
+        (Array.isArray(item.photos) && item.photos.length ? item.photos[0] : null),
     }));
 
     // Filtros opcionales (case-insensitive, por substring).

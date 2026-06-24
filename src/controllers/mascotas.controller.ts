@@ -1574,6 +1574,12 @@ export async function claimPet(req: Request, res: Response) {
   if (!claimantName) {
     return res.status(400).json({ error: "Nombre es requerido." });
   }
+  // El mensaje explicando por qué reclama la mascota es obligatorio.
+  if (typeof description !== "string" || description.trim().length === 0) {
+    return res
+      .status(400)
+      .json({ error: "Contanos por qué creés que la mascota es tuya." });
+  }
   // Si el usuario está autenticado, el teléfono se toma de su cuenta; no es requerido en el body.
   if (!req.authUser?.id && !claimantPhone) {
     return res.status(400).json({ error: "Teléfono es requerido." });
