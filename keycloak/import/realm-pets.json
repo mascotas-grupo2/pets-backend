@@ -70,8 +70,8 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "protocol": "openid-connect",
-      "redirectUris": ["https://pets.localdev.me/*", "http://localhost:3000/*"],
-      "webOrigins": ["https://pets.localdev.me", "http://localhost:3000"],
+      "redirectUris": ["https://pets.localdev.me/*", "http://localhost:3000/*", "https://localdev.me/*", "https://api.localdev.me/*", "https://huellitasunidas.biz/*"],
+      "webOrigins": ["https://pets.localdev.me", "http://localhost:3000", "https://localdev.me", "https://api.localdev.me", "https://huellitasunidas.biz"],
       "attributes": {
         "post.logout.redirect.uris": "https://pets.localdev.me/*"
       },
