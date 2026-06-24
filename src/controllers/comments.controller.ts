@@ -1,17 +1,16 @@
 import { Request, Response } from "express";
 import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
-import { dbManager } from "../lib/db-context.js";
 import { PetComment } from "../entity/PetComment.js";
 import { Pet } from "../entity/Pet.js";
 import { notify } from "../lib/notify.js";
 import { recordActivity } from "../lib/activity.js";
 
 function commentRepo() {
-  return dbManager().getRepository(PetComment);
+  return AppDataSource.getRepository(PetComment);
 }
 function petRepo() {
-  return dbManager().getRepository(Pet);
+  return AppDataSource.getRepository(Pet);
 }
 
 function serialize(c: PetComment, includeEmail = false) {
@@ -94,7 +93,6 @@ export async function createComment(req: Request, res: Response) {
     type: "comentario",
     title: `Comentario en ${pet.name ?? "una publicación"}`,
     actorUserId: req.authUser?.id ?? null,
-    refugioId: pet.refugioId ?? null,
     refType: "comment",
     refId: saved.id,
     link: `/mascotas-perdidas/${petId}`,

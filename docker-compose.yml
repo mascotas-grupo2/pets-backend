@@ -74,7 +74,6 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: "postgresql://pets:pets@postgres:5432/pets_db"
-      RLS_ENABLED: "true"
       PORT: ${PORT}
       KEYCLOAK_ISSUER: "http://keycloak:8080/realms/pets"
       KEYCLOAK_AUDIENCE: "pets-backend"

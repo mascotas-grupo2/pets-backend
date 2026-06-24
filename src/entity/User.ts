@@ -42,9 +42,6 @@ export class User {
   @Column({ name: "role_id", type: "int", default: CatalogIds.userRole.user })
   roleId!: number;
 
-  @Column({ name: "refugio_id", type: "int", nullable: true })
-  refugioId!: number | null;
-
   @Column({ type: "boolean", default: false })
   adopter!: boolean;
 

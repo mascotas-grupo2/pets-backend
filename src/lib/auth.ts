@@ -27,7 +27,6 @@ export type AuthUser = {
   email?: string;
   role?: string;
   provider?: string;
-  refugioId?: number | null;
 };
 
 declare global {
@@ -59,7 +58,6 @@ export async function createAccessToken(user: User) {
     email: user.email,
     role: catalogCodeForId(user.roleId) ?? "user",
     provider: catalogCodeForId(user.ssoProviderId) ?? "local",
-    refugio_id: user.refugioId ?? null,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(localIssuer)
@@ -114,11 +112,9 @@ async function authUserFromPayload(
   const role = typeof payload.role === "string" ? payload.role : undefined;
   const provider =
     typeof payload.provider === "string" ? payload.provider : undefined;
-  const refugioId =
-    typeof payload.refugio_id === "number" ? payload.refugio_id : null;
 
   if (Number.isInteger(id)) {
-    return { id, email, role, provider, refugioId };
+    return { id, email, role, provider };
   }
 
   if (!payload.sub) return null;
@@ -136,7 +132,6 @@ async function authUserFromPayload(
     email: user.email,
     role: catalogCodeForId(user.roleId) ?? "user",
     provider: catalogCodeForId(user.ssoProviderId) ?? "keycloak",
-    refugioId: user.refugioId ?? null,
   };
 }
 
@@ -224,62 +219,10 @@ export async function requireAdmin(
     const authUser = await authUserFromPayload(payload);
     if (!authUser)
       return res.status(401).json({ error: "Token invalido o expirado" });
-    if (authUser.role !== "admin" && authUser.role !== "superadmin") {
-      return res
-        .status(403)
-        .json({ error: "Se requiere rol de administrador" });
-    }
-    req.user = payload;
-    req.authUser = authUser;
-    return next();
-  } catch (err) {
-    return res.status(401).json({ error: "Token invalido o expirado" });
-  }
-}
-
-export async function requireRefugioAdmin(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  const token = getRequestToken(req);
-  if (!token) return res.status(401).json({ error: "Falta token Bearer" });
-
-  try {
-    const payload = await verifyToken(token);
-    const authUser = await authUserFromPayload(payload);
-    if (!authUser)
-      return res.status(401).json({ error: "Token invalido o expirado" });
     if (authUser.role !== "admin") {
       return res
         .status(403)
-        .json({ error: "Se requiere rol de administrador de refugio" });
-    }
-    req.user = payload;
-    req.authUser = authUser;
-    return next();
-  } catch (err) {
-    return res.status(401).json({ error: "Token invalido o expirado" });
-  }
-}
-
-export async function requireSuperadmin(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  const token = getRequestToken(req);
-  if (!token) return res.status(401).json({ error: "Falta token Bearer" });
-
-  try {
-    const payload = await verifyToken(token);
-    const authUser = await authUserFromPayload(payload);
-    if (!authUser)
-      return res.status(401).json({ error: "Token invalido o expirado" });
-    if (authUser.role !== "superadmin") {
-      return res
-        .status(403)
-        .json({ error: "Se requiere rol de superadministrador" });
+        .json({ error: "Se requiere rol de administrador" });
     }
     req.user = payload;
     req.authUser = authUser;

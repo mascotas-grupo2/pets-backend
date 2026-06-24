@@ -7,7 +7,6 @@ import { Pet } from "./entity/Pet.js";
 import { User } from "./entity/User.js";
 import { Followup } from "./entity/Followup.js";
 import { Adoption } from "./entity/Adoption.js";
-import { Refugio } from "./entity/Refugio.js";
 import { Message } from "./entity/Message.js";
 import { CatalogIds, catalogIdForCode } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
@@ -47,24 +46,6 @@ async function uploadSeedPhoto(
 async function seed() {
   await AppDataSource.initialize();
   await AppDataSource.runMigrations();
-
-  const refugioRepo = AppDataSource.getRepository(Refugio);
-  const MORON_LOCATION = "Av. Rivadavia 18500, Morón, Buenos Aires";
-  const HURLINGHAM_LOCATION = "Av. Vergara 2210, Hurlingham, Buenos Aires";
-  let refugioMoron = await refugioRepo.findOneBy({ slug: "refugio-moron" });
-  if (!refugioMoron) refugioMoron = refugioRepo.create({ slug: "refugio-moron" });
-  refugioMoron.name = "Refugio Morón";
-  refugioMoron.location = MORON_LOCATION;
-  refugioMoron.active = true;
-  refugioMoron = await refugioRepo.save(refugioMoron);
-  let refugioHurlingham = await refugioRepo.findOneBy({ slug: "refugio-hurlingham" });
-  if (!refugioHurlingham) refugioHurlingham = refugioRepo.create({ slug: "refugio-hurlingham" });
-  refugioHurlingham.name = "Refugio Hurlingham";
-  refugioHurlingham.location = HURLINGHAM_LOCATION;
-  refugioHurlingham.active = true;
-  refugioHurlingham = await refugioRepo.save(refugioHurlingham);
-  const refugioMoronId = refugioMoron.id;
-  const refugioHurlinghamId = refugioHurlingham.id;
 
   // Clear dependent tables first (those with foreign keys to pet)
   const repoFollowup = AppDataSource.getRepository(Followup);
@@ -412,16 +393,15 @@ async function seed() {
   const password = "Admin1234!";
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto
-    .pbkdf2Sync("Moron1234!", salt, 310000, 32, "sha256")
+    .pbkdf2Sync(password, salt, 310000, 32, "sha256")
     .toString("hex");
   const adminSaved = await repoUsers.save(
     repoUsers.create({
       name: "Laura Fernández",
-      email: "admin@refugiomoron.com",
+      email: "admin@admin.com",
       passwordHash: hash,
       passwordSalt: salt,
       roleId: CatalogIds.userRole.admin,
-      refugioId: refugioMoronId,
       emailVerified: true,
     }),
   );
@@ -432,41 +412,7 @@ async function seed() {
   } catch (e) {
     console.warn("No se pudo subir imagen de seed para admin", e);
   }
-  console.log("Seed completed: Admin Morón inserted (admin@refugiomoron.com).");
-
-  const salt2 = crypto.randomBytes(16).toString("hex");
-  const hash2 = crypto
-    .pbkdf2Sync("Hurlingham1234!", salt2, 310000, 32, "sha256")
-    .toString("hex");
-  await repoUsers.save(
-    repoUsers.create({
-      name: "Diego Sosa",
-      email: "admin@refugiohurlingham.com",
-      passwordHash: hash2,
-      passwordSalt: salt2,
-      roleId: CatalogIds.userRole.admin,
-      refugioId: refugioHurlinghamId,
-      emailVerified: true,
-    }),
-  );
-  console.log("Seed completed: Admin Hurlingham inserted (admin@refugiohurlingham.com).");
-
-  const saltSuper = crypto.randomBytes(16).toString("hex");
-  const hashSuper = crypto
-    .pbkdf2Sync(password, saltSuper, 310000, 32, "sha256")
-    .toString("hex");
-  await repoUsers.save(
-    repoUsers.create({
-      name: "Super Admin",
-      email: "admin@admin.com",
-      passwordHash: hashSuper,
-      passwordSalt: saltSuper,
-      roleId: CatalogIds.userRole.superadmin,
-      refugioId: null,
-      emailVerified: true,
-    }),
-  );
-  console.log("Seed completed: Superadmin user inserted (admin@admin.com).");
+  console.log("Seed completed: Admin user inserted (role=admin).");
 
   // Add two regular users (role = user)
   const usersToCreate = [
@@ -988,28 +934,6 @@ async function seed() {
   console.log(
     `Seed completed: ${followupsToSave.length} seguimientos insertados.`,
   );
-
-  const managedStatuses = [
-    CatalogIds.petStatus.encontrado,
-    CatalogIds.petStatus.transito,
-    CatalogIds.petStatus.medico,
-    CatalogIds.petStatus.adopcion,
-    CatalogIds.petStatus.adoptado,
-    CatalogIds.petStatus.devueltaAlDueno,
-  ];
-  await AppDataSource.query(
-    `UPDATE pet p SET refugio_id = CASE WHEN s.rn % 2 = 0 THEN $1::int ELSE $2::int END
-     FROM (SELECT id, row_number() OVER (PARTITION BY "statusId" ORDER BY id) AS rn FROM pet WHERE "statusId" = ANY($3)) s
-     WHERE p.id = s.id`,
-    [refugioMoronId, refugioHurlinghamId, managedStatuses],
-  );
-  await AppDataSource.query(
-    `UPDATE adoption a SET refugio_id = p.refugio_id FROM pet p WHERE a."petId" = p.id`,
-  );
-  await AppDataSource.query(
-    `UPDATE seguimientos f SET refugio_id = p.refugio_id FROM pet p WHERE f.pet_id = p.id`,
-  );
-  console.log("Seed completed: refugios asignados (moron + hurlingham).");
 
   await AppDataSource.destroy();
 }

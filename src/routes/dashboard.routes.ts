@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireRefugioAdmin } from "../lib/auth.js";
+import { requireAdmin } from "../lib/auth.js";
 import {
   getDashboardStats,
   getDashboardActivity,
@@ -7,5 +7,5 @@ import {
 
 export const dashboardRouter = Router();
 
-dashboardRouter.get("/stats", requireRefugioAdmin, getDashboardStats);
-dashboardRouter.get("/activity", requireRefugioAdmin, getDashboardActivity);
+dashboardRouter.get("/stats", requireAdmin, getDashboardStats);
+dashboardRouter.get("/activity", requireAdmin, getDashboardActivity);

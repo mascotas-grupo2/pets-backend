@@ -1,7 +1,6 @@
 import { randomUUID } from "crypto";
 import type OpenAI from "openai";
 import { AppDataSource } from "../data-source.js";
-import { dbManager } from "../lib/db-context.js";
 import { ChatMessage } from "../entity/ChatMessage.js";
 import { ChatSession as ChatSessionEntity } from "../entity/ChatSession.js";
 import { SessionMessage, ChatSession } from "./chatbot.types.js";
@@ -27,11 +26,11 @@ function historyLimit() {
 }
 
 function sessionRepo() {
-  return dbManager().getRepository(ChatSessionEntity);
+  return AppDataSource.getRepository(ChatSessionEntity);
 }
 
 function messageRepo() {
-  return dbManager().getRepository(ChatMessage);
+  return AppDataSource.getRepository(ChatMessage);
 }
 
 /**

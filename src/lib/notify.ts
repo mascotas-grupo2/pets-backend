@@ -1,5 +1,4 @@
 import { AppDataSource } from "../data-source.js";
-import { dbManager } from "./db-context.js";
 import { Notification } from "../entity/Notification.js";
 import { emitToUser } from "./realtime.js";
 
@@ -26,7 +25,7 @@ export async function notify(
 ) {
   if (!Number.isInteger(userId)) return;
   try {
-    const repo = dbManager().getRepository(Notification);
+    const repo = AppDataSource.getRepository(Notification);
     const saved = await repo.save(
       repo.create({
         userId: userId as number,
