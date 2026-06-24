@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { ILike, In } from "typeorm";
+import { ILike, In, LessThan } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
@@ -183,11 +183,15 @@ function buildAdminFilters(req: Request) {
   const search = req.query.name ?? req.query.q;
   const name = typeof search === "string" ? search.trim() : "";
   const nameFilter = name.length > 0 ? ILike(`%${name}%`) : undefined;
+  // ?vencida=1 → solo publicaciones vencidas (expiresAt < ahora; LessThan ya excluye null).
+  const soloVencidas =
+    req.query.vencida === "1" || req.query.vencida === "true";
 
   return {
     ...(animalTypeId ? { animalTypeId } : {}),
     ...(statusId ? { statusId } : {}),
     ...(nameFilter ? { name: nameFilter } : {}),
+    ...(soloVencidas ? { expiresAt: LessThan(new Date()) } : {}),
   };
 }
 
@@ -375,7 +379,18 @@ async function reportStatusTotals() {
     const code = byId[Number(row.reportStatusId)];
     if (code) totals[code] = Number(row.count) || 0;
   }
-  return totals;
+
+  // Vencidas: publicaciones activas cuyo vencimiento ya pasó (transversal: una
+  // "Publicada" puede estar vencida). No es un reportStatus, va aparte.
+  const vencidas = await repo()
+    .createQueryBuilder("pet")
+    .where("pet.reportStatusId = :activo", {
+      activo: CatalogIds.petReportStatus.activo,
+    })
+    .andWhere("pet.expiresAt < :now", { now: new Date() })
+    .getCount();
+
+  return { ...totals, vencidas };
 }
 
 export async function adminListMascotasByStatus(req: Request, res: Response) {
@@ -1326,6 +1341,7 @@ export async function resolveMascota(req: Request, res: Response) {
 
   existing.statusId = S.encontrado;
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  existing.expiresAt = null; // publicación cerrada: ya no vence
   const saved = await repo().save(existing);
 
   // Notificar a todos los admins para que sepan que el dueño marcó "apareció"
@@ -1384,6 +1400,7 @@ export async function entregaDirecta(req: Request, res: Response) {
 
   existing.statusId = CatalogIds.petStatus.adoptado;
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  existing.expiresAt = null; // publicación cerrada: ya no vence
   const saved = await repo().save(existing);
 
   // Registro de auditoría: quién la recibió y qué admin la entregó.
@@ -2060,6 +2077,7 @@ export async function confirmReturn(req: Request, res: Response) {
     // Cambiar estado
     existing.statusId = S.devueltaAlDueno;
     existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+    existing.expiresAt = null; // publicación cerrada: ya no vence
     await petRepo.save(existing);
 
     // Cancelar adopciones activas
