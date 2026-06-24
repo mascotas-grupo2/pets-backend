@@ -62,7 +62,7 @@
       "name": "Pets Backend (public client)",
       "description": "Client usado por el frontend para obtener tokens y por el backend como audience.",
       "enabled": true,
-      "rootUrl": "https://pets.localdev.me",
+      "rootUrl": "https://huellitasunidas.biz",
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
@@ -70,10 +70,10 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "protocol": "openid-connect",
-      "redirectUris": ["https://pets.localdev.me/*", "http://localhost:3000/*", "https://localdev.me/*", "https://api.localdev.me/*", "https://huellitasunidas.biz/*"],
-      "webOrigins": ["https://pets.localdev.me", "http://localhost:3000", "https://localdev.me", "https://api.localdev.me", "https://huellitasunidas.biz"],
+      "redirectUris": ["https://huellitasunidas.biz/*", "http://localhost:3000/*", "https://api.huellitasunidas.biz/*"],
+      "webOrigins": ["https://huellitasunidas.biz", "http://localhost:3000", "https://api.huellitasunidas.biz"],
       "attributes": {
-        "post.logout.redirect.uris": "https://pets.localdev.me/*"
+        "post.logout.redirect.uris": "https://huellitasunidas.biz/*"
       },
       "protocolMappers": [
         {
