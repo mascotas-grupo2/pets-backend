@@ -70,8 +70,8 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "protocol": "openid-connect",
-      "redirectUris": ["https://huellitasunidas.biz/*", "http://localhost:3000/*", "https://api.huellitasunidas.biz/*"],
-      "webOrigins": ["https://huellitasunidas.biz", "http://localhost:3000", "https://api.huellitasunidas.biz"],
+      "redirectUris": ["https://huellitasunidas.biz/*", "https://www.huellitasunidas.biz/*", "http://localhost:3000/*", "https://api.huellitasunidas.biz/*"],
+      "webOrigins": ["https://huellitasunidas.biz", "https://www.huellitasunidas.biz", "http://localhost:3000", "https://api.huellitasunidas.biz"],
       "attributes": {
         "post.logout.redirect.uris": "https://huellitasunidas.biz/*"
       },
