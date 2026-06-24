@@ -1853,6 +1853,105 @@ export async function approveClaim(req: Request, res: Response) {
 }
 
 /**
+ * Rechazar reclamo: el admin determina que el reclamante NO es el dueño legítimo.
+ * Registra una nota en la publicación, envía un mensaje al reclamante vía chat
+ * y lo notifica. No afecta el estado de la mascota ni de la publicación.
+ */
+export async function rejectClaim(req: Request, res: Response) {
+  const id = req.params.id;
+  const { reason } = req.body ?? {};
+
+  let existing;
+  try {
+    existing = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!existing) return res.status(404).json({ error: "Pet no encontrada" });
+
+  // Auto-detectar el usuario que reclamó desde las notas de reclamo
+  const allNotes = await noteRepo().find({
+    where: { petId: existing.id },
+    order: { createdAt: "DESC" },
+  });
+  const claimNotes = allNotes.filter((n) => n.text.startsWith("🔔 RECLAMO"));
+  const latestClaimNote = claimNotes[0];
+  let claimantUserId: number | null = null;
+  let claimantName: string | null = null;
+  if (latestClaimNote) {
+    const match = latestClaimNote.text.match(/Usuario ID:\s*(\d+)/);
+    if (match) {
+      claimantUserId = Number(match[1]);
+    }
+    // Extraer nombre del reclamante del formato "🔔 RECLAMO de <nombre>"
+    const nameMatch = latestClaimNote.text.match(/🔔 RECLAMO de (.+)/);
+    if (nameMatch) {
+      claimantName = nameMatch[1].trim();
+    }
+  }
+
+  const adminId = req.authUser?.id ?? null;
+  let adminName: string | null = null;
+  if (adminId) {
+    const admin = await userRepo().findOneBy({ id: adminId });
+    adminName = admin?.name ?? admin?.email ?? null;
+  }
+
+  // Nota de auditoría en la publicación
+  const noteContent = [
+    `❌ Reclamo RECHAZADO por ${adminName ?? "admin"}.`,
+    claimantName ? `Reclamante: ${claimantName}` : null,
+    claimantUserId ? `Usuario ID: ${claimantUserId}` : null,
+    reason ? `Motivo: ${reason}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  await noteRepo().save(
+    noteRepo().create({
+      petId: existing.id,
+      authorId: adminId,
+      authorName: adminName,
+      text: noteContent,
+      kindId: CatalogIds.petNoteKind.general,
+    }),
+  );
+
+  // Enviar mensaje al reclamante (si tiene cuenta) y notificarlo
+  if (claimantUserId) {
+    try {
+      const messageRepo = AppDataSource.getRepository(Message);
+      const msg = messageRepo.create({
+        senderId: adminId ?? 0,
+        receiverId: claimantUserId,
+        content: [
+          `❌ Tu reclamo de "${existing.name ?? "la mascota"}" fue rechazado.`,
+          reason ? `Motivo: ${reason}` : null,
+          ``,
+          `Si creés que hay un error, contactanos nuevamente con más información.`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        photo: null,
+        read: false,
+      });
+      await messageRepo.save(msg);
+
+      await notify(claimantUserId, {
+        type: "message",
+        title: `❌ Reclamo rechazado: ${existing.name ?? "mascota"}`,
+        body: reason ?? "El refugio rechazó tu reclamo. Revisá el chat para más detalles.",
+        link: `/admin/mensajes?user=${claimantUserId}`,
+      });
+    } catch (e) {
+      console.warn("[rejectClaim] no se pudo notificar al reclamante:", (e as Error).message);
+    }
+  }
+
+  return res.json({ ok: true, message: "Reclamo rechazado." });
+}
+
+/**
  * Confirmar devolución: el admin verifica el reclamo y marca la mascota
  * como devuelta al dueño. Cierra la publicación y cancela adopciones activas.
  */
