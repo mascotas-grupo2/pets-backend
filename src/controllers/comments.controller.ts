@@ -94,6 +94,7 @@ export async function createComment(req: Request, res: Response) {
     type: "comentario",
     title: `Comentario en ${pet.name ?? "una publicación"}`,
     actorUserId: req.authUser?.id ?? null,
+    refugioId: pet.refugioId ?? null,
     refType: "comment",
     refId: saved.id,
     link: `/mascotas-perdidas/${petId}`,

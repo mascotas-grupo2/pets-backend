@@ -323,6 +323,7 @@ export async function submitAdoption(req: Request, res: Response) {
       const pet = await petRepo().findOneBy({ id: adoption.petId });
       if (pet) {
         adoption.compatibilityScore = calculateCompatibility(adoption, pet).score;
+        adoption.refugioId = pet.refugioId ?? null;
       }
     }
 
@@ -331,6 +332,7 @@ export async function submitAdoption(req: Request, res: Response) {
       type: "solicitud",
       title: `Nueva ${values.kind === "transito" ? "oferta de tránsito" : "solicitud"} de ${values.firstName} ${values.lastName}`.trim(),
       actorUserId: id as number,
+      refugioId: adoption.refugioId ?? null,
       refType: "adoption",
       refId: adoption.id,
       link: `/admin/solicitudes?requestId=${adoption.id}`,

@@ -929,6 +929,7 @@ export async function createMascota(req: Request, res: Response) {
     type: "publicacion",
     title: `Nueva publicación: ${reloaded.name ?? "mascota"}`,
     actorUserId: userId,
+    refugioId: reloaded.refugioId ?? null,
     refType: "pet",
     refId: reloaded.id,
     link: "/admin/publicacion",

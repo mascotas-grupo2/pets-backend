@@ -24,11 +24,17 @@ async function notifyAdmins(data: {
   type: ActivityType;
   title: string;
   actorUserId?: number | null;
+  refugioId?: number | null;
   link?: string | null;
 }) {
   try {
+    // Si la actividad pertenece a un refugio, solo avisamos a SUS admins.
+    // Los eventos globales (sin refugio) avisan a todos los admins.
     const admins = await dbManager().getRepository(User).find({
-      where: { roleId: CatalogIds.userRole.admin },
+      where:
+        data.refugioId != null
+          ? { roleId: CatalogIds.userRole.admin, refugioId: data.refugioId }
+          : { roleId: CatalogIds.userRole.admin },
     });
     for (const admin of admins) {
       if (admin.id === data.actorUserId) continue;

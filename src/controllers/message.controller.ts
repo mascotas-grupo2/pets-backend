@@ -131,6 +131,7 @@ export async function sendMessage(req: Request, res: Response) {
       type: "mensaje",
       title: `Nuevo mensaje de ${sender.name}`,
       actorUserId: sender.id,
+      refugioId: receiver.refugioId ?? null,
       refType: "message",
       refId: msg.id,
       link: `/admin/mensajes?user=${sender.id}`,
