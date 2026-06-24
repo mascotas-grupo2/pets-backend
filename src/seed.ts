@@ -54,6 +54,24 @@ async function seed() {
   const repoAdoption = AppDataSource.getRepository(Adoption);
   await repoAdoption.createQueryBuilder().delete().execute();
 
+  // Limpiar tablas runtime que referencian pets/users/adoptions por id pero SIN
+  // foreign key (no hay cascade): si no, acumulan filas huérfanas entre reseeds.
+  // Caso concreto: una nota de RECLAMO ("Confirmar devolución") apuntando a una
+  // mascota ya borrada hacía que confirm-return devolviera 404 "Pet no encontrada".
+  for (const table of [
+    "pet_note",
+    "pet_comment",
+    "sighting",
+    "adoption_note",
+    "adoption_check",
+    "activity",
+    "notification",
+    "chat_message",
+    "chat_session",
+  ]) {
+    await AppDataSource.query(`DELETE FROM "${table}"`);
+  }
+
   // Now clear the pet table
   const repoPets = AppDataSource.getRepository(Pet);
   // Use DELETE instead of TRUNCATE on Postgres when pet is referenced by foreign keys.
