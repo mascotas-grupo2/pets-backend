@@ -219,36 +219,8 @@ export async function getMetricas(req: Request, res: Response) {
       estado: getPetStatusLabel(pet.statusId),
     }));
 
-    // ==========================
-    // MAPA REPORTES
-    // ==========================
-
-    const mapaReportesQb = dbManager().createQueryBuilder(Pet, "p")
-      .select([
-        "p.id as id",
-        "p.name as nombre",
-        "p.latitud as lat",
-        "p.longitud as lng",
-        "p.statusId as statusId",
-        "p.animalTypeId as animalTypeId",
-      ])
-      .where("p.latitud IS NOT NULL")
-      .andWhere("p.longitud IS NOT NULL");
-
-    if (startDate) {
-      mapaReportesQb.andWhere("p.createdAt >= :startDate", { startDate });
-    }
-
-    const mapaReportesRaw = await mapaReportesQb.getRawMany();
-
-    const mapaReportes = mapaReportesRaw.map((item) => ({
-      id: item.id,
-      nombre: item.nombre,
-      lat: Number(item.lat),
-      lng: Number(item.lng),
-      estado: getPetStatusLabel(Number(item.statusId)),
-      tipo: getAnimalTypeLabel(Number(item.animalTypeId)),
-    }));
+    // El mapa de ubicaciones vive en su propio endpoint (getMapaReportes) para
+    // poder traer más datos sin atarse al período de las métricas.
 
     return res.json({
       ok: true,
@@ -269,7 +241,6 @@ export async function getMetricas(req: Request, res: Response) {
         usuariosPorMes,
         mascotasPorTipo,
         topPublicaciones,
-        mapaReportes,
       },
     });
   } catch (error) {
@@ -279,6 +250,50 @@ export async function getMetricas(req: Request, res: Response) {
       ok: false,
       error: "Error al obtener métricas",
     });
+  }
+}
+
+/**
+ * Mapa de ubicaciones de mascotas (endpoint propio, separado de las métricas).
+ * Trae TODAS las mascotas con coordenadas (sin filtro de período), con filtros
+ * opcionales por estado (?estado=perdido) y especie (?especie=perro).
+ */
+export async function getMapaReportes(req: Request, res: Response) {
+  try {
+    const qb = dbManager().createQueryBuilder(Pet, "p")
+      .select([
+        "p.id as id",
+        "p.name as nombre",
+        "p.latitud as lat",
+        "p.longitud as lng",
+        // Postgres pasa a minúscula los alias sin comillas; los entrecomillamos.
+        'p.statusId as "statusId"',
+        'p.animalTypeId as "animalTypeId"',
+      ])
+      .where("p.latitud IS NOT NULL")
+      .andWhere("p.longitud IS NOT NULL");
+
+    const raw = await qb.getRawMany();
+
+    let ubicaciones = raw.map((item) => ({
+      id: item.id,
+      nombre: item.nombre,
+      lat: Number(item.lat),
+      lng: Number(item.lng),
+      estado: getPetStatusLabel(Number(item.statusId)),
+      especie: getAnimalTypeLabel(Number(item.animalTypeId)),
+    }));
+
+    // Filtros opcionales (case-insensitive, por substring).
+    const estado = typeof req.query.estado === "string" ? req.query.estado.toLowerCase() : null;
+    const especie = typeof req.query.especie === "string" ? req.query.especie.toLowerCase() : null;
+    if (estado) ubicaciones = ubicaciones.filter((u) => u.estado.toLowerCase().includes(estado));
+    if (especie) ubicaciones = ubicaciones.filter((u) => u.especie.toLowerCase().includes(especie));
+
+    return res.json({ ok: true, data: ubicaciones });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ ok: false, error: "Error al obtener el mapa" });
   }
 }
 

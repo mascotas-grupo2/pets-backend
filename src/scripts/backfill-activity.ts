@@ -55,9 +55,9 @@ async function main() {
         link: "/admin/personas",
         createdAt: u.createdAt,
       });
-    }
   }
-  for (const a of adoptions) {
+}
+for (const a of adoptions) {
     rows.push({
       type: "solicitud",
       title: `Solicitud de ${a.firstName} ${a.lastName}`.trim(),
