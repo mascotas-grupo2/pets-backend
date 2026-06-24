@@ -6,10 +6,23 @@ import { makePet } from "../factories.js";
 const findOneBy = vi.fn();
 const findBy = vi.fn();
 const find = vi.fn();
+const createQueryBuilder = vi.fn(() => ({
+  where() {
+    return this;
+  },
+  andWhere() {
+    return this;
+  },
+  orderBy() {
+    return this;
+  },
+  getMany: async () => [],
+  getRawMany: async () => [],
+}));
 
 vi.mock("../../src/data-source.js", () => ({
   AppDataSource: {
-    getRepository: () => ({ findOneBy, findBy, find }),
+    getRepository: () => ({ findOneBy, findBy, find, createQueryBuilder }),
   },
 }));
 
@@ -40,6 +53,7 @@ beforeEach(() => {
   findOneBy.mockReset();
   findBy.mockReset();
   find.mockReset();
+  find.mockResolvedValue([]);
 });
 
 describe("getMascota", () => {

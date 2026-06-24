@@ -5,10 +5,11 @@ import { mockRes, mockReq } from "../helpers/express.js";
 import { makeUser } from "../factories.js";
 
 const findAndCount = vi.fn();
+const count = vi.fn(async () => 0);
 
 vi.mock("../../src/data-source.js", () => ({
   AppDataSource: {
-    getRepository: () => ({ findAndCount }),
+    getRepository: () => ({ findAndCount, count }),
   },
 }));
 
@@ -32,6 +33,8 @@ function ilikeValue(like: any): string {
 beforeEach(() => {
   findAndCount.mockReset();
   findAndCount.mockResolvedValue([[], 0]);
+  count.mockReset();
+  count.mockResolvedValue(0);
 });
 
 describe("adminListUsers - validacion y defaults", () => {

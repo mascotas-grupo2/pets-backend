@@ -9,8 +9,8 @@ const adoptionRepoMock = {
   create: vi.fn((x: any) => x),
   find: vi.fn(),
 };
-const userRepoMock = { findOneBy: vi.fn() };
-const petRepoMock = { findOneBy: vi.fn() };
+const userRepoMock = { findOneBy: vi.fn(), findBy: vi.fn(async () => []) };
+const petRepoMock = { findOneBy: vi.fn(), findBy: vi.fn(async () => []) };
 
 vi.mock("../../src/data-source.js", () => ({
   AppDataSource: {
@@ -311,7 +311,7 @@ describe("listAdoptions", () => {
     await listAdoptions(authReq({ id: 1, role: "admin" }), res);
 
     const call = adoptionRepoMock.find.mock.calls[0][0];
-    expect(call.where).toBeUndefined();
+    expect(call.where).toHaveProperty("petId");
     const body = res.json.mock.calls[0][0];
     expect(body).toHaveLength(3);
   });
@@ -324,6 +324,7 @@ describe("listAdoptions", () => {
     await listAdoptions(authReq({ id: 5 }), res);
 
     const call = adoptionRepoMock.find.mock.calls[0][0];
-    expect(call.where).toEqual({ userId: 5 });
+    expect(call.where).toMatchObject({ userId: 5 });
+    expect(call.where).toHaveProperty("petId");
   });
 });

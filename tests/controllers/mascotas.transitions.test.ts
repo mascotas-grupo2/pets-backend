@@ -72,7 +72,7 @@ describe("approveMascota", () => {
 });
 
 describe("finalizeMascota", () => {
-  it("setea reportStatusId a 'finalizado' y guarda", async () => {
+  it("rechaza la finalización manual con 409 (se finaliza sola al adoptar)", async () => {
     const pet = makePet({ reportStatusId: CatalogIds.petReportStatus.activo });
     findOneBy.mockResolvedValue(pet);
     save.mockImplementation(async (p) => p);
@@ -80,18 +80,8 @@ describe("finalizeMascota", () => {
     const res = mockRes();
     await finalizeMascota({ params: { id: pet.id } } as any, res);
 
-    expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reportStatusId: CatalogIds.petReportStatus.finalizado,
-      }),
-    );
-  });
-
-  it("devuelve 404 si no existe", async () => {
-    findOneBy.mockResolvedValue(null);
-    const res = mockRes();
-    await finalizeMascota({ params: { id: "x" } } as any, res);
-    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(save).not.toHaveBeenCalled();
   });
 });
 
