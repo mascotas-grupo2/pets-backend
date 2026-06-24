@@ -14,7 +14,8 @@
     "seed": "tsx src/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:cov": "vitest run --coverage"
+    "test:cov": "vitest run --coverage",
+    "backfill:activity": "tsx src/scripts/backfill-activity.ts"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

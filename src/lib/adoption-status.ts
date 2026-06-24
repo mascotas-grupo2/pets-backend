@@ -41,3 +41,30 @@ export function parseStatusId(
   if (!trimmed) return undefined;
   return adoptionStatusByCode.get(trimmed as AdoptionStatusCode) ?? undefined;
 }
+
+export const adoptionStatusChain: AdoptionStatusCode[] = [
+  "NUEVA",
+  "EN_EVALUACION",
+  "ENTREVISTA_PENDIENTE",
+  "ACEPTADA_CON_SEGUIMIENTO",
+  "ACEPTADA",
+];
+
+export function isTerminalAdoptionStatus(code: AdoptionStatusCode) {
+  return code === "ACEPTADA" || code === "DESCARTADA";
+}
+
+export function allowedNextAdoptionStatuses(
+  code: AdoptionStatusCode,
+): AdoptionStatusCode[] {
+  if (isTerminalAdoptionStatus(code)) return [];
+  const idx = adoptionStatusChain.indexOf(code);
+  const next =
+    idx >= 0 && idx < adoptionStatusChain.length - 1
+      ? adoptionStatusChain[idx + 1]
+      : null;
+  const result: AdoptionStatusCode[] = [];
+  if (next) result.push(next);
+  result.push("DESCARTADA");
+  return result;
+}

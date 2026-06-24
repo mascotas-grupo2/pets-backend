@@ -5,6 +5,15 @@ const optionalPositiveInt = z.preprocess(
   z.coerce.number().int().positive().optional(),
 );
 
+
+const optionalNonEmptyString = z.preprocess(
+  (value) => {
+    if (value === "" || value === null) return undefined;
+    return value;
+  },
+  z.string().min(1).max(120).optional(),
+);
+
 const catalogReference = z.preprocess(
   (value) => {
     if (value === "" || value === null) return undefined;
@@ -23,7 +32,7 @@ const petBaseSchema = z.object({
   id: z.string().optional(),
   createdAt: z.string().optional(),
   userId: z.number().int().positive().optional(),
-  name: z.string().min(1).max(120).optional(),
+  name: optionalNonEmptyString,
   photo: z.string().min(1).nullable().optional(),
   photos: z.array(z.string().url()).optional(),
   description: z.string().min(1).max(2000),
@@ -37,19 +46,19 @@ const petBaseSchema = z.object({
   contactEmail: z.string().email().max(120),
   sexId: optionalPositiveInt,
   sex: catalogReference.optional(),
-  breed: z.string().max(120).optional(),
-  ageMonths: z.number().int().nonnegative().optional(),
-  color: z.string().max(80).optional(),
-  weightKg: z.number().nonnegative().optional(),
-  heightCm: z.number().nonnegative().optional(),
-  hasCollar: z.boolean().optional(),
-  hasTag: z.boolean().optional(),
-  microchipped: z.boolean().optional(),
-  neutered: z.boolean().optional(),
-  vaccinated: z.boolean().optional(),
-  friendlyWithKids: z.boolean().optional(),
-  friendlyWithPets: z.boolean().optional(),
-  trained: z.boolean().optional(),
+  breed: z.string().max(120).nullable().optional(),
+  ageMonths: z.number().int().nonnegative().nullable().optional(),
+  color: z.string().max(80).nullable().optional(),
+  weightKg: z.number().nonnegative().nullable().optional(),
+  heightCm: z.number().nonnegative().nullable().optional(),
+  hasCollar: z.boolean().nullable().optional(),
+  hasTag: z.boolean().nullable().optional(),
+  microchipped: z.boolean().nullable().optional(),
+  neutered: z.boolean().nullable().optional(),
+  vaccinated: z.boolean().nullable().optional(),
+  friendlyWithKids: z.boolean().nullable().optional(),
+  friendlyWithPets: z.boolean().nullable().optional(),
+  trained: z.boolean().nullable().optional(),
   activityLevelId: optionalPositiveInt,
   activityLevel: catalogReference.optional(),
   reward: z.string().max(120).optional(),
@@ -59,6 +68,7 @@ const petBaseSchema = z.object({
   reportStatus: catalogReference.optional(),
   medicalStatusId: optionalPositiveInt,
   medicalStatus: catalogReference.optional(),
+  isOwner: z.boolean().optional(),
 });
 
 export const petCreateSchema = petBaseSchema.superRefine((value, ctx) => {

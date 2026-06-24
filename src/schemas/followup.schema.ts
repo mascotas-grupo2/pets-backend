@@ -14,9 +14,27 @@ export const followupListQuerySchema = z.object({
   userId: z.coerce.number().int().positive().optional(),
   typeId: z.coerce.number().int().positive().optional(),
   statusId: z.coerce.number().int().positive().optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  orderBy: z.enum(["id", "petId", "userId", "typeId", "statusId", "appointmentAt", "createdAt"]).optional().default("appointmentAt"),
+  orderDir: z.enum(["ASC", "DESC", "asc", "desc"]).optional().default("DESC"),
+});
+
+export const followupUpdateSchema = z.object({
+  petId: z.string().uuid().optional(),
+  userId: z.number().int().positive().optional(),
+  typeId: z.number().int().positive().optional(),
+  appointmentAt: z.coerce
+    .date()
+    .refine((date) => date > new Date(), {
+      message: "La fecha de seguimiento debe ser mayor a la actual",
+    })
+    .optional(),
+  statusId: z.number().int().positive().optional(),
 });
 
 export type FollowupCreateInput = z.infer<typeof followupCreateSchema>;
 export type FollowupListQuery = z.infer<typeof followupListQuerySchema>;
+export type FollowupUpdateInput = z.infer<typeof followupUpdateSchema>;

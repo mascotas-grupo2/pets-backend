@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from "typeorm";
 
 @Entity()
 export class Adoption {
@@ -83,6 +83,11 @@ export class Adoption {
   @Column({ type: "boolean", default: false })
   acceptsTerms!: boolean;
 
+  // "adopcion" (default) | "transito": reusa esta tabla/flujo para ofrecimientos
+  // de hogar de tránsito.
+  @Column({ type: "varchar", length: 20, default: "adopcion" })
+  kind!: string;
+
   @Column({ type: "int", default: 1201 })
   statusId!: number;
 
@@ -91,4 +96,7 @@ export class Adoption {
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
+
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt!: Date;
 }

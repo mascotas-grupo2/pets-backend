@@ -10,9 +10,10 @@ import {
   resetPasswordSchema,
   verifyEmailSchema,
 } from "../schemas/auth.schema.js";
-import { publicUser } from "./user.controller.js";
+import { deleteUserCascade, publicUser } from "./user.controller.js";
 import {
   clearAuthCookies,
+  createAccessToken,
   createRefreshToken,
   getRequestToken,
   hashToken,
@@ -24,6 +25,7 @@ import { isAdminEmail } from "../lib/bootstrap-admins.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import crypto from "crypto";
 import { sendPasswordResetMail, sendVerificationMail } from "../lib/mailer.js";
+import { recordActivity } from "../lib/activity.js";
 
 function userRepo() {
   return AppDataSource.getRepository(User);
@@ -92,6 +94,14 @@ export async function register(req: Request, res: Response) {
     roleId: isAdminEmail(email) ? CatalogIds.userRole.admin : CatalogIds.userRole.user,
   });
   const saved = await userRepo().save(user);
+  await recordActivity({
+    type: "usuario_nuevo",
+    title: `Nuevo usuario: ${saved.name}`,
+    actorUserId: saved.id,
+    refType: "user",
+    refId: saved.id,
+    link: "/admin/personas",
+  });
 
   // Enviar correo de verificación
   const url = verificationUrl(verificationToken);
@@ -226,6 +236,170 @@ export async function resetPassword(req: Request, res: Response) {
   existing.refreshTokenHash = null;
   await userRepo().save(existing);
 
+  clearAuthCookies(res);
+  res.status(204).send();
+}
+
+/**
+ * Devuelve un access token para el handshake del websocket. El usuario ya está
+ * autenticado por cookie (requireAuth); le damos un token corto para que el
+ * cliente Socket.IO lo mande en el handshake (auth.token).
+ */
+export async function wsToken(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(401).json({ error: "No autenticado" });
+  const user = await userRepo().findOneBy({ id });
+  // Token válido pero el usuario ya no existe (p. ej. sesión vieja): es un
+  // problema de sesión → 401 para que el front fuerce re-login, no 404.
+  if (!user) return res.status(401).json({ error: "Sesión inválida" });
+  const token = await createAccessToken(user);
+  res.json({ token });
+}
+
+export async function resendVerification(req: Request, res: Response) {
+  // Reusamos el schema de forgot-password (solo necesita { email }).
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const existing = await userRepo().findOneBy({ email: parsed.data.email });
+  // Solo reenviamos si el usuario existe y todavía no verificó. No revelamos
+  // cuál de las dos cosas pasa: siempre respondemos 204 (evita enumeración).
+  if (existing && !existing.emailVerified) {
+    const verificationToken = createRefreshToken();
+    existing.emailVerificationTokenHash = hashToken(verificationToken);
+    await userRepo().save(existing);
+
+    const url = verificationUrl(verificationToken);
+    if (url) {
+      try {
+        await sendVerificationMail(existing.email, existing.name, url);
+        console.log(`[ResendVerification] Email reenviado a: ${existing.email}`);
+      } catch (error) {
+        console.error(`[ResendVerification] Error al enviar email a ${existing.email}:`, error);
+      }
+    }
+  }
+
+  res.status(204).send();
+}
+
+export async function changeEmail(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(401).json({ error: "Usuario no autenticado" });
+
+  const newEmail =
+    typeof req.body?.newEmail === "string" ? req.body.newEmail.trim().toLowerCase() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+    return res.status(400).json({ error: "Email inválido." });
+  }
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  // Confirmación por contraseña (si tiene local).
+  const hash = crypto
+    .pbkdf2Sync(password, user.passwordSalt, 310000, 32, "sha256")
+    .toString("hex");
+  if (hash !== user.passwordHash) {
+    return res.status(400).json({ error: "La contraseña es incorrecta." });
+  }
+
+  if (newEmail === user.email.toLowerCase()) {
+    return res.status(400).json({ error: "Ese ya es tu email actual." });
+  }
+  const taken = await userRepo().findOneBy({ email: newEmail });
+  if (taken) return res.status(409).json({ error: "Ese email ya está en uso." });
+
+  // Cambiamos el email y pedimos re-verificación.
+  const verificationToken = createRefreshToken();
+  user.email = newEmail;
+  user.emailVerified = false;
+  user.emailVerificationTokenHash = hashToken(verificationToken);
+  await userRepo().save(user);
+
+  const url = verificationUrl(verificationToken);
+  if (url) {
+    try {
+      await sendVerificationMail(user.email, user.name, url);
+    } catch (error) {
+      console.error(`[changeEmail] Error al enviar verificación a ${user.email}:`, error);
+    }
+  }
+
+  res.json({
+    email: user.email,
+    message: "Email actualizado. Te enviamos un correo para verificar la nueva dirección.",
+  });
+}
+
+export async function changePassword(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id)) return res.status(401).json({ error: "Usuario no autenticado" });
+
+  const currentPassword =
+    typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
+  const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+  if (newPassword.length < 8 || newPassword.length > 128) {
+    return res
+      .status(400)
+      .json({ error: "La nueva contraseña debe tener entre 8 y 128 caracteres." });
+  }
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  const currentHash = crypto
+    .pbkdf2Sync(currentPassword, user.passwordSalt, 310000, 32, "sha256")
+    .toString("hex");
+  if (currentHash !== user.passwordHash) {
+    return res.status(400).json({ error: "La contraseña actual es incorrecta." });
+  }
+
+  const { salt, hash } = hashPassword(newPassword);
+  user.passwordHash = hash;
+  user.passwordSalt = salt;
+  // Invalidamos sesiones: hay que volver a iniciar sesión con la nueva clave.
+  user.refreshTokenHash = null;
+  await userRepo().save(user);
+
+  clearAuthCookies(res);
+  res.status(204).send();
+}
+
+export async function deleteAccount(req: Request, res: Response) {
+  const id = req.authUser?.id;
+  if (!Number.isInteger(id) || id == null) {
+    return res.status(401).json({ error: "Usuario no autenticado" });
+  }
+
+  const user = await userRepo().findOneBy({ id });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  // Confirmación por contraseña (si el usuario tiene una local; los SSO sin
+  // contraseña local quedan eximidos de este chequeo).
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (password) {
+    const hash = crypto
+      .pbkdf2Sync(password, user.passwordSalt, 310000, 32, "sha256")
+      .toString("hex");
+    if (hash !== user.passwordHash) {
+      return res.status(400).json({ error: "Contraseña incorrecta." });
+    }
+  }
+
+  if (user.roleId === CatalogIds.userRole.admin) {
+    const adminCount = await userRepo().count({
+      where: { roleId: CatalogIds.userRole.admin },
+    });
+    if (adminCount <= 1) {
+      return res
+        .status(400)
+        .json({ error: "No podés eliminar la única cuenta de administrador." });
+    }
+  }
+
+  await deleteUserCascade(id);
   clearAuthCookies(res);
   res.status(204).send();
 }

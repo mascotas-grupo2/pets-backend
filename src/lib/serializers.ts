@@ -2,6 +2,7 @@ import { Adoption } from "../entity/Adoption.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
+import { expiryInfo } from "./pet-expiry.js";
 
 export type CatalogValueMap = Map<number, CatalogValue>;
 
@@ -27,9 +28,14 @@ export function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMa
   const medicalStatus = catalogInfo(catalogValuesById, mascota.medicalStatusId);
   const activityLevel = catalogInfo(catalogValuesById, (mascota as any).activityLevelId);
   const payload = { ...(mascota as any) };
+  const exp = expiryInfo((mascota as any).expiresAt);
 
   return {
     ...payload,
+    viewsCount: mascota.viewsCount ?? 0,
+    expiresAt: (mascota as any).expiresAt ?? null,
+    daysLeft: exp.daysLeft,
+    expired: exp.expired,
     animalType: animalType?.code ?? null,
     animalTypeLabel: animalType?.label ?? null,
     animalTypeInfo: animalType,

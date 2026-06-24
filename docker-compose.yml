@@ -58,7 +58,7 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: /bin/sh -c "sleep 5; mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; mc mb --ignore-existing myminio/report-images; mc policy set download myminio/report-images || true; mc mb --ignore-existing myminio/profile; mc policy set download myminio/profile || true; exit 0"
+    entrypoint: /bin/sh -c "sleep 5; mc alias set myminio http://minio:9090 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; mc mb --ignore-existing myminio/report-images; mc policy set download myminio/report-images || true; mc mb --ignore-existing myminio/profile; mc policy set download myminio/profile || true; mc mb --ignore-existing myminio/message-files; mc policy set download myminio/message-files || true; exit 0"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -89,6 +89,11 @@ services:
       MINIO_PROFILE_BUCKET: profile
       FRONTEND_URL: ${FRONTEND_URL}
       CORS_ORIGIN: ${CORS_ORIGIN}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL}
+      CHAT_MAX_TOOL_ITERATIONS: ${CHAT_MAX_TOOL_ITERATIONS}
+      CHAT_HISTORY_LIMIT: ${CHAT_HISTORY_LIMIT}
+      CHAT_SESSION_TTL_MINUTES: ${CHAT_SESSION_TTL_MINUTES}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USER: ${SMTP_USER}

@@ -35,6 +35,7 @@ export const CatalogIds = {
     medico: 204,
     adopcion: 205,
     adoptado: 206,
+    devueltaAlDueno: 207,
   },
   petMedicalStatus: {
     sano: 301,
@@ -92,6 +93,7 @@ export const CatalogIds = {
     activo: 1102,
     finalizado: 1103,
     rechazado: 1104,
+    reservada: 1105,
   },
   adoptionStatus: {
     nueva: 1201,
@@ -112,6 +114,7 @@ export const CatalogIds = {
   followupStatus: {
     pendiente: 1311,
     confirmado: 1312,
+    completado: 1313,
   },
 } as const;
 
@@ -138,6 +141,7 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 204, catalog: Catalog.PET_STATUS, code: "en tratamiento médico", label: "En tratamiento médico" },
   { id: 205, catalog: Catalog.PET_STATUS, code: "en adopción", label: "En adopción" },
   { id: 206, catalog: Catalog.PET_STATUS, code: "adoptado", label: "Adoptado" },
+  { id: 207, catalog: Catalog.PET_STATUS, code: "devuelta al dueño", label: "Devuelta al dueño" },
 
   { id: 301, catalog: Catalog.PET_MEDICAL_STATUS, code: "sano", label: "Sano" },
   { id: 302, catalog: Catalog.PET_MEDICAL_STATUS, code: "en evaluación", label: "En evaluación" },
@@ -200,6 +204,7 @@ export const CatalogSeed: CatalogSeedItem[] = [
 
   { id: 1311, catalog: Catalog.FOLLOWUP_STATUS, code: "PENDIENTE", label: "Pendiente" },
   { id: 1312, catalog: Catalog.FOLLOWUP_STATUS, code: "CONFIRMADO", label: "Confirmado" },
+  { id: 1313, catalog: Catalog.FOLLOWUP_STATUS, code: "COMPLETADO", label: "Completado" },
 ];
 
 const byId = new Map(CatalogSeed.map((item) => [item.id, item]));

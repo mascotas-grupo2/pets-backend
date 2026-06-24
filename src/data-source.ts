@@ -9,6 +9,12 @@ import { Followup } from "./entity/Followup.js";
 import { Message } from "./entity/Message.js";
 import { ChatSession } from "./entity/ChatSession.js";
 import { ChatMessage } from "./entity/ChatMessage.js";
+import { AdoptionCheck } from "./entity/AdoptionCheck.js";
+import { AdoptionNote } from "./entity/AdoptionNote.js";
+import { Notification } from "./entity/Notification.js";
+import { PetComment } from "./entity/PetComment.js";
+import { Activity } from "./entity/Activity.js";
+import { Sighting } from "./entity/Sighting.js";
 import { InitPetTable1744402212000 } from "./migration/1744402212000-Init.js";
 import { AddUser1744402213000 } from "./migration/1744402213000-AddUser.js";
 import { AddAuthTokens1744402214000 } from "./migration/1744402214000-AddAuthTokens.js";
@@ -23,6 +29,8 @@ import { AddAdoptionPetId1744402220000 } from "./migration/1744402220000-AddAdop
 import { NormalizeCatalogValues1744402222000 } from "./migration/1744402222000-NormalizeCatalogValues.js";
 import { AddReportStatus1744402223000 } from "./migration/1744402223000-AddReportStatus.js";
 import { AddRejectedReportStatus1744402224000 } from "./migration/1744402224000-AddRejectedReportStatus.js";
+import { AddReservedReportStatus1749000000000 } from "./migration/1749000000000-AddReservedReportStatus.js";
+import { RenameEncontradoLabel1749000100000 } from "./migration/1749000100000-RenameEncontradoLabel.js";
 import { AddAdoptionStatusAndCompatibility1748600000000 } from "./migration/1748600000000-AddAdoptionStatusAndCompatibility.js";
 import { AddAdoptionStatusCatalog1748600001000 } from "./migration/1748600001000-AddAdoptionStatusCatalog.js";
 import { AddAdoptionStatusFk1748600002000 } from "./migration/1748600002000-AddAdoptionStatusFk.js";
@@ -32,6 +40,19 @@ import { AddMessageTable1748700000000 } from "./migration/1748700000000-AddMessa
 import { AddUserStatusAndNote1748710000000 } from "./migration/1748710000000-AddUserStatusAndNote.js";
 import { AddPetCompatibilityFields1748800000000 } from "./migration/1748800000000-AddPetCompatibilityFields.js";
 import { AddChatSession1748900000000 } from "./migration/1748900000000-AddChatSession.js";
+import { AddAdoptionUpdatedAt1749100000000 } from "./migration/1749100000000-AddAdoptionUpdatedAt.js";
+import { AddAdoptionEvaluation1749200000000 } from "./migration/1749200000000-AddAdoptionEvaluation.js";
+import { AddFollowupStatusCompletado1749300000000 } from "./migration/1749300000000-AddFollowupStatusCompletado.js";
+import { AddNotification1749400000000 } from "./migration/1749400000000-AddNotification.js";
+import { AddMessagePhoto1749500000000 } from "./migration/1749500000000-AddMessagePhoto.js";
+import { AddAdoptionKind1749600000000 } from "./migration/1749600000000-AddAdoptionKind.js";
+import { AddViewsAndComments1749700000000 } from "./migration/1749700000000-AddViewsAndComments.js";
+import { AddActivity1749800000000 } from "./migration/1749800000000-AddActivity.js";
+import { AddSighting1749900000000 } from "./migration/1749900000000-AddSighting.js";
+import { AddIsOwnerToPet1750000000000 } from "./migration/1750000000000-AddIsOwnerToPet.js";
+import { AddOwnerUserIdToPet1750000000001 } from "./migration/1750000000001-AddOwnerUserIdToPet.js";
+import { AddPetExpiresAt1750000002000 } from "./migration/1750000002000-AddPetExpiresAt.js";
+import { AddPetExpiryNotifiedAt1750000003000 } from "./migration/1750000003000-AddPetExpiryNotifiedAt.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -46,6 +67,12 @@ export const AppDataSource = new DataSource({
     Message,
     ChatSession,
     ChatMessage,
+    AdoptionCheck,
+    AdoptionNote,
+    Notification,
+    PetComment,
+    Activity,
+    Sighting,
   ],
   migrations: [
     InitPetTable1744402212000,
@@ -62,6 +89,8 @@ export const AppDataSource = new DataSource({
     NormalizeCatalogValues1744402222000,
     AddReportStatus1744402223000,
     AddRejectedReportStatus1744402224000,
+    AddReservedReportStatus1749000000000,
+    RenameEncontradoLabel1749000100000,
     AddAdoptionStatusAndCompatibility1748600000000,
     AddAdoptionStatusCatalog1748600001000,
     AddAdoptionStatusFk1748600002000,
@@ -71,6 +100,19 @@ export const AppDataSource = new DataSource({
     AddUserStatusAndNote1748710000000,
     AddPetCompatibilityFields1748800000000,
     AddChatSession1748900000000,
+    AddAdoptionUpdatedAt1749100000000,
+    AddAdoptionEvaluation1749200000000,
+    AddFollowupStatusCompletado1749300000000,
+    AddNotification1749400000000,
+    AddMessagePhoto1749500000000,
+    AddAdoptionKind1749600000000,
+    AddViewsAndComments1749700000000,
+    AddActivity1749800000000,
+    AddSighting1749900000000,
+    AddIsOwnerToPet1750000000000,
+    AddOwnerUserIdToPet1750000000001,
+    AddPetExpiresAt1750000002000,
+    AddPetExpiryNotifiedAt1750000003000,
   ],
   synchronize: false,
 });

@@ -8,7 +8,7 @@ import { User } from "./entity/User.js";
 import { Followup } from "./entity/Followup.js";
 import { Adoption } from "./entity/Adoption.js";
 import { Message } from "./entity/Message.js";
-import { CatalogIds } from "./lib/catalog-constants.js";
+import { CatalogIds, catalogIdForCode } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 import { calculateCompatibility } from "./lib/matching.js";
 
@@ -22,7 +22,11 @@ function contentTypeForFile(fileName: string) {
   throw new Error(`Formato de imagen no soportado para seed: ${fileName}`);
 }
 
-async function uploadSeedPhoto(bucket: string, fileName: string, folder?: string) {
+async function uploadSeedPhoto(
+  bucket: string,
+  fileName: string,
+  folder?: string,
+) {
   const filePath = path.join(seedAssetsDir, fileName);
   if (!existsSync(filePath)) {
     throw new Error(`No se encontro la imagen de seed: ${filePath}`);
@@ -30,7 +34,13 @@ async function uploadSeedPhoto(bucket: string, fileName: string, folder?: string
 
   // Use uploadFileToMinio to place the file under a folder (e.g., pet id)
   const buffer = readFileSync(filePath);
-  return uploadFileToMinio(bucket, folder ?? "", fileName, buffer, contentTypeForFile(fileName));
+  return uploadFileToMinio(
+    bucket,
+    folder ?? "",
+    fileName,
+    buffer,
+    contentTypeForFile(fileName),
+  );
 }
 
 async function seed() {
@@ -56,8 +66,9 @@ async function seed() {
     {
       name: "Toby",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.perdido,
-      description: "Perro labrador color dorado, muy cariñoso. Lleva collar rojo. Tiene una pequeña cicatriz en la oreja derecha.",
+      statusId: catalogIdForCode("pet_status", "perdido"),
+      description:
+        "Perro labrador color dorado, muy cariñoso. Lleva collar rojo. Tiene una pequeña cicatriz en la oreja derecha.",
       date: "2026-05-26",
       location: "Plaza Serrano, Palermo, CABA",
       contactPhone: "1144556677",
@@ -69,13 +80,18 @@ async function seed() {
       weightKg: 28,
       hasCollar: true,
       vaccinated: true,
+      friendlyWithKids: true,
+      friendlyWithPets: true,
+      trained: true,
+      activityLevelId: CatalogIds.activityLevel.moderado,
       seedImage: "toby.png",
     },
     {
       name: "Coco",
       animalTypeId: CatalogIds.animalType.perro,
       statusId: CatalogIds.petStatus.perdido,
-      description: "Caniche toy color caramelo. Responde a su nombre. Lleva collar con cascabel.",
+      description:
+        "Caniche toy color caramelo. Responde a su nombre. Lleva collar con cascabel.",
       date: "2026-05-27",
       location: "Triunvirato 4200, Villa Urquiza, CABA",
       contactPhone: "1133445566",
@@ -90,14 +106,20 @@ async function seed() {
       vaccinated: true,
       neutered: true,
       reward: "$50.000",
+      friendlyWithKids: false,
+      friendlyWithPets: true,
+      trained: false,
+      activityLevelId: CatalogIds.activityLevel.activo,
+      seedImage: "coco.png",
     },
 
     // ============= PERROS ENCONTRADOS =============
     {
-      name: null,
+      name: "Bobi",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.encontrado,
-      description: "Perro mestizo tamaño mediano, marrón con patas blancas. Sin collar. Muy amigable, parece bien cuidado.",
+      statusId: catalogIdForCode("pet_status", "encontrado"),
+      description:
+        "Perro mestizo tamaño mediano, marrón con patas blancas. Sin collar. Muy amigable, parece bien cuidado.",
       date: "2026-05-26",
       location: "Parque Barrancas de Belgrano, CABA",
       contactPhone: "1177889900",
@@ -109,12 +131,17 @@ async function seed() {
       weightKg: 15,
       hasCollar: false,
       friendlyWithKids: true,
+      friendlyWithPets: true,
+      trained: false,
+      activityLevelId: CatalogIds.activityLevel.moderado,
+      seedImage: "bobi.png",
     },
     {
-      name: null,
+      name: "Manchas",
       animalTypeId: CatalogIds.animalType.perro,
       statusId: CatalogIds.petStatus.encontrado,
-      description: "Perro chico negro con manchas blancas en el pecho. Tenía collar rosa sin chapita.",
+      description:
+        "Perro chico negro con manchas blancas en el pecho. Tenía collar rosa sin chapita.",
       date: "2026-05-28",
       location: "Av. Rivadavia 4800, Almagro, CABA",
       contactPhone: "1166554433",
@@ -125,19 +152,25 @@ async function seed() {
       color: "Negro y blanco",
       weightKg: 8,
       hasCollar: true,
+      friendlyWithKids: true,
+      friendlyWithPets: false,
+      trained: true,
+      activityLevelId: CatalogIds.activityLevel.activo,
+      seedImage: "manchas.png",
     },
 
     // ============= PERROS EN ADOPCIÓN =============
     {
       name: "Max",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.adopcion,
-      description: "Perro mestizo de 2 años rescatado de la calle. Castrado, vacunado, desparasitado. Bueno con chicos y otros perros. Necesita una familia paciente que le dé tiempo de adaptación.",
+      statusId: catalogIdForCode("pet_status", "en adopción"),
+      description:
+        "Perro mestizo de 2 años rescatado de la calle. Castrado, vacunado, desparasitado. Bueno con chicos y otros perros. Necesita una familia paciente que le dé tiempo de adaptación.",
       date: "2026-05-15",
       location: "Refugio Patitas Felices, Villa Crespo, CABA",
       contactPhone: "1155667788",
       contactEmail: "adopciones@patitasfelices.example.com",
-      sexId: CatalogIds.petSex.macho,
+      sexId: catalogIdForCode("pet_sex", "macho"),
       breed: "Mestizo",
       ageMonths: 24,
       color: "Negro",
@@ -145,13 +178,17 @@ async function seed() {
       neutered: true,
       vaccinated: true,
       friendlyWithKids: true,
+      friendlyWithPets: true,
       trained: true,
+      activityLevelId: CatalogIds.activityLevel.tranquilo,
+      seedImage: "max.png",
     },
     {
       name: "Rocco",
       animalTypeId: CatalogIds.animalType.perro,
       statusId: CatalogIds.petStatus.adopcion,
-      description: "Bulldog francés joven, súper sociable. Energético, ideal para una familia con espacio. Castrado y al día con sus vacunas.",
+      description:
+        "Bulldog francés joven, súper sociable. Energético, ideal para una familia con espacio. Castrado y al día con sus vacunas.",
       date: "2026-05-18",
       location: "Hogar Canino San Telmo, CABA",
       contactPhone: "1133221100",
@@ -164,6 +201,10 @@ async function seed() {
       neutered: true,
       vaccinated: true,
       friendlyWithKids: true,
+      friendlyWithPets: false,
+      trained: false,
+      activityLevelId: CatalogIds.activityLevel.activo,
+      seedImage: "rocco.png",
     },
 
     // ============= GATOS PERDIDOS =============
@@ -171,12 +212,13 @@ async function seed() {
       name: "Pelusa",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.perdido,
-      description: "Gata blanca con manchas grises en el lomo. Asustadiza con extraños pero busca cariño una vez en confianza.",
+      description:
+        "Gata blanca con manchas grises en el lomo. Asustadiza con extraños pero busca cariño una vez en confianza.",
       date: "2026-05-25",
       location: "Av. Rivadavia 5400, Caballito, CABA",
       contactPhone: "1166778899",
       contactEmail: "matias.pelusa@example.com",
-      sexId: CatalogIds.petSex.hembra,
+      sexId: catalogIdForCode("pet_sex", "hembra"),
       breed: "Común europeo",
       ageMonths: 24,
       color: "Blanco y gris",
@@ -184,12 +226,18 @@ async function seed() {
       hasCollar: false,
       microchipped: true,
       neutered: true,
+      friendlyWithKids: false,
+      friendlyWithPets: true,
+      trained: true,
+      activityLevelId: CatalogIds.activityLevel.tranquilo,
+      seedImage: "pelusa.png",
     },
     {
       name: "Simba",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.perdido,
-      description: "Gato naranja persa, muy peludo. Se escapó por una ventana. Tiene microchip y collar con chapita.",
+      description:
+        "Gato naranja persa, muy peludo. Se escapó por una ventana. Tiene microchip y collar con chapita.",
       date: "2026-05-24",
       location: "Junín 1800, Recoleta, CABA",
       contactPhone: "1188990011",
@@ -204,14 +252,20 @@ async function seed() {
       microchipped: true,
       neutered: true,
       reward: "$30.000",
+      friendlyWithKids: true,
+      friendlyWithPets: false,
+      trained: true,
+      activityLevelId: catalogIdForCode("activity_level", "moderado"),
+      seedImage: "simba.png",
     },
 
     // ============= GATOS ENCONTRADOS =============
     {
-      name: null,
+      name: "Michi",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.encontrado,
-      description: "Gata atigrada chiquita, parece joven. Maúlla mucho. La encontramos en el patio de un edificio.",
+      description:
+        "Gata atigrada chiquita, parece joven. Maúlla mucho. La encontramos en el patio de un edificio.",
       date: "2026-05-27",
       location: "Bulnes 800, Almagro, CABA",
       contactPhone: "1122334455",
@@ -222,12 +276,18 @@ async function seed() {
       color: "Atigrada",
       weightKg: 2,
       hasCollar: false,
+      friendlyWithKids: true,
+      friendlyWithPets: true,
+      trained: false,
+      activityLevelId: catalogIdForCode("activity_level", "activo"),
+      seedImage: "michi.png",
     },
     {
-      name: null,
+      name: "Salem",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.encontrado,
-      description: "Gato negro adulto, ojos verdes muy expresivos. Vino solo a la puerta de mi casa. Está flaco pero parece sano.",
+      description:
+        "Gato negro adulto, ojos verdes muy expresivos. Vino solo a la puerta de mi casa. Está flaco pero parece sano.",
       date: "2026-05-29",
       location: "Av. Rivadavia 7300, Flores, CABA",
       contactPhone: "1144332211",
@@ -237,6 +297,11 @@ async function seed() {
       ageMonths: 36,
       color: "Negro",
       weightKg: 3,
+      friendlyWithKids: false,
+      friendlyWithPets: false,
+      trained: true,
+      activityLevelId: catalogIdForCode("activity_level", "tranquilo"),
+      seedImage: "salem.png",
     },
 
     // ============= GATOS EN ADOPCIÓN =============
@@ -244,7 +309,8 @@ async function seed() {
       name: "Mishi",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.adopcion,
-      description: "Gata adulta calma y mimosa, ideal para departamento. Esterilizada, al día con vacunas. Convive bien con otros gatos.",
+      description:
+        "Gata adulta calma y mimosa, ideal para departamento. Esterilizada, al día con vacunas. Convive bien con otros gatos.",
       date: "2026-05-10",
       location: "Hogar Felino, Boedo, CABA",
       contactPhone: "1199001122",
@@ -257,12 +323,17 @@ async function seed() {
       neutered: true,
       vaccinated: true,
       friendlyWithKids: true,
+      friendlyWithPets: true,
+      trained: true,
+      activityLevelId: CatalogIds.activityLevel.tranquilo,
+      seedImage: "mishi.png",
     },
     {
       name: "Luna",
       animalTypeId: CatalogIds.animalType.gato,
       statusId: CatalogIds.petStatus.adopcion,
-      description: "Gata joven, naranja con blanco, muy juguetona y curiosa. Buena con otros gatos. Esterilizada, al día con vacunas y desparasitación.",
+      description:
+        "Gata joven, naranja con blanco, muy juguetona y curiosa. Buena con otros gatos. Esterilizada, al día con vacunas y desparasitación.",
       date: "2026-05-20",
       location: "Refugio Huellitas Mininas, Palermo, CABA",
       contactPhone: "1177665544",
@@ -274,9 +345,15 @@ async function seed() {
       weightKg: 3,
       neutered: true,
       vaccinated: true,
+      friendlyWithKids: true,
+      friendlyWithPets: true,
+      trained: false,
+      activityLevelId: CatalogIds.activityLevel.activo,
       seedImage: "luna.png",
     },
   ];
+
+  const keepPending = new Set(["Coco", "Manchas"]);
 
   const createdPets: { id: string; name: string | null }[] = [];
   for (const item of petsData) {
@@ -284,12 +361,21 @@ async function seed() {
     // mascotas del dataset. Lo extraemos antes de persistir.
     const { seedImage, ...petFields } = item as any;
     const created = await repoPets.save(
-      repoPets.create(petFields as Partial<Pet>),
+      repoPets.create({
+        ...(petFields as Partial<Pet>),
+        reportStatusId: keepPending.has((item as any).name)
+          ? CatalogIds.petReportStatus.pendiente
+          : CatalogIds.petReportStatus.activo,
+      }),
     );
     createdPets.push({ id: created.id, name: created.name ?? null });
     if (seedImage) {
       try {
-        const url = await uploadSeedPhoto(bucket, seedImage, String(created.id));
+        const url = await uploadSeedPhoto(
+          bucket,
+          seedImage,
+          String(created.id),
+        );
         created.photos = [url];
         await repoPets.save(created);
       } catch (e) {
@@ -306,28 +392,48 @@ async function seed() {
   await repoUsers.createQueryBuilder().delete().execute();
   const password = "Admin1234!";
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(password, salt, 310000, 32, "sha256").toString("hex");
+  const hash = crypto
+    .pbkdf2Sync(password, salt, 310000, 32, "sha256")
+    .toString("hex");
   const adminSaved = await repoUsers.save(
     repoUsers.create({
-      name: "Admin",
+      name: "Laura Fernández",
       email: "admin@admin.com",
       passwordHash: hash,
       passwordSalt: salt,
       roleId: CatalogIds.userRole.admin,
       emailVerified: true,
-    })
+    }),
   );
+  try {
+    const url = await uploadSeedPhoto(bucket, "admin.png", "users");
+    adminSaved.photo = url;
+    await repoUsers.save(adminSaved);
+  } catch (e) {
+    console.warn("No se pudo subir imagen de seed para admin", e);
+  }
   console.log("Seed completed: Admin user inserted (role=admin).");
 
   // Add two regular users (role = user)
   const usersToCreate = [
-    { name: "Usuario Uno", email: "user1@example.com" },
-    { name: "Usuario Dos", email: "user2@example.com" },
+    {
+      name: "Juan Pérez",
+      email: "juan.perez@example.com",
+      seedImage: "juan.png",
+    },
+    {
+      name: "María Gómez",
+      email: "maria.gomez@example.com",
+      seedImage: "maria.png",
+    },
+    { name: "Cberto", email: "cberto021@gmail.com", seedImage: "carlos.png" },
   ];
   const createdUsers: { id: number; email: string }[] = [];
   for (const u of usersToCreate) {
     const usalt = crypto.randomBytes(16).toString("hex");
-    const uhash = crypto.pbkdf2Sync(password, usalt, 310000, 32, "sha256").toString("hex");
+    const uhash = crypto
+      .pbkdf2Sync(password, usalt, 310000, 32, "sha256")
+      .toString("hex");
     const saved = await repoUsers.save(
       repoUsers.create({
         name: u.name,
@@ -336,8 +442,15 @@ async function seed() {
         passwordSalt: usalt,
         roleId: CatalogIds.userRole.user,
         emailVerified: true,
-      })
+      }),
     );
+    try {
+      const url = await uploadSeedPhoto(bucket, u.seedImage, "users");
+      saved.photo = url;
+      await repoUsers.save(saved);
+    } catch (e) {
+      console.warn("No se pudo subir imagen de seed para", u.name, e);
+    }
     createdUsers.push({ id: saved.id, email: saved.email });
   }
   // include admin in the createdUsers array for easier referencing
@@ -345,11 +458,42 @@ async function seed() {
   console.log("Seed completed: 2 usuarios insertados (role=user).");
 
   // Add more users to reach ~10 regular users
-  const moreUsers: { name: string; email: string }[] = [];
-  for (let i = 3; i <= 10; i++) moreUsers.push({ name: `Usuario ${i}`, email: `user${i}@example.com` });
+  const realNames = [
+    "Carlos Ruiz",
+    "Ana López",
+    "Ricardo Martínez",
+    "Pedro Silva",
+    "Lucía González",
+    "Sofía Rodríguez",
+    "Diego Fernández",
+    "Valentina Díaz",
+  ];
+  const moreUsers: { name: string; email: string; seedImage: string }[] = [];
+  for (let i = 0; i < realNames.length; i++) {
+    const nameParts = realNames[i].toLowerCase().split(" ");
+    const firstName = nameParts[0]
+      .replace("á", "a")
+      .replace("é", "e")
+      .replace("í", "i")
+      .replace("ó", "o")
+      .replace("ú", "u");
+    const lastName = nameParts[1]
+      .replace("á", "a")
+      .replace("é", "e")
+      .replace("í", "i")
+      .replace("ó", "o")
+      .replace("ú", "u");
+    moreUsers.push({
+      name: realNames[i],
+      email: `${firstName}.${lastName}@example.com`,
+      seedImage: `${firstName}.png`,
+    });
+  }
   for (const u of moreUsers) {
     const usalt = crypto.randomBytes(16).toString("hex");
-    const uhash = crypto.pbkdf2Sync(password, usalt, 310000, 32, "sha256").toString("hex");
+    const uhash = crypto
+      .pbkdf2Sync(password, usalt, 310000, 32, "sha256")
+      .toString("hex");
     const saved = await repoUsers.save(
       repoUsers.create({
         name: u.name,
@@ -358,15 +502,20 @@ async function seed() {
         passwordSalt: usalt,
         roleId: CatalogIds.userRole.user,
         emailVerified: true,
-      })
+      }),
     );
+    try {
+      const url = await uploadSeedPhoto(bucket, u.seedImage, "users");
+      saved.photo = url;
+      await repoUsers.save(saved);
+    } catch (e) {
+      console.warn("No se pudo subir imagen de seed para", u.name, e);
+    }
     createdUsers.push({ id: saved.id, email: saved.email });
   }
   // fetch all users count for logging
   const usersCount = await repoUsers.count();
   console.log(`Seed completed: ${usersCount} usuarios en total.`);
-
-
 
   // (removed duplicate extra user insertion to avoid unique email conflicts)
 
@@ -381,7 +530,7 @@ async function seed() {
     "Kira",
     "Balto",
     "Zoe",
-    "Diego",
+    "Thor",
   ];
   const extraPetDescriptions = [
     "Perro cariñoso que ama pasear y jugar con pelotas.",
@@ -396,50 +545,305 @@ async function seed() {
     "Perro joven, curioso y con mucha energía para entrenar.",
   ];
 
+  const extraPetImages = [
+    "bruno.png",
+    "simba_extra.png",
+    "chispa.png",
+    "maya.png",
+    "rambo.png",
+    "bella.png",
+    "kira.png",
+    "balto.png",
+    "zoe.png",
+    "thor.png",
+  ];
+
+  // Ubicaciones reales de CABA (el front conoce sus coordenadas para la vista mapa).
+  const extraPetLocations = [
+    "Plaza Serrano, Palermo, CABA",
+    "Parque Centenario, Caballito, CABA",
+    "Parque Lezama, San Telmo, CABA",
+    "Parque Rivadavia, Caballito, CABA",
+    "Barrancas de Belgrano, CABA",
+    "Parque Chacabuco, CABA",
+    "Plaza Irlanda, Caballito, CABA",
+    "Parque Los Andes, Chacarita, CABA",
+    "Plaza Pueyrredón, Flores, CABA",
+    "Parque Saavedra, CABA",
+  ];
+  const extraPetTypes = [
+    CatalogIds.animalType.perro, // Bruno  - "Perro cariñoso..."
+    CatalogIds.animalType.gato, // Simba  - "Gato curioso..."
+    CatalogIds.animalType.perro, // Chispa - "Cachorro energético..."
+    CatalogIds.animalType.gato, // Maya   - "Gata tranquila..."
+    CatalogIds.animalType.perro, // Rambo  - "Perro protector..."
+    CatalogIds.animalType.gato, // Bella  - "Hembra dulce..."
+    CatalogIds.animalType.gato, // Kira   - "Gata activa..."
+    CatalogIds.animalType.perro, // Balto  - "Perro de tamaño mediano..."
+    CatalogIds.animalType.gato, // Zoe    - "Gatito pequeño..."
+    CatalogIds.animalType.perro, // Thor   - "Perro joven..."
+  ];
+  const extraPetSexes = [
+    CatalogIds.petSex.macho, // Bruno
+    CatalogIds.petSex.macho, // Simba
+    CatalogIds.petSex.macho, // Chispa
+    CatalogIds.petSex.hembra, // Maya
+    CatalogIds.petSex.macho, // Rambo
+    CatalogIds.petSex.hembra, // Bella
+    CatalogIds.petSex.hembra, // Kira
+    CatalogIds.petSex.macho, // Balto
+    CatalogIds.petSex.hembra, // Zoe
+    CatalogIds.petSex.macho, // Thor
+  ];
+
+  // Pesos explícitos para cubrir las 3 categorías del filtro de tamaño
+  // (pequeño ≤10kg, mediano ≤25kg, grande >25kg), coherentes con el tipo.
+  const extraPetWeights = [
+    30, // Bruno  - perro grande
+    5, // Simba  - gato
+    8, // Chispa - perro pequeño (cachorro)
+    4, // Maya   - gata
+    35, // Rambo  - perro grande
+    4, // Bella  - gata
+    5, // Kira   - gata
+    22, // Balto  - perro mediano
+    3, // Zoe    - gata
+    18, // Thor   - perro mediano
+  ];
+
+  // Estados variados (perdido/encontrado/tránsito/adopción) para enriquecer el listado.
+  const extraPetStatuses = [
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.adopcion,
+  ];
+  // Antigüedad del reporte en días, relativa a HOY → habilita la urgencia y el orden.
+  const extraPetDaysAgo = [1, 0, 3, 8, 22, 2, 13, 30, 6, 40];
+  const isoDaysAgo = (n: number) =>
+    new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+
+  // Coordenadas reales (lat, lng) de cada ubicación → habilitan el mapa por
+  // cercanía (el front calcula la distancia a "Vos" con turf).
+  const extraPetCoords: [number, number][] = [
+    [-34.5889, -58.4306], // Plaza Serrano, Palermo
+    [-34.6064, -58.4356], // Parque Centenario, Caballito
+    [-34.628, -58.3697], // Parque Lezama, San Telmo
+    [-34.6184, -58.4357], // Parque Rivadavia, Caballito
+    [-34.561, -58.4546], // Barrancas de Belgrano
+    [-34.6357, -58.4316], // Parque Chacabuco
+    [-34.6156, -58.4456], // Plaza Irlanda, Caballito
+    [-34.5856, -58.4519], // Parque Los Andes, Chacarita
+    [-34.628, -58.4636], // Plaza Pueyrredón, Flores
+    [-34.5547, -58.4869], // Parque Saavedra
+  ];
+
   const extraPets = [] as any[];
   for (let i = 0; i < extraPetNames.length; i++) {
     const name = extraPetNames[i];
     extraPets.push({
       name,
-      animalTypeId: i % 2 === 0 ? CatalogIds.animalType.perro : CatalogIds.animalType.gato,
+      animalTypeId: extraPetTypes[i],
       description: extraPetDescriptions[i],
-      date: "2026-05-01",
-      location: `Barrio ${i + 1}, Ciudad`,
+      date: isoDaysAgo(extraPetDaysAgo[i]),
+      location: extraPetLocations[i],
+      latitud: extraPetCoords[i][0],
+      longitud: extraPetCoords[i][1],
       contactPhone: `11500000${i + 1}`,
       contactEmail: `pet${i + 1}@example.com`,
-      sexId: i % 2 === 0 ? CatalogIds.petSex.macho : CatalogIds.petSex.hembra,
+      sexId: extraPetSexes[i],
       breed: "Común",
       ageMonths: 6 + i,
       color: "Mixto",
-      weightKg: 3 + i,
+      weightKg: extraPetWeights[i],
       vaccinated: i % 3 !== 0,
       friendlyWithKids: i % 2 === 0,
       friendlyWithPets: i % 4 !== 0,
-      activityLevelId: i % 3 === 0 ? CatalogIds.activityLevel.tranquilo : (i % 3 === 1 ? CatalogIds.activityLevel.moderado : CatalogIds.activityLevel.activo),
-      statusId: CatalogIds.petStatus.adopcion,
+      activityLevelId:
+        i % 3 === 0
+          ? CatalogIds.activityLevel.tranquilo
+          : i % 3 === 1
+            ? CatalogIds.activityLevel.moderado
+            : CatalogIds.activityLevel.activo,
+      statusId: extraPetStatuses[i],
       reportStatusId: CatalogIds.petReportStatus.activo,
+      seedImage: extraPetImages[i],
     });
   }
   const createdExtraPets = [] as any[];
   for (const p of extraPets) {
-    const created = await repoPets.save(repoPets.create(p));
+    const { seedImage, ...petFields } = p as any;
+    const created = await repoPets.save(
+      repoPets.create(petFields as Partial<Pet>),
+    );
     createdExtraPets.push(created);
+    if (seedImage) {
+      try {
+        const url = await uploadSeedPhoto(
+          bucket,
+          seedImage,
+          String(created.id),
+        );
+        created.photos = [url];
+        await repoPets.save(created);
+      } catch (e) {
+        console.warn(
+          "No se pudo subir imagen de seed para pet adicional",
+          created.id,
+          e,
+        );
+      }
+    }
   }
-  console.log(`Seed completed: ${createdExtraPets.length} mascotas adicionales insertadas (reportStatus=activo).`);
+  console.log(
+    `Seed completed: ${createdExtraPets.length} mascotas adicionales insertadas (reportStatus=activo).`,
+  );
+
+  // Asignar un publicador (userId) SOLO a las mascotas PERDIDAS. Son reportes
+  // personales de un usuario que busca a su mascota, así los comentarios y
+  // avistamientos ("La vi") le notifican al dueño (notify() corta si es null).
+  // Las de adopción/refugio/tránsito son institucionales (del refugio) y quedan
+  // sin dueño para no aparecer en el "Mis reportes" de un usuario común.
+  // (Las mascotas se crean antes que los usuarios, por eso se asigna acá.)
+  const publisherIds = createdUsers
+    .filter((u) => u.email !== "admin@admin.com")
+    .map((u) => u.id);
+  if (publisherIds.length > 0) {
+    const lostPets = await repoPets.find({
+      where: { statusId: CatalogIds.petStatus.perdido },
+    });
+    for (let i = 0; i < lostPets.length; i++) {
+      await repoPets.update(
+        { id: lostPets[i].id },
+        { userId: publisherIds[i % publisherIds.length] },
+      );
+    }
+    console.log(
+      `Seed completed: publicador (userId) asignado a ${lostPets.length} mascotas perdidas (comentarios y avistamientos notifican al dueño).`,
+    );
+  }
+
+  // Backfill de coordenadas: las 12 mascotas principales no traen lat/lng, así que
+  // no aparecían en el mapa de métricas. Las geocodificamos por su ubicación.
+  const GEO_SEED: Record<string, [number, number]> = {
+    "Plaza Serrano, Palermo, CABA": [-34.5889, -58.4306],
+    "Triunvirato 4200, Villa Urquiza, CABA": [-34.5736, -58.4869],
+    "Parque Barrancas de Belgrano, CABA": [-34.561, -58.4546],
+    "Av. Rivadavia 4800, Almagro, CABA": [-34.6126, -58.4257],
+    "Refugio Patitas Felices, Villa Crespo, CABA": [-34.599, -58.438],
+    "Hogar Canino San Telmo, CABA": [-34.6212, -58.3716],
+    "Av. Rivadavia 5400, Caballito, CABA": [-34.6184, -58.4357],
+    "Junín 1800, Recoleta, CABA": [-34.5875, -58.396],
+    "Bulnes 800, Almagro, CABA": [-34.6035, -58.42],
+    "Av. Rivadavia 7300, Flores, CABA": [-34.628, -58.4636],
+    "Hogar Felino, Boedo, CABA": [-34.628, -58.417],
+    "Refugio Huellitas Mininas, Palermo, CABA": [-34.578, -58.425],
+  };
+  const sinCoords = await repoPets.find();
+  let geocodadas = 0;
+  for (const p of sinCoords) {
+    if ((p.latitud == null || p.longitud == null) && p.location) {
+      const c = GEO_SEED[p.location];
+      if (c) {
+        p.latitud = c[0];
+        p.longitud = c[1];
+        await repoPets.save(p);
+        geocodadas++;
+      }
+    }
+  }
+  console.log(`Seed completed: ${geocodadas} mascotas geocodificadas (mapa de métricas).`);
+
+  // Vencimiento de publicaciones: 30 días (perdidas) / 60 días (resto activo) /
+  // null (estados terminales). Base = createdAt de cada mascota (así quedan
+  // algunas vigentes y otras vencidas para la demo).
+  const DAY = 24 * 60 * 60 * 1000;
+  const todasMascotas = await repoPets.find();
+  let conVencimiento = 0;
+  for (const p of todasMascotas) {
+    const sid = p.statusId;
+    let exp: Date | null = null;
+    if (sid !== CatalogIds.petStatus.adoptado && sid !== CatalogIds.petStatus.devueltaAlDueno) {
+      const dias = sid === CatalogIds.petStatus.perdido ? 30 : 60;
+      const base = p.createdAt ? new Date(p.createdAt) : new Date();
+      exp = new Date(base.getTime() + dias * DAY);
+      conVencimiento++;
+    }
+    p.expiresAt = exp;
+    await repoPets.save(p);
+  }
+  console.log(`Seed completed: vencimiento asignado a ${conVencimiento} publicaciones.`);
+
+  // --- Fechas variadas para los filtros del listado ---
+  // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
+  // inserta todo junto, sin esto todas quedarían en "hoy". Espaciamos `createdAt`
+  // y sincronizamos `date` (la fecha de reporte que se muestra) para que coincidan.
+  // createdAt es @CreateDateColumn (TypeORM lo pisa en el INSERT), así que se
+  // setea con un UPDATE directo.
+  const allCreatedPetIds = [
+    ...createdPets.map((p) => p.id),
+    ...createdExtraPets.map((p) => p.id),
+  ];
+  const dayOffsets = [
+    0, 0, 1, 2, 3, 5, 6, 8, 10, 13, 15, 18, 20, 22, 25, 28, 35, 40, 45, 55, 60,
+    70,
+  ];
+  for (let i = 0; i < allCreatedPetIds.length; i++) {
+    const offset = dayOffsets[i % dayOffsets.length];
+    const d = new Date(Date.now() - offset * 24 * 60 * 60 * 1000);
+    await AppDataSource.query(
+      `UPDATE "pet" SET "createdAt" = $1, "date" = $2 WHERE "id" = $3`,
+      [d.toISOString(), d.toISOString().slice(0, 10), allCreatedPetIds[i]],
+    );
+  }
+  console.log(
+    `Seed completed: createdAt/date espaciados en ${allCreatedPetIds.length} mascotas (para filtros de fecha).`,
+  );
 
   // Refresh lists of users and pets to reference in adoptions and followups
   // Refresh lists of users and pets to reference in adoptions and followups
   const allUsers = await repoUsers.find();
   const allPets = await repoPets.find();
   // Build deterministic lists of created pet ids and user ids for tests
-  const deterministicPetIds = [...createdPets.map((p) => p.id), ...createdExtraPets.map((p) => p.id)];
+  const deterministicPetIds = [
+    ...createdPets.map((p) => p.id),
+    ...createdExtraPets.map((p) => p.id),
+  ];
   const deterministicUserIds = createdUsers.map((u) => u.id);
 
   // Create ~10 adoption requests
   const repoAdopt = repoAdoption; // already defined above
   const adoptionSamples = [] as Adoption[];
-  const firstNames = ["Juan", "Maria", "Carlos", "Ana", "Laura", "Ricardo", "Pedro", "Lucia", "Sofia", "Diego"];
-  const lastNames = ["Perez", "Gomez", "Ruiz", "Lopez", "Martinez", "Silva", "Gonzalez", "Rodriguez", "Fernandez", "Diaz"];
+  const firstNames = [
+    "Juan",
+    "Maria",
+    "Carlos",
+    "Ana",
+    "Laura",
+    "Ricardo",
+    "Pedro",
+    "Lucia",
+    "Sofia",
+    "Diego",
+  ];
+  const lastNames = [
+    "Perez",
+    "Gomez",
+    "Ruiz",
+    "Lopez",
+    "Martinez",
+    "Silva",
+    "Gonzalez",
+    "Rodriguez",
+    "Fernandez",
+    "Diaz",
+  ];
 
   for (let i = 1; i <= 10; i++) {
     const user = allUsers[i % allUsers.length];
@@ -457,53 +861,79 @@ async function seed() {
       postcode: `C100${i}`,
       town: "Ciudad Autónoma de Buenos Aires",
       hasGardenId: i % 2 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
-      livingSituationId: i % 2 === 0 ? CatalogIds.livingSituation.casa : CatalogIds.livingSituation.departamento,
+      livingSituationId:
+        i % 2 === 0
+          ? CatalogIds.livingSituation.casa
+          : CatalogIds.livingSituation.departamento,
       householdSettingId: CatalogIds.householdSetting.urbano,
-      activityLevelId: i % 3 === 0 ? CatalogIds.activityLevel.activo : (i % 3 === 1 ? CatalogIds.activityLevel.moderado : CatalogIds.activityLevel.tranquilo),
+      activityLevelId:
+        i % 3 === 0
+          ? CatalogIds.activityLevel.activo
+          : i % 3 === 1
+            ? CatalogIds.activityLevel.moderado
+            : CatalogIds.activityLevel.tranquilo,
       adults: (i % 3) + 1,
       children: i % 4,
-      visitingChildrenId: i % 3 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
+      visitingChildrenId:
+        i % 3 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
       hasFlatmatesId: CatalogIds.yesNo.no,
       allergies: i === 5 ? "Tengo alergia a los gatos" : null,
       otherAnimalsId: i % 2 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
       otherAnimalsDetail: i % 2 === 0 ? "Tengo un perro pequeño" : null,
       neuteredId: CatalogIds.yesNo.si,
       vaccinatedId: CatalogIds.yesNo.si,
-      experience: i % 2 === 0 ? "Tengo experiencia previa con mascotas rescatadas" : "Es mi primera mascota",
+      experience:
+        i % 2 === 0
+          ? "Tengo experiencia previa con mascotas rescatadas"
+          : "Es mi primera mascota",
       acceptsTerms: true,
-      statusId: Object.values(CatalogIds.adoptionStatus)[i % Object.values(CatalogIds.adoptionStatus).length],
+      statusId: Object.values(CatalogIds.adoptionStatus)[
+        i % Object.values(CatalogIds.adoptionStatus).length
+      ],
       compatibilityScore: null,
     });
-    
+
     // Calculate compatibility score
     if (pet) {
       a.compatibilityScore = calculateCompatibility(a, pet).score;
     }
-    
+
     adoptionSamples.push(a as any);
   }
   await repoAdopt.save(adoptionSamples);
-  console.log(`Seed completed: ${adoptionSamples.length} solicitudes de adopción insertadas.`);
+  // created_at es @CreateDateColumn (TypeORM lo pisa con now() en el INSERT), así
+  // que todas quedarían con la MISMA fecha y la columna "Fecha" del admin no
+  // ordenaría. Lo espaciamos 1 día entre sí con un UPDATE posterior.
+  await AppDataSource.query(`
+    UPDATE adoption a SET created_at = now() - (s.rn * interval '1 day')
+    FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM adoption) s
+    WHERE a.id = s.id
+  `);
+  console.log(
+    `Seed completed: ${adoptionSamples.length} solicitudes de adopción insertadas (createdAt espaciado).`,
+  );
 
   // Create ~10 followups (appointments) in the future
   const repoF = repoFollowup; // already defined above
   const followupsToSave = [] as any[];
   // Create followups referencing deterministic pet and user ids (useful for tests)
   for (let i = 0; i < 10; i++) {
-    const userId = deterministicUserIds[i % deterministicUserIds.length];
-    const petId = deterministicPetIds[i % deterministicPetIds.length];
+    const user = allUsers[i % allUsers.length];
+    const pet = allPets[i % allPets.length];
     const appointment = new Date(Date.now() + (i + 1) * 24 * 60 * 60 * 1000); // i+1 days in future
     const fu = repoF.create({
-      petId: petId,
-      userId: userId,
-      typeId: ((i % 6) + 1301),
+      petId: pet.id,
+      userId: user.id,
+      typeId: (i % 6) + 1301,
       appointmentAt: appointment,
       statusId: CatalogIds.followupStatus.pendiente,
     });
     followupsToSave.push(fu);
   }
   await repoF.save(followupsToSave);
-  console.log(`Seed completed: ${followupsToSave.length} seguimientos insertados.`);
+  console.log(
+    `Seed completed: ${followupsToSave.length} seguimientos insertados.`,
+  );
 
   await AppDataSource.destroy();
 }

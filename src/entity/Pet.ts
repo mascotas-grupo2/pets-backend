@@ -47,6 +47,14 @@ export class Pet {
   @CreateDateColumn()
   createdAt: Date;
 
+  /** Cuándo vence la publicación. Null = sin vencimiento (estados terminales). */
+  @Column({ nullable: true, type: "timestamp" })
+  expiresAt: Date | null;
+
+  /** Cuándo se avisó del vencimiento (para no notificar dos veces). Se resetea al renovar. */
+  @Column({ nullable: true, type: "timestamp" })
+  expiryNotifiedAt: Date | null;
+
   @Column({ nullable: true, type: "int" })
   sexId: number | null;
 
@@ -106,4 +114,17 @@ export class Pet {
 
   @Column({ type: "int", default: CatalogIds.petReportStatus.pendiente })
   reportStatusId: number;
+
+  // Conteo de vistas del detalle público (se incrementa al verlo un tercero).
+  @Column({ type: "int", default: 0 })
+  viewsCount: number;
+
+  /** true = un dueño fue verificado por el admin vía approveClaim. */
+  @Column({ type: "boolean", default: false })
+  isOwner: boolean;
+
+  /** ID del usuario verificado como dueño (distinto del publicador original userId).
+   *  Se asigna en approveClaim. El publicador original sigue siendo userId. */
+  @Column({ nullable: true, type: "int" })
+  ownerUserId: number | null;
 }
