@@ -6,6 +6,7 @@ import { User } from "../entity/User.js";
 import { Adoption } from "../entity/Adoption.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
+import { Notification } from "../entity/Notification.js";
 import { CatalogIds, catalogItemForId } from "../lib/catalog-constants.js";
 import { publicUser } from "./user.controller.js";
 import { notify } from "../lib/notify.js";
@@ -30,6 +31,10 @@ function petRepo() {
 
 function noteRepo() {
   return AppDataSource.getRepository(PetNote);
+}
+
+function notificationRepo() {
+  return AppDataSource.getRepository(Notification);
 }
 
 type UserContext = {
@@ -200,6 +205,15 @@ export async function getConversation(req: Request, res: Response) {
     );
     unreadMessages.forEach((m) => (m.read = true));
   }
+
+  await notificationRepo()
+    .createQueryBuilder()
+    .update()
+    .set({ read: true })
+    .where("userId = :uid", { uid: userId })
+    .andWhere("read = false")
+    .andWhere("link LIKE :pat", { pat: `%user=${otherUserId}` })
+    .execute();
 
   const currentUser = await userRepo().findOneBy({ id: userId });
   const otherUser = await userRepo().findOneBy({ id: otherUserId });
