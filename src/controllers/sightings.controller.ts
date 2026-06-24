@@ -1,14 +1,15 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { Sighting } from "../entity/Sighting.js";
 import { Pet } from "../entity/Pet.js";
 import { notify } from "../lib/notify.js";
 
 function sightingRepo() {
-  return AppDataSource.getRepository(Sighting);
+  return dbManager().getRepository(Sighting);
 }
 function petRepo() {
-  return AppDataSource.getRepository(Pet);
+  return dbManager().getRepository(Pet);
 }
 
 /** Reporta un avistamiento ("La vi") y notifica al dueño. Anónimo o logueado. */

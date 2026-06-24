@@ -1,6 +1,7 @@
 import type OpenAI from "openai";
 import { ILike } from "typeorm";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { Pet } from "../entity/Pet.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import {
@@ -24,7 +25,7 @@ export type ToolDefinition = {
 };
 
 function petRepo() {
-  return AppDataSource.getRepository(Pet);
+  return dbManager().getRepository(Pet);
 }
 
 const ANIMAL_TYPE_BY_CODE: Record<string, number> = {

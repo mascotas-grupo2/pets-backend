@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { ILike, In } from "typeorm";
 import { z } from "zod";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { Adoption } from "../entity/Adoption.js";
 import { AdoptionCheck } from "../entity/AdoptionCheck.js";
 import { AdoptionNote } from "../entity/AdoptionNote.js";
@@ -12,6 +13,7 @@ import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
 import { Catalog, CatalogIds, CatalogName, catalogItemForId } from "../lib/catalog-constants.js";
+import { tenantScope } from "../lib/tenant.js";
 import {
   CatalogValidationError,
   getCatalogValuesById,
@@ -69,11 +71,11 @@ const adminListQuerySchema = z.object({
 });
 
 function userRepo() {
-  return AppDataSource.getRepository(User);
+  return dbManager().getRepository(User);
 }
 
 function petRepo() {
-  return AppDataSource.getRepository(Pet);
+  return dbManager().getRepository(Pet);
 }
 
 function splitName(name: string) {
@@ -216,7 +218,7 @@ export async function getUserDetails(req: Request, res: Response) {
 
   const reports = await petRepo().find({ where: { userId: id }, order: { createdAt: "DESC" } });
 
-  const adoptionRepo = AppDataSource.getRepository(Adoption);
+  const adoptionRepo = dbManager().getRepository(Adoption);
   const latest = await adoptionRepo.findOne({ where: { userId: id }, order: { createdAt: "DESC" } });
 
   const safe = publicUser(user);
@@ -294,7 +296,7 @@ export async function submitAdoption(req: Request, res: Response) {
   }
 
   try {
-    const adoptionRepo = AppDataSource.getRepository(Adoption);
+    const adoptionRepo = dbManager().getRepository(Adoption);
     const adoption = adoptionRepo.create({
       userId: id,
       petId: values.petId ?? null,
@@ -321,6 +323,7 @@ export async function submitAdoption(req: Request, res: Response) {
       const pet = await petRepo().findOneBy({ id: adoption.petId });
       if (pet) {
         adoption.compatibilityScore = calculateCompatibility(adoption, pet).score;
+        adoption.refugioId = pet.refugioId ?? null;
       }
     }
 
@@ -329,6 +332,7 @@ export async function submitAdoption(req: Request, res: Response) {
       type: "solicitud",
       title: `Nueva ${values.kind === "transito" ? "oferta de tránsito" : "solicitud"} de ${values.firstName} ${values.lastName}`.trim(),
       actorUserId: id as number,
+      refugioId: adoption.refugioId ?? null,
       refType: "adoption",
       refId: adoption.id,
       link: `/admin/solicitudes?requestId=${adoption.id}`,
@@ -404,7 +408,7 @@ const PROFILE_CATALOG_FIELDS: Array<[string, CatalogName, string, string]> = [
  * Solo toca los campos presentes en el body. Puede lanzar CatalogValidationError.
  */
 async function saveUserProfileContact(user: User, body: Record<string, unknown>) {
-  const adoptionRepo = AppDataSource.getRepository(Adoption);
+  const adoptionRepo = dbManager().getRepository(Adoption);
   let profile = await adoptionRepo.findOne({
     where: { userId: user.id },
     order: { createdAt: "DESC" },
@@ -510,7 +514,7 @@ export async function updateUser(req: Request, res: Response) {
  * auditoría sin dejar FKs colgadas.
  */
 export async function deleteUserCascade(userId: number) {
-  await AppDataSource.transaction(async (m) => {
+  await dbManager().transaction(async (m) => {
     const pets = await m.getRepository(Pet).find({ where: { userId } });
     const petIds = pets.map((p) => p.id);
     if (petIds.length) {
@@ -622,6 +626,28 @@ export async function adminListUsers(req: Request, res: Response) {
   if (name) baseWhere.name = ILike(`%${name}%`);
   if (email) baseWhere.email = ILike(`%${email}%`);
 
+  // Scope multi-tenant: el admin de refugio ve su staff + los adoptantes que
+  // postularon a mascotas de su refugio. El superadmin ve todos.
+  const scope = tenantScope(req.authUser);
+  let scopedIds: number[] | null = null;
+  if (scope.scoped) {
+    const rid = scope.refugioId ?? -1;
+    const staff = await userRepo().find({ where: { refugioId: rid }, select: ["id"] });
+    const adopterRows = await dbManager().getRepository(Adoption)
+      .createQueryBuilder("a")
+      .select("DISTINCT a.userId", "userId")
+      .where("a.refugioId = :rid", { rid })
+      .andWhere("a.userId IS NOT NULL")
+      .getRawMany<{ userId: number }>();
+    const ids = new Set<number>(staff.map((u) => u.id));
+    for (const row of adopterRows) {
+      const id = Number(row.userId);
+      if (Number.isInteger(id)) ids.add(id);
+    }
+    scopedIds = ids.size ? Array.from(ids) : [-1];
+    baseWhere.id = In(scopedIds);
+  }
+
   const hasSpecificFilters = Boolean(name || email);
   const finalWhere =
     search && !hasSpecificFilters
@@ -639,13 +665,14 @@ export async function adminListUsers(req: Request, res: Response) {
   });
 
   // Totales globales (no dependen de los filtros) para las cards del panel.
+  const totalsScope = scopedIds ? { id: In(scopedIds) } : {};
   const [totalAll, admins, adopters, comunes] = await Promise.all([
-    userRepo().count(),
-    userRepo().count({ where: { roleId: CatalogIds.userRole.admin } }),
-    userRepo().count({ where: { adopter: true } }),
+    userRepo().count({ where: { ...totalsScope } }),
+    userRepo().count({ where: { roleId: CatalogIds.userRole.admin, ...totalsScope } }),
+    userRepo().count({ where: { adopter: true, ...totalsScope } }),
     // "Comunes" = usuario común que todavía no es adoptante.
     userRepo().count({
-      where: { roleId: CatalogIds.userRole.user, adopter: false },
+      where: { roleId: CatalogIds.userRole.user, adopter: false, ...totalsScope },
     }),
   ]);
 
