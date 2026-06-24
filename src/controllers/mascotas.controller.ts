@@ -35,7 +35,9 @@ import { serializeMascota, serializePetNote } from "../lib/serializers.js";
 import {
   DAY_MS,
   EXPIRY_GRACE_DAYS,
+  EXPIRY_WARN_DAYS,
   expiryFromStatus,
+  isExpiredBeyondGrace,
 } from "../lib/pet-expiry.js";
 
 function repo() {
@@ -418,6 +420,20 @@ export async function getMascota(req: Request, res: Response) {
   // No revelamos la existencia de reportes no-públicos a terceros.
   if (!canViewPet(mascota, req.authUser)) {
     return res.status(404).json({ error: "Pet no encontrada" });
+  }
+  // Coherencia con el listado: si venció hace más que la gracia, también se oculta
+  // del DETALLE para el público (sino "oculta" se podía esquivar con el link directo).
+  // El dueño, el dueño verificado y el admin la siguen viendo para poder renovarla.
+  if (isExpiredBeyondGrace(mascota.expiresAt)) {
+    const u = req.authUser;
+    const esDuenoOAdmin =
+      u != null &&
+      (u.role === "admin" ||
+        mascota.userId === u.id ||
+        mascota.ownerUserId === u.id);
+    if (!esDuenoOAdmin) {
+      return res.status(404).json({ error: "Pet no encontrada" });
+    }
   }
   // Conteo de vistas: incrementamos si NO es el dueño (no infla sus propias vistas).
   // Await para que persista y el valor devuelto sea consistente.
@@ -1511,7 +1527,8 @@ export async function renewMascota(req: Request, res: Response) {
   }
 
   existing.expiresAt = nextExpiry;
-  existing.expiryNotifiedAt = null; // re-armar el aviso para el nuevo período
+  existing.expiryNotifiedAt = null; // re-armar el aviso de "venció" para el nuevo período
+  existing.expiryWarnedAt = null; // re-armar el aviso previo de "está por vencer"
   await repo().save(existing);
 
   const catalogValuesById = await getCatalogValuesById();
@@ -1519,24 +1536,19 @@ export async function renewMascota(req: Request, res: Response) {
 }
 
 /**
- * Barrido de vencimientos: notifica UNA vez al dueño/publicador cuando su
- * publicación venció (y todavía no se avisó). No borra ni archiva en DB: el
- * ocultamiento al público es lazy en listMascotas. Se corre periódicamente.
+ * Barrido de vencimientos. Dos avisos por la campana (cada uno UNA sola vez):
+ *   1. PREVIO: faltan ≤ EXPIRY_WARN_DAYS para vencer ("está por vencer").
+ *   2. VENCIÓ: ya pasó la fecha.
+ * No borra ni archiva en DB: el ocultamiento al público es lazy (listMascotas /
+ * getMascota). Se corre periódicamente.
  */
 export async function notifyExpiredPublications(): Promise<void> {
   try {
     const now = new Date();
-    const vencidas = await repo()
-      .createQueryBuilder("p")
-      .where("p.expiresAt IS NOT NULL")
-      .andWhere("p.expiresAt < :now", { now })
-      .andWhere("p.expiryNotifiedAt IS NULL")
-      .andWhere("p.reportStatusId = :activo", {
-        activo: CatalogIds.petReportStatus.activo,
-      })
-      .getMany();
+    const activo = CatalogIds.petReportStatus.activo;
 
-    for (const pet of vencidas) {
+    // Avisa al publicador y al dueño verificado (si hay).
+    const avisar = async (pet: Pet, title: string, body: string) => {
       const destinatarios = new Set<number>();
       if (Number.isInteger(pet.userId)) destinatarios.add(pet.userId as number);
       if (Number.isInteger(pet.ownerUserId))
@@ -1544,16 +1556,61 @@ export async function notifyExpiredPublications(): Promise<void> {
       for (const uid of destinatarios) {
         await notify(uid, {
           type: "publication",
-          title: `⏳ Tu publicación de ${pet.name ?? "una mascota"} venció`,
-          body: "Renovala para que siga visible, o el refugio la archivará.",
+          title,
+          body,
           link: `/mascotas-perdidas/${pet.id}`,
         });
       }
+    };
+
+    // 1) Aviso PREVIO: vence dentro de EXPIRY_WARN_DAYS y todavía no se avisó.
+    const warnLimit = new Date(now.getTime() + EXPIRY_WARN_DAYS * DAY_MS);
+    const porVencer = await repo()
+      .createQueryBuilder("p")
+      .where("p.expiresAt IS NOT NULL")
+      .andWhere("p.expiresAt > :now", { now })
+      .andWhere("p.expiresAt <= :limit", { limit: warnLimit })
+      .andWhere("p.expiryWarnedAt IS NULL")
+      .andWhere("p.reportStatusId = :activo", { activo })
+      .getMany();
+
+    for (const pet of porVencer) {
+      const dias = Math.max(
+        1,
+        Math.ceil((new Date(pet.expiresAt!).getTime() - now.getTime()) / DAY_MS),
+      );
+      await avisar(
+        pet,
+        `⏳ Tu publicación de ${pet.name ?? "una mascota"} vence pronto`,
+        `Vence en ${dias} día${dias === 1 ? "" : "s"}. Renovala para que siga visible.`,
+      );
+      pet.expiryWarnedAt = now;
+      await repo().save(pet);
+    }
+
+    // 2) Aviso de YA venció: pasó la fecha y todavía no se avisó.
+    const vencidas = await repo()
+      .createQueryBuilder("p")
+      .where("p.expiresAt IS NOT NULL")
+      .andWhere("p.expiresAt < :now", { now })
+      .andWhere("p.expiryNotifiedAt IS NULL")
+      .andWhere("p.reportStatusId = :activo", { activo })
+      .getMany();
+
+    for (const pet of vencidas) {
+      await avisar(
+        pet,
+        `⏳ Tu publicación de ${pet.name ?? "una mascota"} venció`,
+        "Renovala para que vuelva a aparecer en las búsquedas; si no, dejará de mostrarse al público.",
+      );
       pet.expiryNotifiedAt = now;
       await repo().save(pet);
     }
-    if (vencidas.length > 0) {
-      console.log(`[expiry] avisadas ${vencidas.length} publicaciones vencidas`);
+
+    if (porVencer.length > 0 || vencidas.length > 0) {
+      console.log(
+        `[expiry] avisos: ${porVencer.length} por vencer, ${vencidas.length} vencidas`,
+      );
     }
   } catch (e) {
     console.warn("[expiry] barrido fallo:", (e as Error).message);

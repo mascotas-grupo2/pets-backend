@@ -55,6 +55,10 @@ export class Pet {
   @Column({ nullable: true, type: "timestamp" })
   expiryNotifiedAt: Date | null;
 
+  /** Cuándo se avisó que ESTÁ POR vencer (aviso previo). Se resetea al renovar. */
+  @Column({ nullable: true, type: "timestamp" })
+  expiryWarnedAt: Date | null;
+
   @Column({ nullable: true, type: "int" })
   sexId: number | null;
 
