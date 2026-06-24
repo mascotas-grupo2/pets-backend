@@ -23,6 +23,7 @@ import {
   finalizeMascota,
   resolveMascota,
   rejectMascota,
+  rejectClaim,
   entregaDirecta,
   getMascotaCompatibility,
 } from "../controllers/mascotas.controller.js";
@@ -65,6 +66,7 @@ mascotasRouter.post("/:id/reject", requireAdmin, rejectMascota);
 mascotasRouter.post("/:id/claim", optionalAuth, multiple("photo", 5), multerErrorHandler, claimPet);
 mascotasRouter.post("/:id/renew", requireAuth, renewMascota);
 mascotasRouter.post("/:id/approve-claim", requireAdmin, approveClaim);
+mascotasRouter.post("/:id/reject-claim", requireAdmin, rejectClaim);
 mascotasRouter.post("/:id/confirm-return", requireAdmin, confirmReturn);
 mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
 mascotasRouter.post("/:id/notes", requireAdmin, createPetNote);

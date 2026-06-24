@@ -96,6 +96,15 @@ function extractClaimPetId(content: string): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * Extrae el nombre de la mascota del contenido de un mensaje de reclamo.
+ * Busca "Mascota: <name>" que se incluye en el mensaje automático.
+ */
+function extractClaimPetName(content: string): string | null {
+  const match = content.match(/Mascota:\s*(.+)/i);
+  return match ? match[1].trim() : null;
+}
+
 export async function sendMessage(req: Request, res: Response) {
   const senderId = req.authUser?.id;
   if (!senderId) return res.status(401).json({ error: "No autenticado" });
@@ -244,20 +253,42 @@ export async function getConversation(req: Request, res: Response) {
         userProfile.id,
       );
 
-      // Detectar si la conversación inició con un reclamo de mascota
-      // Buscamos en el primer mensaje (el más viejo) si contiene el formato de reclamo
-      const firstMsg = messages.length > 0 ? messages[0] : null;
-      const claimPetId = firstMsg?.content
-        ? extractClaimPetId(firstMsg.content)
-        : null;
+      // Escanear TODOS los mensajes para extraer TODOS los reclamos de mascota
+      // (no solo el primero). Esto permite que un usuario reclame múltiples mascotas
+      // y todas aparezcan en la conversación.
+      const seenPetIds = new Set<string>();
+      const claimPetIds: string[] = [];
+      const claimPetNames: Record<string, string> = {};
+      for (const msg of messages) {
+        if (!msg.content) continue;
+        const petId = extractClaimPetId(msg.content);
+        if (petId && !seenPetIds.has(petId)) {
+          seenPetIds.add(petId);
+          claimPetIds.push(petId);
+          const name = extractClaimPetName(msg.content);
+          if (name) claimPetNames[petId] = name;
+        }
+      }
 
-      // ¿La mascota reclamada ya fue devuelta al dueño? (para que el chat deje
-      // de ofrecer "Confirmar devolución" y muestre el estado).
-      let claimPetReturned = false;
-      if (claimPetId) {
-        const claimedPet = await petRepo().findOneBy({ id: claimPetId });
-        claimPetReturned =
-          claimedPet?.statusId === CatalogIds.petStatus.devueltaAlDueno;
+      // Para cada mascota reclamada, determinar si ya fue devuelta al dueño
+      const claimPetMap: Record<string, { returned: boolean; name: string }> = {};
+      if (claimPetIds.length > 0) {
+        const claimedPets = await petRepo().findBy({ id: In(claimPetIds) });
+        for (const pet of claimedPets) {
+          claimPetMap[pet.id] = {
+            returned: pet.statusId === CatalogIds.petStatus.devueltaAlDueno,
+            name: pet.name ?? claimPetNames[pet.id] ?? "Mascota",
+          };
+        }
+        // Para pets que no se encontraron (borradas?), asumimos no devueltas
+        for (const petId of claimPetIds) {
+          if (!claimPetMap[petId]) {
+            claimPetMap[petId] = {
+              returned: false,
+              name: claimPetNames[petId] ?? "Mascota",
+            };
+          }
+        }
       }
 
       // Notas reales: las de la mascota de la solicitud (médicas, rechazo, etc.).
@@ -282,8 +313,9 @@ export async function getConversation(req: Request, res: Response) {
           adoptionId: ctx?.adoptionId ?? null,
           phone: ctx?.phone ?? null,
           town: ctx?.town ?? null,
-          claimPetId, // 👈 ID de la mascota reclamada
-          claimPetReturned, // 👈 true si ya se confirmó la devolución
+          // Ahora devolvemos arrays para soportar múltiples reclamos
+          claimPetIds,
+          claimPetMap,
           notes: notes.map((n) => ({
             id: n.id,
             text: n.text,
