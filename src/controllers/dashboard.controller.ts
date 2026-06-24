@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { In, IsNull, Not } from "typeorm";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { Pet } from "../entity/Pet.js";
 import { Adoption } from "../entity/Adoption.js";
 import { Followup } from "../entity/Followup.js";
@@ -8,21 +9,22 @@ import { Message } from "../entity/Message.js";
 import { User } from "../entity/User.js";
 import { PetComment } from "../entity/PetComment.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
+import { applyTenantScope, petVisibilityWhere, tenantWhere } from "../lib/tenant.js";
 
 /** Conteos reales para las cards del dashboard del admin. */
 export async function getDashboardStats(req: Request, res: Response) {
-  const petRepo = AppDataSource.getRepository(Pet);
-  const adoptionRepo = AppDataSource.getRepository(Adoption);
-  const followupRepo = AppDataSource.getRepository(Followup);
-  const messageRepo = AppDataSource.getRepository(Message);
+  const petRepo = dbManager().getRepository(Pet);
+  const adoptionRepo = dbManager().getRepository(Adoption);
+  const followupRepo = dbManager().getRepository(Followup);
+  const messageRepo = dbManager().getRepository(Message);
 
   const userId = req.authUser?.id ?? null;
 
   // Mascotas "activas" = casos abiertos (todas menos las adoptadas). Las perdidas
   // son un SUBCONJUNTO de las activas (por eso el badge "N perdidas" tiene sentido).
-  const totalPets = await petRepo.count();
+  const totalPets = await petRepo.count({ where: petVisibilityWhere({}, req.authUser) });
   const adoptadas = await petRepo.count({
-    where: { statusId: CatalogIds.petStatus.adoptado },
+    where: { statusId: CatalogIds.petStatus.adoptado, ...tenantWhere(req.authUser) },
   });
   const perdidas = await petRepo.count({
     where: { statusId: CatalogIds.petStatus.perdido },
@@ -31,20 +33,22 @@ export async function getDashboardStats(req: Request, res: Response) {
 
   // Solo solicitudes reales (con mascota); las filas sin petId son perfiles de
   // adoptante, no solicitudes (igual criterio que el panel de Solicitudes).
-  const solicitudes = await adoptionRepo
+  const solicitudesQb = adoptionRepo
     .createQueryBuilder("a")
-    .where("a.petId IS NOT NULL")
-    .getCount();
+    .where("a.petId IS NOT NULL");
+  applyTenantScope(solicitudesQb, "a", req.authUser);
+  const solicitudes = await solicitudesQb.getCount();
 
   // Seguimientos con turno para hoy.
   const inicio = new Date();
   inicio.setHours(0, 0, 0, 0);
   const fin = new Date();
   fin.setHours(23, 59, 59, 999);
-  const seguimientosHoy = await followupRepo
+  const seguimientosHoyQb = followupRepo
     .createQueryBuilder("f")
-    .where("f.appointmentAt BETWEEN :inicio AND :fin", { inicio, fin })
-    .getCount();
+    .where("f.appointmentAt BETWEEN :inicio AND :fin", { inicio, fin });
+  applyTenantScope(seguimientosHoyQb, "f", req.authUser);
+  const seguimientosHoy = await seguimientosHoyQb.getCount();
 
   const mensajesSinLeer = userId
     ? await messageRepo.count({ where: { receiverId: userId, read: false } })
@@ -53,7 +57,7 @@ export async function getDashboardStats(req: Request, res: Response) {
   // "Publicaciones" = publicaciones visibles (reportStatus activo), no todas las
   // mascotas (que incluían pendientes/rechazadas/finalizadas/adoptadas).
   const publicaciones = await petRepo.count({
-    where: { reportStatusId: CatalogIds.petReportStatus.activo },
+    where: { reportStatusId: CatalogIds.petReportStatus.activo, ...tenantWhere(req.authUser) },
   });
 
   res.json({
@@ -75,16 +79,16 @@ export async function getDashboardActivity(req: Request, res: Response) {
   const limit = Math.min(20, Math.max(1, Number(req.query.limit ?? 8)));
   const take = limit;
 
-  const petRepo = AppDataSource.getRepository(Pet);
-  const adoptionRepo = AppDataSource.getRepository(Adoption);
-  const userRepo = AppDataSource.getRepository(User);
-  const messageRepo = AppDataSource.getRepository(Message);
-  const commentRepo = AppDataSource.getRepository(PetComment);
+  const petRepo = dbManager().getRepository(Pet);
+  const adoptionRepo = dbManager().getRepository(Adoption);
+  const userRepo = dbManager().getRepository(User);
+  const messageRepo = dbManager().getRepository(Message);
+  const commentRepo = dbManager().getRepository(PetComment);
 
   const [adoptions, messages, pets, users, comments] = await Promise.all([
-    adoptionRepo.find({ where: { petId: Not(IsNull()) }, order: { createdAt: "DESC" }, take }),
+    adoptionRepo.find({ where: { petId: Not(IsNull()), ...tenantWhere(req.authUser) }, order: { createdAt: "DESC" }, take }),
     messageRepo.find({ order: { createdAt: "DESC" }, take }),
-    petRepo.find({ order: { createdAt: "DESC" }, take }),
+    petRepo.find({ where: petVisibilityWhere({}, req.authUser), order: { createdAt: "DESC" }, take }),
     userRepo.find({ order: { createdAt: "DESC" }, take }),
     commentRepo.find({ order: { createdAt: "DESC" }, take }),
   ]);

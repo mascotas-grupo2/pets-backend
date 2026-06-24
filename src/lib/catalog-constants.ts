@@ -53,6 +53,7 @@ export const CatalogIds = {
   userRole: {
     user: 501,
     admin: 502,
+    superadmin: 503,
   },
   userStatus: {
     activo: 511,
@@ -155,7 +156,8 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 403, catalog: Catalog.PET_NOTE_KIND, code: "adopcion", label: "Adopción" },
 
   { id: 501, catalog: Catalog.USER_ROLE, code: "user", label: "Usuario" },
-  { id: 502, catalog: Catalog.USER_ROLE, code: "admin", label: "Administrador" },
+  { id: 502, catalog: Catalog.USER_ROLE, code: "admin", label: "Administrador de refugio" },
+  { id: 503, catalog: Catalog.USER_ROLE, code: "superadmin", label: "Superadministrador" },
 
   { id: 511, catalog: Catalog.USER_STATUS, code: "activo", label: "Activo" },
   { id: 512, catalog: Catalog.USER_STATUS, code: "evaluacion", label: "En evaluación" },

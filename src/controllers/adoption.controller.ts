@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { In, IsNull, Not, SelectQueryBuilder } from "typeorm";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { Adoption } from "../entity/Adoption.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
 import { Followup } from "../entity/Followup.js";
@@ -15,6 +16,11 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
+import {
+  applyTenantScope,
+  stampRefugioIfManaged,
+  tenantWhere,
+} from "../lib/tenant.js";
 import { calculateCompatibility } from "../lib/matching.js";
 import { notify } from "../lib/notify.js";
 
@@ -29,27 +35,27 @@ const ADOPTION_STATUS_LABELS: Record<string, string> = {
 };
 
 function adoptionRepo() {
-  return AppDataSource.getRepository(Adoption);
+  return dbManager().getRepository(Adoption);
 }
 
 function userRepo() {
-  return AppDataSource.getRepository(User);
+  return dbManager().getRepository(User);
 }
 
 function petRepo() {
-  return AppDataSource.getRepository(Pet);
+  return dbManager().getRepository(Pet);
 }
 
 function followupRepo() {
-  return AppDataSource.getRepository(Followup);
+  return dbManager().getRepository(Followup);
 }
 
 function checkRepo() {
-  return AppDataSource.getRepository(AdoptionCheck);
+  return dbManager().getRepository(AdoptionCheck);
 }
 
 function adoptionNoteRepo() {
-  return AppDataSource.getRepository(AdoptionNote);
+  return dbManager().getRepository(AdoptionNote);
 }
 
 // Checklist de evaluación del adoptante (orden fijo).
@@ -87,6 +93,7 @@ function createFollowupsForAdoption(adoption: Adoption) {
     followup.typeId = CatalogIds.followupType.programado;
     followup.statusId = CatalogIds.followupStatus.pendiente;
     followup.appointmentAt = appointmentAt;
+    followup.refugioId = adoption.refugioId ?? null;
     return followup;
   });
 
@@ -543,6 +550,7 @@ export async function createAdoption(req: Request, res: Response) {
     const pet = await petRepo().findOneBy({ id: adoption.petId });
     if (pet) {
       adoption.compatibilityScore = calculateCompatibility(adoption, pet).score;
+      adoption.refugioId = pet.refugioId ?? null;
     }
   }
 
@@ -591,7 +599,7 @@ export async function listAdoptions(req: Request, res: Response) {
   if (isAdmin) {
     // Excluye los perfiles de adoptante (sin petId); solo solicitudes reales.
     const all = await repo.find({
-      where: { petId: Not(IsNull()) },
+      where: { petId: Not(IsNull()), ...tenantWhere(req.authUser) },
       order: { createdAt: "DESC" },
     });
     const catalogValuesById = await getCatalogValuesById();
@@ -620,6 +628,7 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   // son el "perfil de adoptante" (registro general del usuario) y no deben
   // aparecer como solicitudes en el panel.
   qb.andWhere("adoption.petId IS NOT NULL");
+  applyTenantScope(qb, "adoption", req.authUser);
   if (filters.userId) qb.andWhere("adoption.userId = :userId", { userId: filters.userId });
   if (filters.petId) qb.andWhere("adoption.petId = :petId", { petId: filters.petId });
   if (filters.statusId) qb.andWhere("adoption.statusId = :statusId", { statusId: filters.statusId });
@@ -817,6 +826,9 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
     }
   }
 
+  if (adoption.refugioId == null) {
+    adoption.refugioId = req.authUser?.refugioId ?? null;
+  }
   adoption.statusId = statusId;
   const saved = await adoptionRepo().save(adoption);
 
@@ -845,7 +857,10 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
       pet.reportStatusId = R.finalizado;
       petChanged = true;
     }
-    if (petChanged) await petRepo().save(pet);
+    if (petChanged) {
+      stampRefugioIfManaged(pet, req.authUser);
+      await petRepo().save(pet);
+    }
   }
 
   if (statusId === A.aceptadaConSeguimiento && previousStatusId !== statusId) {

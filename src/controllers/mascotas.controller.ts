@@ -1,12 +1,14 @@
 import { Request, Response } from "express";
 import { ILike, In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
 import { Followup } from "../entity/Followup.js";
 import { Adoption } from "../entity/Adoption.js";
+import { Refugio } from "../entity/Refugio.js";
 import { calculateCompatibility } from "../lib/matching.js";
 import {
   petCreateSchema,
@@ -30,21 +32,27 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
+import type { AuthUser } from "../lib/auth.js";
+import {
+  applyPetVisibility,
+  petVisibilityWhere,
+  stampRefugioIfManaged,
+} from "../lib/tenant.js";
 
 function repo() {
-  return AppDataSource.getRepository(Pet);
+  return dbManager().getRepository(Pet);
 }
 
 function userRepo() {
-  return AppDataSource.getRepository(User);
+  return dbManager().getRepository(User);
 }
 
 function noteRepo() {
-  return AppDataSource.getRepository(PetNote);
+  return dbManager().getRepository(PetNote);
 }
 
 function followupRepo() {
-  return AppDataSource.getRepository(Followup);
+  return dbManager().getRepository(Followup);
 }
 
 type CatalogValueMap = Map<number, CatalogValue>;
@@ -152,24 +160,53 @@ export async function listCatalogValueCatalog(req: Request, res: Response) {
 
 export async function listMascotas(req: Request, res: Response) {
   const userId = req.authUser?.id ?? null;
+  const refugioId = parseOptionalInt(req.query.refugioId);
+  const zonaRaw = typeof req.query.zona === "string" ? req.query.zona.trim() : "";
+  const zonaFilter = zonaRaw ? ILike(`%${zonaRaw}%`) : undefined;
+  const extra = {
+    ...(refugioId ? { refugioId } : {}),
+    ...(zonaFilter ? { location: zonaFilter } : {}),
+  };
   const mascotas = await repo().find({
     where: userId
       ? [
-          { reportStatusId: CatalogIds.petReportStatus.activo },
+          { reportStatusId: CatalogIds.petReportStatus.activo, ...extra },
           {
             userId,
             reportStatusId: In([
               CatalogIds.petReportStatus.pendiente,
               CatalogIds.petReportStatus.rechazado,
             ]),
+            ...extra,
           },
         ]
-      : { reportStatusId: CatalogIds.petReportStatus.activo },
+      : { reportStatusId: CatalogIds.petReportStatus.activo, ...extra },
     order: { id: "DESC" },
   });
   const catalogValuesById = await getCatalogValuesById();
+  const refugioIds = [
+    ...new Set(
+      mascotas
+        .map((m) => m.refugioId)
+        .filter((r): r is number => Number.isInteger(r)),
+    ),
+  ];
+  const refugios = refugioIds.length
+    ? await dbManager().getRepository(Refugio).find({ where: { id: In(refugioIds) } })
+    : [];
+  const refugioById = new Map(refugios.map((r) => [r.id, r]));
   res.json(
-    mascotas.map((mascota) => serializeMascota(mascota, catalogValuesById)),
+    mascotas.map((mascota) => ({
+      ...serializeMascota(mascota, catalogValuesById),
+      refugioName:
+        mascota.refugioId != null
+          ? (refugioById.get(mascota.refugioId)?.name ?? null)
+          : null,
+      location:
+        mascota.refugioId != null
+          ? (refugioById.get(mascota.refugioId)?.location ?? mascota.location)
+          : mascota.location,
+    })),
   );
 }
 
@@ -307,11 +344,29 @@ async function serializeAdminPets(mascotas: Pet[]) {
     : [];
   const ownerById = new Map(owners.map((u) => [u.id, u]));
 
+  const refugioIds = [
+    ...new Set(
+      mascotas
+        .map((m) => m.refugioId)
+        .filter((r): r is number => Number.isInteger(r)),
+    ),
+  ];
+  const refugios = refugioIds.length
+    ? await dbManager().getRepository(Refugio).find({ where: { id: In(refugioIds) } })
+    : [];
+  const refugioById = new Map(refugios.map((r) => [r.id, r]));
+
   return mascotas.map((m) => {
     const s = byPet.get(m.id)!;
     const owner = m.userId != null ? ownerById.get(m.userId) : null;
     return {
       ...serializeMascota(m, catalogValuesById),
+      refugioName:
+        m.refugioId != null ? (refugioById.get(m.refugioId)?.name ?? null) : null,
+      location:
+        m.refugioId != null
+          ? (refugioById.get(m.refugioId)?.location ?? m.location)
+          : m.location,
       ownerName: owner?.name ?? null,
       ownerEmail: owner?.email ?? null,
       ownerIsAdmin: owner?.roleId === CatalogIds.userRole.admin,
@@ -323,8 +378,11 @@ async function serializeAdminPets(mascotas: Pet[]) {
   });
 }
 
-export async function adminListMascotas(_req: Request, res: Response) {
-  const mascotas = await repo().find({ order: { createdAt: "DESC" } });
+export async function adminListMascotas(req: Request, res: Response) {
+  const mascotas = await repo().find({
+    where: petVisibilityWhere({}, req.authUser),
+    order: { createdAt: "DESC" },
+  });
   res.json(await serializeAdminPets(mascotas));
 }
 
@@ -347,7 +405,10 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
   const categoryIds =
     PET_STATUS_CATEGORY[String(req.query.statusCategory ?? "")];
   const categoryFilter = categoryIds ? { statusId: In(categoryIds) } : {};
-  const where = { ...(baseQuery ?? {}), ...filters, ...categoryFilter };
+  const where = petVisibilityWhere(
+    { ...(baseQuery ?? {}), ...filters, ...categoryFilter },
+    req.authUser,
+  );
 
   const [mascotas, total] = await repo().findAndCount({
     where,
@@ -363,8 +424,8 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
     pageSize,
     // Totales por estado del conjunto completo (para las cards), independientes
     // del filtro aplicado a la lista paginada.
-    statusTotals: await reportStatusTotals(),
-    petStatusTotals: await petStatusTotals(),
+    statusTotals: await reportStatusTotals(req.authUser),
+    petStatusTotals: await petStatusTotals(req.authUser),
   });
 }
 
@@ -381,13 +442,14 @@ const PET_STATUS_CATEGORY: Record<string, number[]> = {
 };
 
 // Conteos por categoría de situación (para las cards de la sección Mascotas).
-async function petStatusTotals() {
-  const rows = await repo()
+async function petStatusTotals(authUser?: AuthUser | null) {
+  const totalsQb = repo()
     .createQueryBuilder("pet")
     .select("pet.statusId", "statusId")
     .addSelect("COUNT(*)", "count")
-    .groupBy("pet.statusId")
-    .getRawMany<{ statusId: string; count: string }>();
+    .groupBy("pet.statusId");
+  applyPetVisibility(totalsQb, "pet", authUser);
+  const rows = await totalsQb.getRawMany<{ statusId: string; count: string }>();
 
   const totals = {
     todas: 0,
@@ -409,13 +471,14 @@ async function petStatusTotals() {
 }
 
 // Cuenta publicaciones agrupadas por reportStatus (para las cards del panel).
-async function reportStatusTotals() {
-  const rows = await repo()
+async function reportStatusTotals(authUser?: AuthUser | null) {
+  const totalsQb = repo()
     .createQueryBuilder("pet")
     .select("pet.reportStatusId", "reportStatusId")
     .addSelect("COUNT(*)", "count")
-    .groupBy("pet.reportStatusId")
-    .getRawMany<{ reportStatusId: string; count: string }>();
+    .groupBy("pet.reportStatusId");
+  applyPetVisibility(totalsQb, "pet", authUser);
+  const rows = await totalsQb.getRawMany<{ reportStatusId: string; count: string }>();
 
   const totals: Record<string, number> = {
     pendiente: 0,
@@ -450,7 +513,10 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
 
   const filters = buildAdminFilters(req);
   const baseQuery = buildAdminPetQuery(reportStatusId);
-  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+  const where = petVisibilityWhere(
+    { ...(baseQuery ?? {}), ...filters },
+    req.authUser,
+  );
 
   const [mascotas, total] = await repo().findAndCount({
     where,
@@ -464,7 +530,7 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
     total,
     page,
     pageSize,
-    statusTotals: await reportStatusTotals(),
+    statusTotals: await reportStatusTotals(req.authUser),
   });
 }
 
@@ -492,7 +558,15 @@ export async function getMascota(req: Request, res: Response) {
     }
   }
   const catalogValuesById = await getCatalogValuesById();
-  res.json(serializeMascota(mascota, catalogValuesById));
+  const refugio =
+    mascota.refugioId != null
+      ? await dbManager().getRepository(Refugio).findOneBy({ id: mascota.refugioId })
+      : null;
+  res.json({
+    ...serializeMascota(mascota, catalogValuesById),
+    refugioName: refugio?.name ?? null,
+    location: refugio?.location ?? mascota.location,
+  });
 }
 
 /**
@@ -514,7 +588,7 @@ export async function getMascotaCompatibility(req: Request, res: Response) {
   }
   if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
 
-  const adoptionRepo = AppDataSource.getRepository(Adoption);
+  const adoptionRepo = dbManager().getRepository(Adoption);
   const forPet = await adoptionRepo.findOne({
     where: { userId: userId as number, petId: id },
     order: { createdAt: "DESC" },
@@ -1059,6 +1133,11 @@ export async function updateMascota(req: Request, res: Response) {
       : {}),
     ...coords,
   });
+  const beforeRefugioId = updated.refugioId;
+  stampRefugioIfManaged(updated, req.authUser);
+  if (updated.refugioId !== beforeRefugioId) {
+    await repo().save(updated);
+  }
   const reloaded = await repo().findOneByOrFail({ id: updated.id });
   const catalogValuesById = await getCatalogValuesById();
   res.json(serializeMascota(reloaded, catalogValuesById));
@@ -1271,6 +1350,7 @@ export async function entregaDirecta(req: Request, res: Response) {
 
   existing.statusId = CatalogIds.petStatus.adoptado;
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  stampRefugioIfManaged(existing, req.authUser);
   const saved = await repo().save(existing);
 
   // Registro de auditoría: quién la recibió y qué admin la entregó.
@@ -1368,7 +1448,7 @@ export async function deleteMascota(req: Request, res: Response) {
   }
 
   try {
-    await AppDataSource.transaction(async (manager) => {
+    await dbManager().transaction(async (manager) => {
       await manager.getRepository(Followup).delete({ petId: id });
       await manager.getRepository(PetNote).delete({ petId: id });
       await manager.getRepository(Pet).remove(existing);
@@ -1499,7 +1579,7 @@ export async function confirmReturn(req: Request, res: Response) {
   }
 
   // Transacción: cambiar estado + cerrar + cancelar adopciones activas + nota
-  await AppDataSource.transaction(async (manager) => {
+  await dbManager().transaction(async (manager) => {
     const petRepo = manager.getRepository(Pet);
     const adoptionRepo = manager.getRepository(Adoption);
     const followupRepo = manager.getRepository(Followup);

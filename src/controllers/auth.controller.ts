@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { User } from "../entity/User.js";
 import {
   forgotPasswordSchema,
@@ -21,14 +22,14 @@ import {
   setAuthCookies,
   verifyKeycloakToken
 } from "../lib/auth.js";
-import { isAdminEmail } from "../lib/bootstrap-admins.js";
+import { resolveInitialRole } from "../lib/bootstrap-admins.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import crypto from "crypto";
 import { sendPasswordResetMail, sendVerificationMail } from "../lib/mailer.js";
 import { recordActivity } from "../lib/activity.js";
 
 function userRepo() {
-  return AppDataSource.getRepository(User);
+  return dbManager().getRepository(User);
 }
 
 function hashPassword(password: string) {
@@ -85,13 +86,15 @@ export async function register(req: Request, res: Response) {
 
   const { salt, hash } = hashPassword(password);
   const verificationToken = createRefreshToken();
+  const initialRole = await resolveInitialRole(email);
   const user = userRepo().create({
     name,
     email,
     passwordHash: hash,
     passwordSalt: salt,
     emailVerificationTokenHash: hashToken(verificationToken),
-    roleId: isAdminEmail(email) ? CatalogIds.userRole.admin : CatalogIds.userRole.user,
+    roleId: initialRole.roleId,
+    refugioId: initialRole.refugioId,
   });
   const saved = await userRepo().save(user);
   await recordActivity({
@@ -425,15 +428,21 @@ export async function ssoSync(req: Request, res: Response) {
     if (!user) user = await userRepo().findOneBy({ email });
     if (!user) {
       const password = hashPassword(createRefreshToken());
+      const initialRole = await resolveInitialRole(email);
       user = userRepo().create({
         name: typeof payload.name === "string" ? payload.name : email,
         email,
         passwordHash: password.hash,
         passwordSalt: password.salt,
-        roleId: isAdminEmail(email) ? CatalogIds.userRole.admin : CatalogIds.userRole.user,
+        roleId: initialRole.roleId,
+        refugioId: initialRole.refugioId,
       });
-    } else if (user.roleId !== CatalogIds.userRole.admin && isAdminEmail(email)) {
-      user.roleId = CatalogIds.userRole.admin;
+    } else if (user.roleId === CatalogIds.userRole.user) {
+      const initialRole = await resolveInitialRole(email);
+      if (initialRole.roleId !== CatalogIds.userRole.user) {
+        user.roleId = initialRole.roleId;
+        user.refugioId = initialRole.refugioId;
+      }
     }
 
     user.ssoProviderId = CatalogIds.ssoProvider.keycloak;

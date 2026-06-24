@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { DataSource } from "typeorm";
+import { Refugio } from "./entity/Refugio.js";
 import { Pet } from "./entity/Pet.js";
 import { PetNote } from "./entity/PetNote.js";
 import { User } from "./entity/User.js";
@@ -49,11 +50,14 @@ import { AddAdoptionKind1749600000000 } from "./migration/1749600000000-AddAdopt
 import { AddViewsAndComments1749700000000 } from "./migration/1749700000000-AddViewsAndComments.js";
 import { AddActivity1749800000000 } from "./migration/1749800000000-AddActivity.js";
 import { AddSighting1749900000000 } from "./migration/1749900000000-AddSighting.js";
+import { AddRefugio1750100000000 } from "./migration/1750100000000-AddRefugio.js";
+import { AddRowLevelSecurity1750200000000 } from "./migration/1750200000000-AddRowLevelSecurity.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.DATABASE_URL,
   entities: [
+    Refugio,
     Pet,
     User,
     Adoption,
@@ -105,6 +109,8 @@ export const AppDataSource = new DataSource({
     AddViewsAndComments1749700000000,
     AddActivity1749800000000,
     AddSighting1749900000000,
+    AddRefugio1750100000000,
+    AddRowLevelSecurity1750200000000,
   ],
   synchronize: false,
 });
