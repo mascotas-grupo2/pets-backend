@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { ILike, In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
-import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
@@ -30,6 +29,14 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
+import { canViewPet } from "../lib/pet-visibility.js";
+import { parseOptionalInt, parsePagination } from "../lib/query-utils.js";
+import { serializeMascota, serializePetNote } from "../lib/serializers.js";
+import {
+  DAY_MS,
+  EXPIRY_GRACE_DAYS,
+  expiryFromStatus,
+} from "../lib/pet-expiry.js";
 
 function repo() {
   return AppDataSource.getRepository(Pet);
@@ -46,99 +53,6 @@ function noteRepo() {
 function followupRepo() {
   return AppDataSource.getRepository(Followup);
 }
-
-type CatalogValueMap = Map<number, CatalogValue>;
-
-function catalogInfo(
-  catalogValuesById: CatalogValueMap,
-  id: number | null | undefined,
-) {
-  const item = id ? (catalogValuesById.get(id) ?? null) : null;
-  return item ? { id: item.id, code: item.code, label: item.label } : null;
-}
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** Días que una publicación vencida sigue visible al público antes de ocultarse. */
-const EXPIRY_GRACE_DAYS = 15;
-
-/**
- * Duración de una publicación según su estado. Las perdidas son urgentes (30
- * días); el resto de los estados activos duran más (60 días). Los estados
- * terminales (adoptada, devuelta al dueño) no vencen → null.
- */
-function expiryFromStatus(statusId: number | null | undefined, from: Date): Date | null {
-  const S = CatalogIds.petStatus;
-  if (statusId === S.adoptado || statusId === S.devueltaAlDueno) return null;
-  const days = statusId === S.perdido ? 30 : 60;
-  return new Date(from.getTime() + days * DAY_MS);
-}
-
-/** Días restantes (enteros, puede ser negativo) y si ya venció. */
-function expiryInfo(expiresAt: Date | null | undefined) {
-  if (!expiresAt) return { daysLeft: null as number | null, expired: false };
-  const ms = new Date(expiresAt).getTime() - Date.now();
-  return { daysLeft: Math.ceil(ms / DAY_MS), expired: ms <= 0 };
-}
-
-function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
-  const animalType = catalogInfo(catalogValuesById, mascota.animalTypeId);
-  const sex = catalogInfo(catalogValuesById, mascota.sexId);
-  const status = catalogInfo(catalogValuesById, mascota.statusId);
-  const reportStatus = catalogInfo(catalogValuesById, mascota.reportStatusId);
-  const medicalStatus = catalogInfo(catalogValuesById, mascota.medicalStatusId);
-  const activityLevel = catalogInfo(catalogValuesById, mascota.activityLevelId);
-  const payload = { ...(mascota as any) };
-
-  const exp = expiryInfo(mascota.expiresAt);
-  return {
-    ...payload,
-    viewsCount: mascota.viewsCount ?? 0,
-    expiresAt: mascota.expiresAt ?? null,
-    daysLeft: exp.daysLeft,
-    expired: exp.expired,
-    animalType: animalType?.code ?? null,
-    animalTypeLabel: animalType?.label ?? null,
-    animalTypeInfo: animalType,
-    sex: sex?.code ?? null,
-    sexLabel: sex?.label ?? null,
-    sexInfo: sex,
-    status: status?.code ?? null,
-    statusLabel: status?.label ?? null,
-    statusInfo: status,
-    medicalStatus: medicalStatus?.code ?? null,
-    medicalStatusLabel: medicalStatus?.label ?? null,
-    medicalStatusInfo: medicalStatus,
-    reportStatus: reportStatus?.code ?? null,
-    reportStatusLabel: reportStatus?.label ?? null,
-    reportStatusInfo: reportStatus,
-    activityLevel: activityLevel?.code ?? null,
-    activityLevelLabel: activityLevel?.label ?? null,
-    activityLevelInfo: activityLevel,
-  };
-}
-
-function serializePetNote(note: PetNote, catalogValuesById: CatalogValueMap) {
-  const kind = catalogInfo(catalogValuesById, note.kindId);
-  return {
-    ...note,
-    kind: kind?.code ?? null,
-    kindLabel: kind?.label ?? null,
-    kindInfo: kind,
-  };
-}
-
-/**
- * ¿Puede el solicitante ver esta mascota? Los reportes públicos (activo) son
- * visibles para todos; los demás estados (pendiente/rechazado/finalizado) solo
- * para el dueño o un admin. Evita IDOR en los endpoints sin filtro de estado.
- */
-function canViewPet(mascota: Pet, authUser?: { id: number; role?: string }) {
-  if (mascota.reportStatusId === CatalogIds.petReportStatus.activo) return true;
-  if (!authUser) return false;
-  if (authUser.role === "admin") return true;
-  return mascota.userId === authUser.id;
-}
-
 function handleCatalogError(error: unknown, res: Response) {
   if (error instanceof CatalogValidationError) {
     res.status(400).json({ error: error.message });
@@ -239,12 +153,6 @@ function buildAdminPetQuery(reportStatusId?: number | null) {
   return undefined;
 }
 
-function parseOptionalInt(value: unknown) {
-  const numeric = Number(value);
-  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
-  return numeric;
-}
-
 // Sort server-side (mismo patrón que solicitudes): ?sort=campo:ASC,campo2:DESC
 const PET_SORT_MAP: Record<string, string> = {
   name: "name",
@@ -267,7 +175,6 @@ function parsePetOrder(req: Request): Record<string, "ASC" | "DESC"> {
   if (Object.keys(order).length === 0) order.createdAt = "DESC";
   return order;
 }
-
 function buildAdminFilters(req: Request) {
   const animalTypeId = parseOptionalInt(req.query.animalTypeId);
   const statusId = parseOptionalInt(req.query.statusId);
@@ -280,12 +187,6 @@ function buildAdminFilters(req: Request) {
     ...(statusId ? { statusId } : {}),
     ...(nameFilter ? { name: nameFilter } : {}),
   };
-}
-
-function parsePagination(req: Request) {
-  const page = Math.max(1, Number(req.query.page ?? 1));
-  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
-  return { page, pageSize, skip: (page - 1) * pageSize };
 }
 
 async function serializeAdminPets(mascotas: Pet[]) {
@@ -366,7 +267,7 @@ export async function adminListMascotas(_req: Request, res: Response) {
 }
 
 export async function adminListMascotasPaged(req: Request, res: Response) {
-  const { page, pageSize, skip } = parsePagination(req);
+  const { page, pageSize, skip } = parsePagination(req.query);
   let reportStatusId: number | undefined;
   try {
     reportStatusId = await resolveReportStatusId(
@@ -476,7 +377,7 @@ async function reportStatusTotals() {
 }
 
 export async function adminListMascotasByStatus(req: Request, res: Response) {
-  const { page, pageSize, skip } = parsePagination(req);
+  const { page, pageSize, skip } = parsePagination(req.query);
   let reportStatusId: number | undefined;
   try {
     reportStatusId = await resolveReportStatusId(req.params.status);
