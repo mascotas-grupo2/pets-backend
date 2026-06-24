@@ -189,6 +189,7 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 1102, catalog: Catalog.PET_REPORT_STATUS, code: "activo", label: "Activo" },
   { id: 1103, catalog: Catalog.PET_REPORT_STATUS, code: "finalizado", label: "Finalizado" },
   { id: 1104, catalog: Catalog.PET_REPORT_STATUS, code: "rechazado", label: "Rechazado" },
+  { id: 1105, catalog: Catalog.PET_REPORT_STATUS, code: "reservada", label: "Reservada" },
 
   { id: 1201, catalog: Catalog.ADOPTION_STATUS, code: "NUEVA", label: "Nueva" },
   { id: 1202, catalog: Catalog.ADOPTION_STATUS, code: "EN_EVALUACION", label: "En evaluacion" },
