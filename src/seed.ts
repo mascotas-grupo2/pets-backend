@@ -798,6 +798,30 @@ async function seed() {
   }
   console.log(`Seed completed: vencimiento asignado a ${conVencimiento} publicaciones.`);
 
+  // Demo de vencimiento: como el createdAt es reciente, sin esto TODAS quedarían
+  // vigentes y el flujo no se podría mostrar. Forzamos 2 publicaciones perdidas
+  // ACTIVAS (con dueño) a estado vencido:
+  //   - "en gracia" (vencida hace 5 días): sigue visible al público y se puede Renovar.
+  //   - "fuera de gracia" (vencida hace 20 días): se oculta del listado público.
+  // expiryNotifiedAt = null => el barrido del arranque avisa al dueño ("tu publicación venció").
+  const activasPerdidas = (await repoPets.find()).filter(
+    (p) =>
+      p.statusId === CatalogIds.petStatus.perdido &&
+      p.reportStatusId === CatalogIds.petReportStatus.activo &&
+      p.userId != null,
+  );
+  const ahora = Date.now();
+  const diasVencidaDemo = [5, 20];
+  let vencidasDemo = 0;
+  for (let i = 0; i < diasVencidaDemo.length && i < activasPerdidas.length; i++) {
+    const p = activasPerdidas[i];
+    p.expiresAt = new Date(ahora - diasVencidaDemo[i] * DAY);
+    p.expiryNotifiedAt = null;
+    await repoPets.save(p);
+    vencidasDemo++;
+  }
+  console.log(`Seed completed: ${vencidasDemo} publicaciones vencidas para demo de vencimiento.`);
+
   // --- Fechas variadas para los filtros del listado ---
   // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
   // inserta todo junto, sin esto todas quedarían en "hoy". Espaciamos `createdAt`
