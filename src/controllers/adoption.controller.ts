@@ -16,12 +16,11 @@ import {
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
 import {
-<<<<<<< HEAD
   applyTenantScope,
   stampRefugioIfManaged,
   tenantWhere,
 } from "../lib/tenant.js";
-=======
+import {
   getAdoptionStatusCode,
   parseStatusId,
   adoptionStatusEntries,
@@ -36,7 +35,6 @@ import {
   parsePagination,
 } from "../lib/query-utils.js";
 import { serializeAdoption } from "../lib/serializers.js";
->>>>>>> f57cc8c6f6c40ba0fa1ef0d08e8d65a71697f357
 import { calculateCompatibility } from "../lib/matching.js";
 import { notify } from "../lib/notify.js";
 
