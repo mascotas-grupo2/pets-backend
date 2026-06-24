@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
-import { dbManager } from "../lib/db-context.js";
 import { Message } from "../entity/Message.js";
 import { User } from "../entity/User.js";
 import { Adoption } from "../entity/Adoption.js";
@@ -14,23 +13,23 @@ import { recordActivity } from "../lib/activity.js";
 import { uploadFileToMinio } from "../lib/minio.js";
 
 function messageRepo() {
-  return dbManager().getRepository(Message);
+  return AppDataSource.getRepository(Message);
 }
 
 function userRepo() {
-  return dbManager().getRepository(User);
+  return AppDataSource.getRepository(User);
 }
 
 function adoptionRepo() {
-  return dbManager().getRepository(Adoption);
+  return AppDataSource.getRepository(Adoption);
 }
 
 function petRepo() {
-  return dbManager().getRepository(Pet);
+  return AppDataSource.getRepository(Pet);
 }
 
 function noteRepo() {
-  return dbManager().getRepository(PetNote);
+  return AppDataSource.getRepository(PetNote);
 }
 
 type UserContext = {
@@ -131,7 +130,6 @@ export async function sendMessage(req: Request, res: Response) {
       type: "mensaje",
       title: `Nuevo mensaje de ${sender.name}`,
       actorUserId: sender.id,
-      refugioId: receiver.refugioId ?? null,
       refType: "message",
       refId: msg.id,
       link: `/admin/mensajes?user=${sender.id}`,

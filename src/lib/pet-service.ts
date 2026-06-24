@@ -1,5 +1,4 @@
 import { AppDataSource } from "../data-source.js";
-import { dbManager } from "./db-context.js";
 import { Pet } from "../entity/Pet.js";
 import { Catalog } from "./catalog-constants.js";
 import {
@@ -50,7 +49,7 @@ export type CreatePetOptions = {
 };
 
 function petRepo() {
-  return dbManager().getRepository(Pet);
+  return AppDataSource.getRepository(Pet);
 }
 
 /**

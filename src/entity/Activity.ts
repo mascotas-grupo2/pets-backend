@@ -28,9 +28,6 @@ export class Activity {
   @Column({ name: "actor_user_id", type: "int", nullable: true })
   actorUserId!: number | null;
 
-  @Column({ name: "refugio_id", type: "int", nullable: true })
-  refugioId!: number | null;
-
   /** Entidad relacionada (pet | adoption | followup | user | message | comment). */
   @Column({ name: "ref_type", type: "varchar", length: 40, nullable: true })
   refType!: string | null;

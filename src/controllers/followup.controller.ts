@@ -1,16 +1,14 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
-import { dbManager } from "../lib/db-context.js";
 import { Followup } from "../entity/Followup.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import { FollowupCreateInput, followupCreateSchema, followupListQuerySchema, FollowupUpdateInput, followupUpdateSchema } from "../schemas/followup.schema.js";
 import { getCatalogValuesById } from "../lib/catalog-values.js";
 import { recordActivity } from "../lib/activity.js";
 import { parseOptionalInt } from "../controllers/_shared_parsers.js";
-import { applyTenantScope } from "../lib/tenant.js";
 
 function repo() {
-  return dbManager().getRepository(Followup);
+  return AppDataSource.getRepository(Followup);
 }
 
 function parsePagination(req: Request) {
@@ -30,14 +28,12 @@ export async function createFollowup(req: Request, res: Response) {
     typeId: values.typeId,
     statusId: CatalogIds.followupStatus.pendiente,
     appointmentAt: values.appointmentAt,
-    refugioId: req.authUser?.refugioId ?? null,
   });
   const saved = await repo().save(followup);
   await recordActivity({
     type: "seguimiento",
     title: "Nuevo seguimiento agendado",
     actorUserId: req.authUser?.id ?? null,
-    refugioId: req.authUser?.refugioId ?? null,
     refType: "followup",
     refId: saved.id,
     link: "/admin/seguimientos",
@@ -53,7 +49,6 @@ export async function listFollowups(req: Request, res: Response) {
   const filters = parsed.data;
 
   const qb = repo().createQueryBuilder("f");
-  applyTenantScope(qb, "f", req.authUser);
   if (filters.petId) qb.andWhere("f.petId = :petId", { petId: filters.petId });
   if (filters.userId) qb.andWhere("f.userId = :userId", { userId: filters.userId });
   if (filters.typeId) qb.andWhere("f.typeId = :typeId", { typeId: filters.typeId });

@@ -11,7 +11,6 @@ import { messageRouter } from "./routes/message.routes.js";
 import { dashboardRouter } from "./routes/dashboard.routes.js";
 import { notificationRouter } from "./routes/notification.routes.js";
 import { commentsRouter } from "./routes/comments.routes.js";
-import { refugioRouter } from "./routes/refugio.routes.js";
 import {
   createMascota,
   listAnimalTypeCatalog,
@@ -21,7 +20,6 @@ import storageProxyHandler from "./controllers/storage.controller.js";
 import { multiple, multerErrorHandler } from "./middleware/upload.js";
 import { submitAdoption } from "./controllers/user.controller.js";
 import { optionalAuth, requireAuth } from "./lib/auth.js";
-import { tenantContext } from "./middleware/rls-context.js";
 
 export const app = express();
 
@@ -36,7 +34,6 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: "10mb" }));
-app.use(tenantContext);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -57,7 +54,6 @@ app.use("/api/messages", messageRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/comments", commentsRouter);
-app.use("/api/refugios", refugioRouter);
 app.post("/api/pet/reportar", optionalAuth, multiple("photo", 10), multerErrorHandler, createMascota);
 app.get("/api/pet/adoptar", requireAuth, (_req, res) => {
   res.status(405).json({ error: "Usá POST /api/pet/adoptar para enviar una solicitud de adopción." });

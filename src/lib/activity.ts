@@ -1,5 +1,4 @@
 import { AppDataSource } from "../data-source.js";
-import { dbManager } from "./db-context.js";
 import { Activity, ActivityType } from "../entity/Activity.js";
 import { User } from "../entity/User.js";
 import { CatalogIds } from "./catalog-constants.js";
@@ -24,17 +23,11 @@ async function notifyAdmins(data: {
   type: ActivityType;
   title: string;
   actorUserId?: number | null;
-  refugioId?: number | null;
   link?: string | null;
 }) {
   try {
-    // Si la actividad pertenece a un refugio, solo avisamos a SUS admins.
-    // Los eventos globales (sin refugio) avisan a todos los admins.
-    const admins = await dbManager().getRepository(User).find({
-      where:
-        data.refugioId != null
-          ? { roleId: CatalogIds.userRole.admin, refugioId: data.refugioId }
-          : { roleId: CatalogIds.userRole.admin },
+    const admins = await AppDataSource.getRepository(User).find({
+      where: { roleId: CatalogIds.userRole.admin },
     });
     for (const admin of admins) {
       if (admin.id === data.actorUserId) continue;
@@ -58,19 +51,17 @@ export async function recordActivity(data: {
   type: ActivityType;
   title: string;
   actorUserId?: number | null;
-  refugioId?: number | null;
   refType?: string | null;
   refId?: string | number | null;
   link?: string | null;
 }) {
   try {
-    const repo = dbManager().getRepository(Activity);
+    const repo = AppDataSource.getRepository(Activity);
     await repo.save(
       repo.create({
         type: data.type,
         title: data.title.slice(0, 200),
         actorUserId: data.actorUserId ?? null,
-        refugioId: data.refugioId ?? null,
         refType: data.refType ?? null,
         refId: data.refId != null ? String(data.refId) : null,
         link: data.link ?? null,
