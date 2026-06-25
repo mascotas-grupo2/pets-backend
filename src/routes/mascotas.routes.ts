@@ -4,6 +4,7 @@ import {
   adminListMascotas,
   adminListMascotasByStatus,
   adminListMascotasPaged,
+  getAdminPetById,
   approveClaim,
   claimPet,
   renewMascota,
@@ -47,6 +48,7 @@ mascotasRouter.get("/admin/mapa", requireAdmin, getMapaReportes);
 mascotasRouter.get("/admin/list", requireAdmin, adminListMascotas);
 mascotasRouter.get("/admin/paged", requireAdmin, adminListMascotasPaged);
 mascotasRouter.get("/admin/status/:status", requireAdmin, adminListMascotasByStatus);
+mascotasRouter.get("/admin/pet/:id", requireAdmin, getAdminPetById);
 mascotasRouter.get("/animal-types", listAnimalTypeCatalog);
 mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
 mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
