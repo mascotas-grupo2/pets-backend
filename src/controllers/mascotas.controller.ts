@@ -423,6 +423,20 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
   });
 }
 
+/** Detalle admin de UNA mascota (para abrir el drawer desde otras secciones). */
+export async function getAdminPetById(req: Request, res: Response) {
+  const id = req.params.id;
+  let pet;
+  try {
+    pet = await repo().findOneBy({ id });
+  } catch {
+    return res.status(400).json({ error: "Id invalido" });
+  }
+  if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
+  const [serialized] = await serializeAdminPets([pet]);
+  res.json(serialized);
+}
+
 export async function getMascota(req: Request, res: Response) {
   const id = req.params.id;
   let mascota;
@@ -882,6 +896,17 @@ export async function updateMascota(req: Request, res: Response) {
   const isAdmin = authUser?.role === "admin";
 
   let adminManageOnly = false;
+  // Estados gestionados por el refugio: una vez que la mascota entra al circuito
+  // de adopción (tránsito / tratamiento / en adopción / adoptado / devuelta),
+  // deja de ser un reporte editable por el usuario y pasa a manejarla SOLO el
+  // refugio (admin), que le va cargando vacunas, tratamiento, etc.
+  const REFUGIO_MANAGED = new Set<number>([
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.adoptado,
+    CatalogIds.petStatus.devueltaAlDueno,
+  ]);
   // Opción A: una vez que la publicación tiene dueño verificado (isOwner), solo
   // el refugio (admin) edita el contenido —ni el dueño verificado ni el
   // publicador original—. Antes de la verificación, el publicador original
@@ -895,15 +920,24 @@ export async function updateMascota(req: Request, res: Response) {
     if (existing.userId !== authUser?.id) {
       return res.status(403).json({ error: "No autorizado" });
     }
+    if (existing.statusId != null && REFUGIO_MANAGED.has(existing.statusId)) {
+      return res.status(403).json({
+        error:
+          "Esta mascota está en proceso de adopción y la gestiona el refugio. Ya no puede editarse desde tu cuenta.",
+      });
+    }
   } else {
     const owner =
       existing.userId != null
         ? await userRepo().findOneBy({ id: existing.userId })
         : null;
     const ownerIsAdmin = owner?.roleId === CatalogIds.userRole.admin;
-    // Si tiene dueño verificado, el admin puede editar contenido completo.
-    // Si NO tiene dueño verificado, solo gestiona estado.
-    if (!existing.isOwner) {
+    // adminManageOnly (solo modera estado, no reescribe contenido) aplica ÚNICAMENTE
+    // a publicaciones de un usuario común sin dueño verificado. Las mascotas
+    // institucionales del refugio (userId == null) y las de otro admin se editan
+    // por completo —imprescindible para cargar vacunas/tratamiento mientras se
+    // preparan para la adopción—.
+    if (!existing.isOwner && existing.userId != null && !ownerIsAdmin) {
       adminManageOnly = true;
     }
   }
@@ -1183,6 +1217,15 @@ export async function updatePetPhotos(req: Request, res: Response) {
 
   const authUser = req.authUser;
   const isAdmin = authUser?.role === "admin";
+  // Mismos estados de refugio que en updateMascota: en proceso de adopción las
+  // fotos las gestiona solo el refugio.
+  const REFUGIO_MANAGED = new Set<number>([
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.adoptado,
+    CatalogIds.petStatus.devueltaAlDueno,
+  ]);
   if (!isAdmin) {
     // Opción A: verificada → solo admin; sin verificar → solo el publicador original.
     if (existing.isOwner) {
@@ -1193,14 +1236,22 @@ export async function updatePetPhotos(req: Request, res: Response) {
     if (!authUser || authUser.id !== existing.userId) {
       return res.status(403).json({ error: "No autorizado" });
     }
+    if (existing.statusId != null && REFUGIO_MANAGED.has(existing.statusId)) {
+      return res.status(403).json({
+        error:
+          "Esta mascota está en proceso de adopción y la gestiona el refugio. Ya no puede editarse desde tu cuenta.",
+      });
+    }
   } else {
     const owner =
       existing.userId != null
         ? await userRepo().findOneBy({ id: existing.userId })
         : null;
     const ownerIsAdmin = owner?.roleId === CatalogIds.userRole.admin;
-    // El admin edita fotos de publicaciones verificadas (enriquecer) o de otro admin.
-    if (!existing.isOwner && !ownerIsAdmin) {
+    // El admin edita fotos de publicaciones verificadas, institucionales del
+    // refugio (userId == null) o de otro admin. Solo NO reescribe las fotos de
+    // un reporte de usuario común sin verificar (ahí solo modera).
+    if (!existing.isOwner && existing.userId != null && !ownerIsAdmin) {
       return res.status(403).json({
         error:
           "Las fotos de publicaciones de usuarios sin verificar no se editan, solo se moderan",
