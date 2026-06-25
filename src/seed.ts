@@ -456,6 +456,31 @@ async function seed() {
   }
   console.log("Seed completed: Admin user inserted (role=admin).");
 
+  // Segundo admin: habilita las conversaciones "Internas" (admin ↔ admin) del
+  // panel de Mensajes. Con un solo admin, la pestaña "Internos" siempre daría 0.
+  const admin2Salt = crypto.randomBytes(16).toString("hex");
+  const admin2Hash = crypto
+    .pbkdf2Sync(password, admin2Salt, 310000, 32, "sha256")
+    .toString("hex");
+  const admin2Saved = await repoUsers.save(
+    repoUsers.create({
+      name: "Diego Suárez",
+      email: "admin2@admin.com",
+      passwordHash: admin2Hash,
+      passwordSalt: admin2Salt,
+      roleId: CatalogIds.userRole.admin,
+      emailVerified: true,
+    }),
+  );
+  try {
+    const url = await uploadSeedPhoto(bucket, "diego.png", "users");
+    admin2Saved.photo = url;
+    await repoUsers.save(admin2Saved);
+  } catch (e) {
+    console.warn("No se pudo subir imagen de seed para admin2", e);
+  }
+  console.log("Seed completed: 2º admin insertado (habilita pestaña Internos).");
+
   // Add two regular users (role = user)
   const usersToCreate = [
     {
@@ -1371,6 +1396,33 @@ async function seed() {
     msgCount++;
   }
   console.log(`Seed completed: ${msgCount} mensajes insertados.`);
+
+  // --- MENSAJES INTERNOS (admin ↔ admin) → pestaña "Internos" del panel --------
+  // Conversación entre los dos admins (Laura ↔ Diego). Como el otro participante
+  // es admin, el front la clasifica como "Interna".
+  const internoMsgs: { from: number; to: number; text: string; read: boolean }[] = [
+    { from: admin2Saved.id, to: adminId, text: "Laura, ¿revisaste la solicitud de adopción de Duque?", read: true },
+    { from: adminId, to: admin2Saved.id, text: "Sí, la pasé a evaluación. Falta coordinar la visita.", read: true },
+    { from: admin2Saved.id, to: adminId, text: "Dale. Yo me encargo del seguimiento post-adopción de Max.", read: true },
+    { from: adminId, to: admin2Saved.id, text: "Perfecto. Avisame si entra algún reclamo nuevo.", read: true },
+    { from: admin2Saved.id, to: adminId, text: "Entró uno de Bruno, te lo derivo para que lo veas.", read: false },
+  ];
+  let internoCount = 0;
+  for (let i = 0; i < internoMsgs.length; i++) {
+    const im = internoMsgs[i];
+    const created = dAgo(internoMsgs.length - i); // del más viejo al más nuevo
+    const m = await repoMessages.save(
+      repoMessages.create({
+        senderId: im.from,
+        receiverId: im.to,
+        content: im.text,
+        read: im.read,
+      }),
+    );
+    await bd("message", "created_at", m.id, created);
+    internoCount++;
+  }
+  console.log(`Seed completed: ${internoCount} mensajes internos (admin↔admin) insertados.`);
 
   // --- NOTIFICACIONES in-app (mix leído/no leído) ----------------------------
   const repoNotif = AppDataSource.getRepository(Notification);
