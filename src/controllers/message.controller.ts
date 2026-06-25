@@ -533,3 +533,88 @@ export async function getAdminConversations(req: Request, res: Response) {
 
   res.json({ page, limit, total, conversations });
 }
+
+/**
+ * Alertas activas para el carrusel del panel de Mensajes (admin). Junta, con
+ * datos REALES, tres tipos de cosas que requieren atención del refugio:
+ *   - reclamo: reclamos de dueño pendientes (sin resolver).
+ *   - evaluacion: adopciones en estado "en evaluación".
+ *   - documentacion: adopciones "aceptadas con seguimiento" (docs/seguimiento pendiente).
+ */
+export async function getAdminAlerts(_req: Request, res: Response) {
+  type Alert = {
+    id: string;
+    type: "reclamo" | "devuelta";
+    petId: string | null;
+    petName: string;
+    petPhoto: string | null;
+    personName: string | null;
+    description: string;
+    link: string;
+    userId: number | null;
+  };
+  const alerts: Alert[] = [];
+  const petPhoto = (p: Pet) =>
+    p.photo ?? (p.photos && p.photos.length ? p.photos[0] : null);
+
+  // Mascotas con reclamo: pendientes (reclamo) o ya cerradas con devolución (devuelta).
+  const claimNotes = await noteRepo()
+    .createQueryBuilder("n")
+    .where("n.text LIKE :p", { p: "🔔 RECLAMO%" })
+    .orderBy("n.createdAt", "DESC")
+    .getMany();
+  const latestClaimByPet = new Map<string, PetNote>();
+  for (const n of claimNotes) {
+    if (n.petId && !latestClaimByPet.has(n.petId))
+      latestClaimByPet.set(n.petId, n);
+  }
+  if (latestClaimByPet.size > 0) {
+    const pets = await petRepo().findBy({
+      id: In(Array.from(latestClaimByPet.keys())),
+    });
+    for (const pet of pets) {
+      const note = latestClaimByPet.get(pet.id)!;
+      // El nombre va tras "RECLAMO de" hasta el fin de línea o el próximo campo
+      // (Mensaje/Tel/Email/Usuario ID/Fotos), tolerando notas en una sola línea.
+      const nameMatch = note.text.match(
+        /🔔 RECLAMO de ([^\n]+?)(?:\s+(?:Mensaje|Tel|Email|Usuario ID|Fotos de prueba):|\n|$)/,
+      );
+      const claimant = nameMatch ? nameMatch[1].trim() : "Alguien";
+      const idMatch = note.text.match(/Usuario ID:\s*(\d+)/);
+      const base = {
+        petId: pet.id,
+        petName: pet.name ?? "Mascota",
+        petPhoto: petPhoto(pet),
+        personName: claimant,
+        link: `/mascotas-perdidas/${pet.id}`,
+        userId: idMatch ? Number(idMatch[1]) : null,
+      };
+      if (pet.statusId === CatalogIds.petStatus.devueltaAlDueno) {
+        // Caso cerrado: la mascota fue devuelta a su dueño.
+        alerts.push({
+          ...base,
+          id: `devuelta:${pet.id}`,
+          type: "devuelta",
+          description: "Mascota devuelta al dueño.",
+        });
+      } else if (
+        !pet.isOwner &&
+        pet.reportStatusId !== CatalogIds.petReportStatus.finalizado
+      ) {
+        // Reclamo pendiente de resolver.
+        alerts.push({
+          ...base,
+          id: `reclamo:${pet.id}`,
+          type: "reclamo",
+          description: `${claimant} indica ser el dueño original de la mascota.`,
+        });
+      }
+    }
+  }
+
+  // Reclamos pendientes primero; las devueltas (casos cerrados) al final.
+  const orden: Record<Alert["type"], number> = { reclamo: 0, devuelta: 1 };
+  alerts.sort((a, b) => orden[a.type] - orden[b.type]);
+
+  res.json({ alerts, total: alerts.length });
+}
