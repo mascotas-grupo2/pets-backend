@@ -89,30 +89,28 @@ async function ensureBucketPublic(bucket: string, targetClient = client) {
     const exists = await targetClient.bucketExists(bucket);
     if (!exists) {
       await targetClient.makeBucket(bucket);
-    }
+      
+      const policy = JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Effect: "Allow",
+            Principal: { AWS: ["*"] },
+            Action: ["s3:GetObject"],
+            Resource: [`arn:aws:s3:::${bucket}/*`],
+          },
+        ],
+      });
 
-    const policy = JSON.stringify({
-      Version: "2012-10-17",
-      Statement: [
-        {
-          Effect: "Allow",
-          Principal: { AWS: ["*"] },
-          Action: ["s3:GetObject"],
-          Resource: [`arn:aws:s3:::${bucket}/*`],
-        },
-      ],
-    });
-
-    // setBucketPolicy acepta el nombre del bucket y la política JSON
-    // si falla, no evitamos la subida, pero registramos el error
-    try {
-      // @ts-ignore
-      if (typeof (targetClient as any).setBucketPolicy === "function") {
-        // some minio client versions expect (bucket, policy)
-        await (targetClient as any).setBucketPolicy(bucket, policy);
+      // Solo aplicamos la política si el bucket acaba de ser creado
+      try {
+        // @ts-ignore
+        if (typeof (targetClient as any).setBucketPolicy === "function") {
+          await (targetClient as any).setBucketPolicy(bucket, policy);
+        }
+      } catch (e) {
+        console.warn("No se pudo establecer política pública en bucket:", e);
       }
-    } catch (e) {
-      console.warn("No se pudo establecer política pública en bucket:", e);
     }
   } catch (e: any) {
     if (e?.code === "ENOTFOUND") throw e;
