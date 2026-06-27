@@ -88,6 +88,47 @@ async function buildUserContexts(
 }
 
 /**
+ * Para cada usuario, detecta si su conversación nace de un RECLAMO de dueño (no de
+ * una adopción) y devuelve "Reclamo de <mascota>" para usar como contexto. Se basa
+ * en el mensaje automático del reclamo (empieza con "🔔 RECLAMO DE MASCOTA" y trae
+ * la línea "Mascota: <nombre>"). Así una conversación de reclamo no se rotula como
+ * "Solicitud de adopción".
+ */
+async function buildClaimContexts(
+  userIds: number[],
+): Promise<Map<number, string>> {
+  const map = new Map<number, string>();
+  if (userIds.length === 0) return map;
+  const claimMsgs = await messageRepo()
+    .createQueryBuilder("m")
+    .where("m.senderId IN (:...ids)", { ids: userIds })
+    .andWhere("m.content LIKE :p", { p: "%RECLAMO DE MASCOTA%" })
+    .orderBy("m.id", "DESC")
+    .getMany();
+  for (const m of claimMsgs) {
+    if (map.has(m.senderId)) continue; // nos quedamos con el reclamo más reciente
+    const name = extractClaimPetName(m.content);
+    map.set(m.senderId, name ? `Reclamo de ${name}` : "Reclamo de mascota");
+  }
+  return map;
+}
+
+/**
+ * Resuelve el rótulo de contexto de una conversación de la bandeja:
+ *  - Internas (admin↔admin): sin contexto (no son solicitudes de adopción).
+ *  - Reclamo de dueño: "Reclamo de <mascota>" (tiene prioridad sobre la adopción).
+ *  - Resto: el contexto de adopción si existe.
+ */
+function resolveInboxContext(
+  roleId: number | null | undefined,
+  claimContext: string | undefined,
+  adoptionContext: string | null | undefined,
+): string | null {
+  if (roleId === CatalogIds.userRole.admin) return null;
+  return claimContext ?? adoptionContext ?? null;
+}
+
+/**
  * Extrae el petId del contenido de un mensaje de reclamo.
  * Busca "Link: /mascotas-perdidas/<petId>" que se incluye en el mensaje automático.
  */
@@ -299,6 +340,19 @@ export async function getConversation(req: Request, res: Response) {
           })
         : [];
 
+      // Si la conversación es por un RECLAMO de dueño, ese es el contexto real
+      // (no una "solicitud de adopción", que puede ser de otra mascota/otro momento).
+      let convoContext = ctx?.context ?? null;
+      if (claimPetIds.length > 0) {
+        const claimNames = claimPetIds
+          .map((pid) => claimPetMap[pid]?.name)
+          .filter((n): n is string => Boolean(n));
+        convoContext =
+          claimNames.length === 1
+            ? `Reclamo de ${claimNames[0]}`
+            : `Reclamo de ${claimPetIds.length} mascotas`;
+      }
+
       return res.json({
         messages,
         hasMore,
@@ -309,7 +363,7 @@ export async function getConversation(req: Request, res: Response) {
           photo: userProfile.photo,
           status: statusLabel,
           evaluationNote: userProfile.evaluationNote,
-          context: ctx?.context ?? null,
+          context: convoContext,
           adoptionId: ctx?.adoptionId ?? null,
           phone: ctx?.phone ?? null,
           town: ctx?.town ?? null,
@@ -402,6 +456,7 @@ export async function getInbox(req: Request, res: Response) {
 
   // Contexto para cada conversación (para mostrar en la bandeja).
   const contexts = await buildUserContexts(otherIds);
+  const claimContexts = await buildClaimContexts(otherIds);
 
   const conversations = raw
     .map((r) => {
@@ -416,7 +471,11 @@ export async function getInbox(req: Request, res: Response) {
           photo: u.photo,
           email: u.email,
           role: u.roleId === CatalogIds.userRole.admin ? "admin" : "user",
-          context: contexts.get(u.id)?.context ?? null,
+          context: resolveInboxContext(
+            u.roleId,
+            claimContexts.get(u.id),
+            contexts.get(u.id)?.context,
+          ),
         },
         latestMessage: latest,
         unread: Number(r.unread),
@@ -498,6 +557,7 @@ export async function getAdminConversations(req: Request, res: Response) {
 
   // Contexto para cada conversación
   const contexts = await buildUserContexts(otherIds);
+  const claimContexts = await buildClaimContexts(otherIds);
 
   const all = raw
     .map((r) => {
@@ -512,7 +572,11 @@ export async function getAdminConversations(req: Request, res: Response) {
           photo: u.photo,
           email: u.email,
           role: u.roleId === CatalogIds.userRole.admin ? "admin" : "user",
-          context: contexts.get(u.id)?.context ?? null,
+          context: resolveInboxContext(
+            u.roleId,
+            claimContexts.get(u.id),
+            contexts.get(u.id)?.context,
+          ),
         },
         latestMessage: latest,
         totalMessages: Number(r.totalMessages),
@@ -590,13 +654,10 @@ export async function getAdminAlerts(_req: Request, res: Response) {
         userId: idMatch ? Number(idMatch[1]) : null,
       };
       if (pet.statusId === CatalogIds.petStatus.devueltaAlDueno) {
-        // Caso cerrado: la mascota fue devuelta a su dueño.
-        alerts.push({
-          ...base,
-          id: `devuelta:${pet.id}`,
-          type: "devuelta",
-          description: "Mascota devuelta al dueño.",
-        });
+        // Caso cerrado: la mascota ya fue devuelta a su dueño (reclamo aprobado).
+        // No es accionable, así que NO genera alerta: el carrusel solo muestra
+        // reclamos pendientes. (Antes quedaba pegada una tarjeta "devuelta".)
+        continue;
       } else if (
         !pet.isOwner &&
         pet.reportStatusId !== CatalogIds.petReportStatus.finalizado
