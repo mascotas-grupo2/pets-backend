@@ -13,7 +13,7 @@ import { Sighting } from "./entity/Sighting.js";
 import { PetComment } from "./entity/PetComment.js";
 import { Notification } from "./entity/Notification.js";
 import { Activity } from "./entity/Activity.js";
-import { CatalogIds, catalogIdForCode } from "./lib/catalog-constants.js";
+import { CatalogIds, CatalogSeed, catalogIdForCode } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 import { calculateCompatibility } from "./lib/matching.js";
 
@@ -51,6 +51,20 @@ async function uploadSeedPhoto(
 async function seed() {
   await AppDataSource.initialize();
   await AppDataSource.runMigrations();
+
+  // Seed auto-suficiente: asegurar que todos los catalog values existan en la BD
+  for (const item of CatalogSeed) {
+    await AppDataSource.query(
+      `INSERT INTO "catalog_value" ("id", "catalog", "code", "label")
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT ("id") DO UPDATE SET
+         "catalog" = EXCLUDED."catalog",
+         "code" = EXCLUDED."code",
+         "label" = EXCLUDED."label"`,
+      [item.id, item.catalog, item.code, item.label],
+    );
+  }
+
 
   // Clear dependent tables first (those with foreign keys to pet)
   const repoFollowup = AppDataSource.getRepository(Followup);

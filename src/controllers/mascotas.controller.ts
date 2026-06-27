@@ -2079,6 +2079,13 @@ export async function rejectClaim(req: Request, res: Response) {
     }
   }
 
+
+  // Marcar la nota original como rechazada para que no reaparezca en el carrusel
+  if (latestClaimNote) {
+    latestClaimNote.text = "[RECHAZADO] " + latestClaimNote.text;
+    await noteRepo().save(latestClaimNote);
+  }
+
   return res.json({ ok: true, message: "Reclamo rechazado." });
 }
 
