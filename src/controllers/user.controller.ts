@@ -13,7 +13,7 @@ import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
 import { Catalog, CatalogIds, CatalogName, catalogItemForId } from "../lib/catalog-constants.js";
-import { tenantScope } from "../lib/tenant.js";
+import { scopedUserIds } from "../lib/tenant.js";
 import {
   CatalogValidationError,
   getCatalogValuesById,
@@ -628,23 +628,8 @@ export async function adminListUsers(req: Request, res: Response) {
 
   // Scope multi-tenant: el admin de refugio ve su staff + los adoptantes que
   // postularon a mascotas de su refugio. El superadmin ve todos.
-  const scope = tenantScope(req.authUser);
-  let scopedIds: number[] | null = null;
-  if (scope.scoped) {
-    const rid = scope.refugioId ?? -1;
-    const staff = await userRepo().find({ where: { refugioId: rid }, select: ["id"] });
-    const adopterRows = await dbManager().getRepository(Adoption)
-      .createQueryBuilder("a")
-      .select("DISTINCT a.userId", "userId")
-      .where("a.refugioId = :rid", { rid })
-      .andWhere("a.userId IS NOT NULL")
-      .getRawMany<{ userId: number }>();
-    const ids = new Set<number>(staff.map((u) => u.id));
-    for (const row of adopterRows) {
-      const id = Number(row.userId);
-      if (Number.isInteger(id)) ids.add(id);
-    }
-    scopedIds = ids.size ? Array.from(ids) : [-1];
+  const scopedIds = await scopedUserIds(req.authUser);
+  if (scopedIds) {
     baseWhere.id = In(scopedIds);
   }
 

@@ -47,18 +47,18 @@ const adoptionRepoMock = {
   createQueryBuilder: vi.fn(),
 };
 
-vi.mock("../../src/data-source.js", () => ({
-  AppDataSource: {
-    getRepository: (entity: any) => {
-      const name = entity?.name;
-      if (name === "User") return userRepoMock;
-      if (name === "Pet") return petRepoMock;
-      if (name === "PetNote") return noteRepoMock;
-      if (name === "Adoption") return adoptionRepoMock;
-      return petRepoMock;
-    },
-  },
-}));
+vi.mock("../../src/data-source.js", () => {
+  const getRepository = (entity: any) => {
+    const name = entity?.name;
+    if (name === "User") return userRepoMock;
+    if (name === "Pet") return petRepoMock;
+    if (name === "PetNote") return noteRepoMock;
+    if (name === "Adoption") return adoptionRepoMock;
+    return petRepoMock;
+  };
+  // El código pasa por dbManager() -> AppDataSource.manager.getRepository(...).
+  return { AppDataSource: { getRepository, manager: { getRepository } } };
+});
 
 vi.mock("../../src/lib/catalog-values.js", () => ({
   getCatalogValuesById: vi.fn(async () => new Map()),

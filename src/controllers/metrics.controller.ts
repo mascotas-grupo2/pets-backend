@@ -8,8 +8,9 @@ import { Adoption } from "../entity/Adoption";
 import { Followup } from "../entity/Followup";
 import { User } from "../entity/User";
 
+import { In } from "typeorm";
 import { CatalogIds } from "../lib/catalog-constants"; // Importa CatalogIds
-import { applyTenantScope, tenantWhere } from "../lib/tenant";
+import { applyTenantScope, scopedUserIds, tenantWhere } from "../lib/tenant";
 
 // Define el tipo MetricasFilter para consistencia con el frontend
 type MetricasFilter = "7d" | "30d" | "90d" | "1y";
@@ -30,6 +31,10 @@ export async function getMetricas(req: Request, res: Response) {
       }
     }
     const dateFilter = startDate ? MoreThanOrEqual(startDate) : undefined;
+
+    // Usuarios "del refugio" (staff + adoptantes); null = superadmin sin scope
+    // (todos). Mantiene las métricas de usuarios consistentes con la lista de Personas.
+    const userIds = await scopedUserIds(req.authUser);
     // ==========================
     // KPI SUPERIORES
     // ==========================
@@ -75,6 +80,7 @@ export async function getMetricas(req: Request, res: Response) {
 
       dbManager().getRepository(User).count({
         where: {
+          ...(userIds && { id: In(userIds) }),
           ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
@@ -169,6 +175,9 @@ export async function getMetricas(req: Request, res: Response) {
       .groupBy("DATE_TRUNC('month', u.createdAt)")
       .orderBy("DATE_TRUNC('month', u.createdAt)", "ASC");
 
+    if (userIds) {
+      usuariosPorMesQb.andWhere("u.id IN (:...userIds)", { userIds });
+    }
     if (startDate) {
       usuariosPorMesQb.andWhere("u.createdAt >= :startDate", { startDate });
     }
@@ -269,6 +278,8 @@ export async function getMapaReportes(req: Request, res: Response) {
         // Postgres pasa a minúscula los alias sin comillas; los entrecomillamos.
         'p.statusId as "statusId"',
         'p.animalTypeId as "animalTypeId"',
+        "p.photo as photo",
+        "p.photos as photos",
       ])
       .where("p.latitud IS NOT NULL")
       .andWhere("p.longitud IS NOT NULL");
@@ -282,6 +293,10 @@ export async function getMapaReportes(req: Request, res: Response) {
       lng: Number(item.lng),
       estado: getPetStatusLabel(Number(item.statusId)),
       especie: getAnimalTypeLabel(Number(item.animalTypeId)),
+      // Imagen para el popup: foto principal o la primera del array.
+      foto:
+        item.photo ??
+        (Array.isArray(item.photos) && item.photos.length ? item.photos[0] : null),
     }));
 
     // Filtros opcionales (case-insensitive, por substring).

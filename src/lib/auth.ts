@@ -28,6 +28,10 @@ export type AuthUser = {
   role?: string;
   provider?: string;
   refugioId?: number | null;
+  // Solo para superadmin: refugio que está "mirando" (via ?refugioId=). Hace que
+  // tenantScope lo trate como admin de ese refugio para esta request. Sin él, el
+  // superadmin queda sin scope (ve el agregado de todos los refugios).
+  viewRefugioId?: number | null;
 };
 
 declare global {
@@ -211,6 +215,19 @@ export async function requireAuth(
   }
 }
 
+/**
+ * Para superadmin: si la request trae ?refugioId=N, lo adjunta como viewRefugioId
+ * para que el scoping multi-tenant trate al superadmin como admin de ese refugio
+ * en esta request. Para el resto de los roles no hace nada.
+ */
+function withViewRefugio(req: Request, authUser: AuthUser): AuthUser {
+  if (authUser.role !== "superadmin") return authUser;
+  const raw = req.query?.refugioId;
+  const val = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof val === "string" && val.trim() !== "" ? Number(val) : NaN;
+  return Number.isInteger(id) ? { ...authUser, viewRefugioId: id } : authUser;
+}
+
 export async function requireAdmin(
   req: Request,
   res: Response,
@@ -230,7 +247,7 @@ export async function requireAdmin(
         .json({ error: "Se requiere rol de administrador" });
     }
     req.user = payload;
-    req.authUser = authUser;
+    req.authUser = withViewRefugio(req, authUser);
     return next();
   } catch (err) {
     return res.status(401).json({ error: "Token invalido o expirado" });
@@ -250,13 +267,15 @@ export async function requireRefugioAdmin(
     const authUser = await authUserFromPayload(payload);
     if (!authUser)
       return res.status(401).json({ error: "Token invalido o expirado" });
-    if (authUser.role !== "admin") {
+    // El superadmin también pasa: sin ?refugioId ve el agregado de todos los
+    // refugios; con ?refugioId queda scopeado a ese refugio (via withViewRefugio).
+    if (authUser.role !== "admin" && authUser.role !== "superadmin") {
       return res
         .status(403)
         .json({ error: "Se requiere rol de administrador de refugio" });
     }
     req.user = payload;
-    req.authUser = authUser;
+    req.authUser = withViewRefugio(req, authUser);
     return next();
   } catch (err) {
     return res.status(401).json({ error: "Token invalido o expirado" });

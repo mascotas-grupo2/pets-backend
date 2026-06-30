@@ -4,6 +4,7 @@ import {
   adminListMascotas,
   adminListMascotasByStatus,
   adminListMascotasPaged,
+  getAdminPetById,
   approveClaim,
   claimPet,
   renewMascota,
@@ -23,6 +24,7 @@ import {
   finalizeMascota,
   resolveMascota,
   rejectMascota,
+  rejectClaim,
   entregaDirecta,
   getMascotaCompatibility,
 } from "../controllers/mascotas.controller.js";
@@ -46,6 +48,7 @@ mascotasRouter.get("/admin/mapa", requireRefugioAdmin, getMapaReportes);
 mascotasRouter.get("/admin/list", requireRefugioAdmin, adminListMascotas);
 mascotasRouter.get("/admin/paged", requireRefugioAdmin, adminListMascotasPaged);
 mascotasRouter.get("/admin/status/:status", requireRefugioAdmin, adminListMascotasByStatus);
+mascotasRouter.get("/admin/pet/:id", requireRefugioAdmin, getAdminPetById);
 mascotasRouter.get("/animal-types", listAnimalTypeCatalog);
 mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
 mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
@@ -65,6 +68,7 @@ mascotasRouter.post("/:id/reject", requireRefugioAdmin, rejectMascota);
 mascotasRouter.post("/:id/claim", optionalAuth, multiple("photo", 5), multerErrorHandler, claimPet);
 mascotasRouter.post("/:id/renew", requireAuth, renewMascota);
 mascotasRouter.post("/:id/approve-claim", requireRefugioAdmin, approveClaim);
+mascotasRouter.post("/:id/reject-claim", requireRefugioAdmin, rejectClaim);
 mascotasRouter.post("/:id/confirm-return", requireRefugioAdmin, confirmReturn);
 mascotasRouter.get("/:id/notes", requireRefugioAdmin, listPetNotes);
 mascotasRouter.post("/:id/notes", requireRefugioAdmin, createPetNote);

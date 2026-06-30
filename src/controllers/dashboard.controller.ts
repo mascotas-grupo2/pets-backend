@@ -9,7 +9,7 @@ import { Message } from "../entity/Message.js";
 import { User } from "../entity/User.js";
 import { PetComment } from "../entity/PetComment.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
-import { applyTenantScope, petVisibilityWhere, tenantWhere } from "../lib/tenant.js";
+import { applyTenantScope, isSuperadmin, petVisibilityWhere, scopedUserIds, tenantWhere } from "../lib/tenant.js";
 
 /** Conteos reales para las cards del dashboard del admin. */
 export async function getDashboardStats(req: Request, res: Response) {
@@ -85,11 +85,20 @@ export async function getDashboardActivity(req: Request, res: Response) {
   const messageRepo = dbManager().getRepository(Message);
   const commentRepo = dbManager().getRepository(PetComment);
 
+  // Mensajes: solo los recibidos por este admin (su bandeja), no los de todos los
+  // refugios. El superadmin sí ve la actividad global de mensajes.
+  const messageWhere = isSuperadmin(req.authUser)
+    ? {}
+    : { receiverId: req.authUser?.id ?? -1 };
+
+  // Usuarios del refugio (staff + adoptantes); null = superadmin sin scope (todos).
+  const userIds = await scopedUserIds(req.authUser);
+
   const [adoptions, messages, pets, users, comments] = await Promise.all([
     adoptionRepo.find({ where: { petId: Not(IsNull()), ...tenantWhere(req.authUser) }, order: { createdAt: "DESC" }, take }),
-    messageRepo.find({ order: { createdAt: "DESC" }, take }),
+    messageRepo.find({ where: messageWhere, order: { createdAt: "DESC" }, take }),
     petRepo.find({ where: petVisibilityWhere({}, req.authUser), order: { createdAt: "DESC" }, take }),
-    userRepo.find({ order: { createdAt: "DESC" }, take }),
+    userRepo.find({ where: userIds ? { id: In(userIds) } : {}, order: { createdAt: "DESC" }, take }),
     commentRepo.find({ order: { createdAt: "DESC" }, take }),
   ]);
 
