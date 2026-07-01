@@ -3,6 +3,8 @@ import { AppDataSource } from "../data-source.js";
 import { dbManager } from "../lib/db-context.js";
 import { Sighting } from "../entity/Sighting.js";
 import { Pet } from "../entity/Pet.js";
+import { User } from "../entity/User.js";
+import { CatalogIds } from "../lib/catalog-constants.js";
 import { notify } from "../lib/notify.js";
 
 function sightingRepo() {
@@ -11,8 +13,27 @@ function sightingRepo() {
 function petRepo() {
   return dbManager().getRepository(Pet);
 }
+function userRepo() {
+  return dbManager().getRepository(User);
+}
 
-/** Reporta un avistamiento ("La vi") y notifica al dueño. Anónimo o logueado. */
+/**
+ * Admins que deben enterarse de lo que pasa con una mascota: los del refugio
+ * dueño de la publicación. Si la mascota no tiene refugio asignado (o ninguno
+ * matchea), se avisa a todos los admins como fallback.
+ */
+async function adminsForPet(pet: Pet): Promise<User[]> {
+  const admins = await userRepo().find({
+    where: { roleId: CatalogIds.userRole.admin },
+  });
+  if (pet.refugioId != null) {
+    const delRefugio = admins.filter((a) => a.refugioId === pet.refugioId);
+    if (delRefugio.length) return delRefugio;
+  }
+  return admins;
+}
+
+/** Reporta un avistamiento ("La vi") y notifica al dueño y al refugio. Anónimo o logueado. */
 export async function createSighting(req: Request, res: Response) {
   const petId = req.params.id;
   const pet = await petRepo().findOneBy({ id: petId });
@@ -40,12 +61,31 @@ export async function createSighting(req: Request, res: Response) {
     }),
   );
 
+  const petName = pet.name ?? "la mascota";
+
+  // Aviso al dueño de la publicación (si está registrado).
   await notify(pet.userId, {
     type: "avistamiento",
-    title: `Posible avistamiento de ${pet.name ?? "tu mascota"}`,
+    title: `Posible avistamiento de ${petName}`,
     body: place ? `Vista en ${place}` : "Alguien dejó información",
     link: `/mascotas-perdidas/${petId}`,
   });
+
+  // Aviso a los admins del refugio: best-effort, no debe tumbar la operación.
+  try {
+    const admins = await adminsForPet(pet);
+    for (const admin of admins) {
+      if (admin.id === pet.userId) continue; // ya avisado como dueño
+      await notify(admin.id, {
+        type: "avistamiento",
+        title: `Nuevo avistamiento de ${petName}`,
+        body: place ? `Reportado en ${place}` : "Alguien dejó una pista",
+        link: `/admin/publicacion`,
+      });
+    }
+  } catch (e) {
+    console.warn("[sighting] no se pudo avisar a los admins:", (e as Error).message);
+  }
 
   res.status(201).json(saved);
 }
@@ -57,7 +97,11 @@ export async function listSightings(req: Request, res: Response) {
   if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
   const authUser = req.authUser;
   const isOwnerOrAdmin =
-    authUser && (authUser.role === "admin" || authUser.id === pet.userId);
+    authUser &&
+    (authUser.role === "admin" ||
+      authUser.role === "superadmin" ||
+      authUser.id === pet.userId ||
+      authUser.id === pet.ownerUserId);
   if (!isOwnerOrAdmin) return res.status(403).json({ error: "No autorizado" });
 
   const items = await sightingRepo().find({
@@ -65,4 +109,40 @@ export async function listSightings(req: Request, res: Response) {
     order: { createdAt: "DESC" },
   });
   res.json(items);
+}
+
+/** Acepta ("confirma") un avistamiento. Lo puede hacer el dueño o un admin. */
+export async function acceptSighting(req: Request, res: Response) {
+  const { id: petId, sightingId } = req.params;
+  const pet = await petRepo().findOneBy({ id: petId });
+  if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const authUser = req.authUser;
+  const isOwnerOrAdmin =
+    authUser &&
+    (authUser.role === "admin" ||
+      authUser.role === "superadmin" ||
+      authUser.id === pet.userId ||
+      authUser.id === pet.ownerUserId);
+  if (!isOwnerOrAdmin) return res.status(403).json({ error: "No autorizado" });
+
+  const sighting = await sightingRepo().findOneBy({ id: sightingId, petId });
+  if (!sighting) return res.status(404).json({ error: "Avistamiento no encontrado" });
+
+  if (!sighting.accepted) {
+    sighting.accepted = true;
+    sighting.acceptedAt = new Date();
+    sighting.acceptedByUserId = authUser?.id ?? null;
+    await sightingRepo().save(sighting);
+
+    // Avisar a quien reportó el avistamiento (si está registrado).
+    await notify(sighting.reporterUserId, {
+      type: "avistamiento",
+      title: `Confirmaron tu avistamiento de ${pet.name ?? "la mascota"}`,
+      body: "¡Gracias! Tu pista fue tomada en cuenta por el refugio.",
+      link: `/mascotas-perdidas/${petId}`,
+    });
+  }
+
+  res.json(sighting);
 }

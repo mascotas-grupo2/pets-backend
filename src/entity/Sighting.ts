@@ -35,6 +35,16 @@ export class Sighting {
   @Column({ type: "varchar", length: 200, nullable: true })
   contact!: string | null;
 
+  /** El dueño/refugio confirmó el avistamiento ("lo vi" aceptado). */
+  @Column({ type: "boolean", default: false })
+  accepted!: boolean;
+
+  @Column({ name: "accepted_at", type: "timestamp", nullable: true })
+  acceptedAt!: Date | null;
+
+  @Column({ name: "accepted_by_user_id", type: "int", nullable: true })
+  acceptedByUserId!: number | null;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 }
