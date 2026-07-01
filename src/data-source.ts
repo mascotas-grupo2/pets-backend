@@ -57,6 +57,7 @@ import { AddPetExpiryNotifiedAt1750000003000 } from "./migration/1750000003000-A
 import { AddPetExpiryWarnedAt1750000004000 } from "./migration/1750000004000-AddPetExpiryWarnedAt.js";
 import { AddRefugio1750100000000 } from "./migration/1750100000000-AddRefugio.js";
 import { AddRowLevelSecurity1750200000000 } from "./migration/1750200000000-AddRowLevelSecurity.js";
+import { FixSuperadminRls1750300000000 } from "./migration/1750300000000-FixSuperadminRls.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -121,6 +122,7 @@ export const AppDataSource = new DataSource({
     AddPetExpiryWarnedAt1750000004000,
     AddRefugio1750100000000,
     AddRowLevelSecurity1750200000000,
+    FixSuperadminRls1750300000000,
   ],
   synchronize: false,
 });
