@@ -730,6 +730,7 @@ export async function createMascota(req: Request, res: Response) {
       "friendlyWithKids",
       "friendlyWithPets",
       "trained",
+      "isOwner",
     ];
     for (const f of booleanFields) {
       if (bodyForValidation[f] === "true") bodyForValidation[f] = true;
