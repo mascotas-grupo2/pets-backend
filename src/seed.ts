@@ -421,6 +421,8 @@ async function seed() {
     Toby: ["rambo.png"],
     Luna: ["michi.png", "pelusa.png"],
     Mishi: ["michi.png", "salem.png"],
+    // simba_extra.png es una 2ª foto del MISMO Simba (galería), no otra mascota.
+    Simba: ["simba_extra.png"],
   };
 
   const createdPets: { id: string; name: string | null }[] = [];
@@ -653,10 +655,8 @@ async function seed() {
 
   // (removed duplicate extra user insertion to avoid unique email conflicts)
 
-  // Create ~10 additional pet posts (active) with better names and unique descriptions
   const extraPetNames = [
     "Bruno",
-    "Simba",
     "Chispa",
     "Maya",
     "Rambo",
@@ -668,7 +668,6 @@ async function seed() {
   ];
   const extraPetDescriptions = [
     "Perro cariñoso que ama pasear y jugar con pelotas.",
-    "Gato curioso que se esconde en cajas y ventanas soleadas.",
     "Cachorro energético, ideal para familias activas.",
     "Gata tranquila y mansa, se lleva bien con otros animales.",
     "Perro protector y leal, buen guardián de casa.",
@@ -681,7 +680,6 @@ async function seed() {
 
   const extraPetImages = [
     "bruno.png",
-    "simba_extra.png",
     "chispa.png",
     "maya.png",
     "rambo.png",
@@ -695,7 +693,6 @@ async function seed() {
   // Ubicaciones reales de CABA (el front conoce sus coordenadas para la vista mapa).
   const extraPetLocations = [
     "Plaza Serrano, Palermo, CABA",
-    "Parque Centenario, Caballito, CABA",
     "Parque Lezama, San Telmo, CABA",
     "Parque Rivadavia, Caballito, CABA",
     "Barrancas de Belgrano, CABA",
@@ -707,7 +704,6 @@ async function seed() {
   ];
   const extraPetTypes = [
     CatalogIds.animalType.perro, // Bruno  - "Perro cariñoso..."
-    CatalogIds.animalType.gato, // Simba  - "Gato curioso..."
     CatalogIds.animalType.perro, // Chispa - "Cachorro energético..."
     CatalogIds.animalType.gato, // Maya   - "Gata tranquila..."
     CatalogIds.animalType.perro, // Rambo  - "Perro protector..."
@@ -719,7 +715,6 @@ async function seed() {
   ];
   const extraPetSexes = [
     CatalogIds.petSex.macho, // Bruno
-    CatalogIds.petSex.macho, // Simba
     CatalogIds.petSex.macho, // Chispa
     CatalogIds.petSex.hembra, // Maya
     CatalogIds.petSex.macho, // Rambo
@@ -734,7 +729,6 @@ async function seed() {
   // (pequeño ≤10kg, mediano ≤25kg, grande >25kg), coherentes con el tipo.
   const extraPetWeights = [
     30, // Bruno  - perro grande
-    5, // Simba  - gato
     8, // Chispa - perro pequeño (cachorro)
     4, // Maya   - gata
     35, // Rambo  - perro grande
@@ -748,7 +742,6 @@ async function seed() {
   // Estados variados (perdido/encontrado/tránsito/adopción) para enriquecer el listado.
   const extraPetStatuses = [
     CatalogIds.petStatus.perdido,
-    CatalogIds.petStatus.perdido,
     CatalogIds.petStatus.encontrado,
     CatalogIds.petStatus.perdido,
     CatalogIds.petStatus.adopcion,
@@ -759,7 +752,7 @@ async function seed() {
     CatalogIds.petStatus.adopcion,
   ];
   // Antigüedad del reporte en días, relativa a HOY → habilita la urgencia y el orden.
-  const extraPetDaysAgo = [1, 0, 3, 8, 22, 2, 13, 30, 6, 40];
+  const extraPetDaysAgo = [1, 3, 8, 22, 2, 13, 30, 6, 40];
   const isoDaysAgo = (n: number) =>
     new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
@@ -767,7 +760,6 @@ async function seed() {
   // cercanía (el front calcula la distancia a "Vos" con turf).
   const extraPetCoords: [number, number][] = [
     [-34.5889, -58.4306], // Plaza Serrano, Palermo
-    [-34.6064, -58.4356], // Parque Centenario, Caballito
     [-34.628, -58.3697], // Parque Lezama, San Telmo
     [-34.6184, -58.4357], // Parque Rivadavia, Caballito
     [-34.561, -58.4546], // Barrancas de Belgrano
