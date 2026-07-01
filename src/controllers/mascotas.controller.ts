@@ -195,15 +195,32 @@ export async function listMascotas(req: Request, res: Response) {
       : { reportStatusId: CatalogIds.petReportStatus.activo, ...extra },
     order: { id: "DESC" },
   });
+  // Pipeline de refugio: una mascota recuperada que está siendo tratada
+  // ("En refugio" / "En tránsito" / "En tratamiento médico") queda EN PAUSA,
+  // fuera del listado público, hasta que se republica en "En adopción".
+  // El dueño la sigue viendo (para no perderla de vista); admins la ven en su
+  // panel. Reaparece sola al pasar a "En adopción" (que no está en pausa).
+  const PAUSED_STATUS = new Set<number>([
+    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+  ]);
+  const esPropia = (m: Pet) =>
+    userId != null && (m.userId === userId || m.ownerUserId === userId);
+
   // Ocultar del público las publicaciones vencidas hace más que la gracia
   // (siguen en la DB y en "Mis reportes"; reaparecen si el dueño renueva).
   const graceMs = EXPIRY_GRACE_DAYS * DAY_MS;
   const visibles = mascotas.filter((m) => {
+    // En pausa (pipeline de refugio): fuera del público, salvo al dueño.
+    if (m.statusId != null && PAUSED_STATUS.has(m.statusId) && !esPropia(m)) {
+      return false;
+    }
     if (!m.expiresAt) return true;
     const overdueMs = Date.now() - new Date(m.expiresAt).getTime();
     if (overdueMs <= graceMs) return true;
     // Las propias del usuario sí se le muestran (para que pueda renovarlas).
-    return userId != null && (m.userId === userId || m.ownerUserId === userId);
+    return esPropia(m);
   });
   const catalogValuesById = await getCatalogValuesById();
   const refugioIds = [

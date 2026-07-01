@@ -337,7 +337,7 @@ function getPetStatusLabel(id: number) {
       return "perdido";
 
     case CatalogIds.petStatus.encontrado:
-      return "encontrado";
+      return "en refugio";
 
     case CatalogIds.petStatus.transito:
       return "en tránsito";

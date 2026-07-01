@@ -137,7 +137,7 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 102, catalog: Catalog.PET_SEX, code: "hembra", label: "Hembra" },
 
   { id: 201, catalog: Catalog.PET_STATUS, code: "perdido", label: "Perdido" },
-  { id: 202, catalog: Catalog.PET_STATUS, code: "encontrado", label: "Encontrado" },
+  { id: 202, catalog: Catalog.PET_STATUS, code: "encontrado", label: "En refugio" },
   { id: 203, catalog: Catalog.PET_STATUS, code: "en tránsito", label: "En tránsito" },
   { id: 204, catalog: Catalog.PET_STATUS, code: "en tratamiento médico", label: "En tratamiento médico" },
   { id: 205, catalog: Catalog.PET_STATUS, code: "en adopción", label: "En adopción" },

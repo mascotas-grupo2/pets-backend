@@ -98,25 +98,60 @@ export async function createSighting(req: Request, res: Response) {
   res.status(201).json(saved);
 }
 
-/** Lista los avistamientos de una mascota (dueño o admin). */
+/**
+ * Lista avistamientos de una mascota. El dueño/admin ve todos; un usuario
+ * logueado que no es dueño/admin ve solo los que él mismo reportó (para
+ * seguir el estado de su pista). Los anónimos no acceden.
+ */
 export async function listSightings(req: Request, res: Response) {
   const petId = req.params.id;
   const pet = await petRepo().findOneBy({ id: petId });
   if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
   const authUser = req.authUser;
+  if (!authUser) return res.status(403).json({ error: "No autorizado" });
+
   const isOwnerOrAdmin =
-    authUser &&
-    (authUser.role === "admin" ||
-      authUser.role === "superadmin" ||
-      authUser.id === pet.userId ||
-      authUser.id === pet.ownerUserId);
-  if (!isOwnerOrAdmin) return res.status(403).json({ error: "No autorizado" });
+    authUser.role === "admin" ||
+    authUser.role === "superadmin" ||
+    authUser.id === pet.userId ||
+    authUser.id === pet.ownerUserId;
 
   const items = await sightingRepo().find({
-    where: { petId },
+    where: isOwnerOrAdmin
+      ? { petId }
+      : { petId, reporterUserId: authUser.id },
     order: { createdAt: "DESC" },
   });
   res.json(items);
+}
+
+/**
+ * Rastro público del animal: los avistamientos ACEPTADOS que tienen coordenadas,
+ * en orden cronológico. Sirve para dibujar el recorrido por donde lo fueron
+ * viendo. No expone datos de contacto del reportante.
+ */
+export async function sightingTrail(req: Request, res: Response) {
+  const petId = req.params.id;
+  const pet = await petRepo().findOneBy({ id: petId });
+  if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const items = await sightingRepo().find({
+    where: { petId, accepted: true },
+    order: { createdAt: "ASC" },
+  });
+
+  const trail = items
+    .filter((s) => s.latitud != null && s.longitud != null)
+    .map((s) => ({
+      id: s.id,
+      place: s.place,
+      latitud: s.latitud,
+      longitud: s.longitud,
+      sightedOn: s.sightedOn,
+      createdAt: s.createdAt,
+    }));
+
+  res.json(trail);
 }
 
 /** Acepta ("confirma") un avistamiento. Lo puede hacer el dueño o un admin. */
