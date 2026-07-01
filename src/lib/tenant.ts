@@ -34,13 +34,7 @@ export function refugioIdOf(authUser?: AuthUser | null): number | null {
 export type TenantScope = { scoped: boolean; refugioId: number | null };
 
 export function tenantScope(authUser?: AuthUser | null): TenantScope {
-  if (isSuperadmin(authUser)) {
-    // Superadmin "mirando" un refugio puntual (picker) → se scopea a ese refugio;
-    // sin selección queda sin scope (ve el agregado de todos).
-    const view = authUser?.viewRefugioId ?? null;
-    if (view != null) return { scoped: true, refugioId: view };
-    return { scoped: false, refugioId: null };
-  }
+  if (isSuperadmin(authUser)) return { scoped: false, refugioId: null };
   return { scoped: true, refugioId: refugioIdOf(authUser) };
 }
 
