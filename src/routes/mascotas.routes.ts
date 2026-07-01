@@ -36,7 +36,7 @@ import {
   approveComment,
   rejectComment,
 } from "../controllers/comments.controller.js";
-import { createSighting, listSightings, acceptSighting } from "../controllers/sightings.controller.js";
+import { createSighting, listSightings, acceptSighting, rejectSighting } from "../controllers/sightings.controller.js";
 import { optionalAuth, requireRefugioAdmin, requireAuth } from "../lib/auth.js";
 
 export const mascotasRouter = Router();
@@ -87,3 +87,4 @@ mascotasRouter.post("/:id/comments/:commentId/reject", requireAuth, rejectCommen
 mascotasRouter.post("/:id/sightings", optionalAuth, createSighting);
 mascotasRouter.get("/:id/sightings", requireAuth, listSightings);
 mascotasRouter.post("/:id/sightings/:sightingId/accept", requireAuth, acceptSighting);
+mascotasRouter.post("/:id/sightings/:sightingId/reject", requireAuth, rejectSighting);

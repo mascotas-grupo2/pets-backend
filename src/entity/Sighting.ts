@@ -25,6 +25,13 @@ export class Sighting {
   @Column({ type: "varchar", length: 200, nullable: true })
   place!: string | null;
 
+  /** Punto exacto marcado en el mapa (opcional). */
+  @Column({ type: "double precision", nullable: true })
+  latitud!: number | null;
+
+  @Column({ type: "double precision", nullable: true })
+  longitud!: number | null;
+
   /** Fecha del avistamiento como la cargó el usuario (YYYY-MM-DD). */
   @Column({ name: "sighted_on", type: "varchar", length: 40, nullable: true })
   sightedOn!: string | null;
@@ -44,6 +51,16 @@ export class Sighting {
 
   @Column({ name: "accepted_by_user_id", type: "int", nullable: true })
   acceptedByUserId!: number | null;
+
+  /** El dueño/refugio descartó el avistamiento (no corresponde / no era la mascota). */
+  @Column({ type: "boolean", default: false })
+  rejected!: boolean;
+
+  @Column({ name: "rejected_at", type: "timestamp", nullable: true })
+  rejectedAt!: Date | null;
+
+  @Column({ name: "rejected_by_user_id", type: "int", nullable: true })
+  rejectedByUserId!: number | null;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

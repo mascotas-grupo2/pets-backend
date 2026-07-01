@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { AppDataSource } from "../data-source.js";
 import { dbManager } from "../lib/db-context.js";
 import { Sighting } from "../entity/Sighting.js";
 import { Pet } from "../entity/Pet.js";
@@ -46,6 +45,13 @@ export async function createSighting(req: Request, res: Response) {
   const contact =
     typeof req.body?.contact === "string" ? req.body.contact.trim().slice(0, 200) : null;
 
+  const toCoord = (v: unknown): number | null => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  };
+  const latitud = toCoord(req.body?.latitud);
+  const longitud = toCoord(req.body?.longitud);
+
   if (!place && !note) {
     return res.status(400).json({ error: "Contanos dónde la viste o algún detalle." });
   }
@@ -55,6 +61,8 @@ export async function createSighting(req: Request, res: Response) {
       petId,
       reporterUserId: req.authUser?.id ?? null,
       place,
+      latitud,
+      longitud,
       sightedOn,
       note,
       contact,
@@ -80,7 +88,7 @@ export async function createSighting(req: Request, res: Response) {
         type: "avistamiento",
         title: `Nuevo avistamiento de ${petName}`,
         body: place ? `Reportado en ${place}` : "Alguien dejó una pista",
-        link: `/admin/publicacion`,
+        link: `/mascotas-perdidas/${petId}`,
       });
     }
   } catch (e) {
@@ -133,6 +141,10 @@ export async function acceptSighting(req: Request, res: Response) {
     sighting.accepted = true;
     sighting.acceptedAt = new Date();
     sighting.acceptedByUserId = authUser?.id ?? null;
+    // Aceptar deja sin efecto un rechazo previo.
+    sighting.rejected = false;
+    sighting.rejectedAt = null;
+    sighting.rejectedByUserId = null;
     await sightingRepo().save(sighting);
 
     // Avisar a quien reportó el avistamiento (si está registrado).
@@ -142,6 +154,38 @@ export async function acceptSighting(req: Request, res: Response) {
       body: "¡Gracias! Tu pista fue tomada en cuenta por el refugio.",
       link: `/mascotas-perdidas/${petId}`,
     });
+  }
+
+  res.json(sighting);
+}
+
+/** Descarta ("rechaza") un avistamiento. Lo puede hacer el dueño o un admin. */
+export async function rejectSighting(req: Request, res: Response) {
+  const { id: petId, sightingId } = req.params;
+  const pet = await petRepo().findOneBy({ id: petId });
+  if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
+
+  const authUser = req.authUser;
+  const isOwnerOrAdmin =
+    authUser &&
+    (authUser.role === "admin" ||
+      authUser.role === "superadmin" ||
+      authUser.id === pet.userId ||
+      authUser.id === pet.ownerUserId);
+  if (!isOwnerOrAdmin) return res.status(403).json({ error: "No autorizado" });
+
+  const sighting = await sightingRepo().findOneBy({ id: sightingId, petId });
+  if (!sighting) return res.status(404).json({ error: "Avistamiento no encontrado" });
+
+  if (!sighting.rejected) {
+    sighting.rejected = true;
+    sighting.rejectedAt = new Date();
+    sighting.rejectedByUserId = authUser?.id ?? null;
+    // Rechazar deja sin efecto una aceptación previa.
+    sighting.accepted = false;
+    sighting.acceptedAt = null;
+    sighting.acceptedByUserId = null;
+    await sightingRepo().save(sighting);
   }
 
   res.json(sighting);
