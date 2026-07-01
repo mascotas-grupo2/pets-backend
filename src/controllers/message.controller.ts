@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { Message } from "../entity/Message.js";
 import { User } from "../entity/User.js";
 import { Adoption } from "../entity/Adoption.js";
@@ -12,25 +13,26 @@ import { publicUser } from "./user.controller.js";
 import { notify } from "../lib/notify.js";
 import { recordActivity } from "../lib/activity.js";
 import { uploadFileToMinio } from "../lib/minio.js";
+import { petVisibilityWhere } from "../lib/tenant.js";
 
 function messageRepo() {
-  return AppDataSource.getRepository(Message);
+  return dbManager().getRepository(Message);
 }
 
 function userRepo() {
-  return AppDataSource.getRepository(User);
+  return dbManager().getRepository(User);
 }
 
 function adoptionRepo() {
-  return AppDataSource.getRepository(Adoption);
+  return dbManager().getRepository(Adoption);
 }
 
 function petRepo() {
-  return AppDataSource.getRepository(Pet);
+  return dbManager().getRepository(Pet);
 }
 
 function noteRepo() {
-  return AppDataSource.getRepository(PetNote);
+  return dbManager().getRepository(PetNote);
 }
 
 function notificationRepo() {
@@ -191,6 +193,7 @@ export async function sendMessage(req: Request, res: Response) {
       type: "mensaje",
       title: `Nuevo mensaje de ${sender.name}`,
       actorUserId: sender.id,
+      refugioId: receiver.refugioId ?? null,
       refType: "message",
       refId: msg.id,
       link: `/admin/mensajes?user=${sender.id}`,
@@ -605,7 +608,7 @@ export async function getAdminConversations(req: Request, res: Response) {
  *   - evaluacion: adopciones en estado "en evaluación".
  *   - documentacion: adopciones "aceptadas con seguimiento" (docs/seguimiento pendiente).
  */
-export async function getAdminAlerts(_req: Request, res: Response) {
+export async function getAdminAlerts(req: Request, res: Response) {
   type Alert = {
     id: string;
     type: "reclamo" | "devuelta";
@@ -633,9 +636,15 @@ export async function getAdminAlerts(_req: Request, res: Response) {
       latestClaimByPet.set(n.petId, n);
   }
   if (latestClaimByPet.size > 0) {
-    const pets = await petRepo().findBy({
-      id: In(Array.from(latestClaimByPet.keys())),
-    });
+    // Solo mascotas visibles para este admin: las de su refugio más los reportes
+    // públicos sin refugio. El superadmin ve todas. Así un refugio no ve los
+    // reclamos de otro.
+    const pets = await petRepo().findBy(
+      petVisibilityWhere(
+        { id: In(Array.from(latestClaimByPet.keys())) },
+        req.authUser,
+      ),
+    );
     for (const pet of pets) {
       const note = latestClaimByPet.get(pet.id)!;
       // El nombre va tras "RECLAMO de" hasta el fin de línea o el próximo campo

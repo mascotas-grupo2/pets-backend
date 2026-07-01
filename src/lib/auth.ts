@@ -27,6 +27,11 @@ export type AuthUser = {
   email?: string;
   role?: string;
   provider?: string;
+  refugioId?: number | null;
+  // Solo para superadmin: refugio que está "mirando" (via ?refugioId=). Hace que
+  // tenantScope lo trate como admin de ese refugio para esta request. Sin él, el
+  // superadmin queda sin scope (ve el agregado de todos los refugios).
+  viewRefugioId?: number | null;
 };
 
 declare global {
@@ -58,6 +63,7 @@ export async function createAccessToken(user: User) {
     email: user.email,
     role: catalogCodeForId(user.roleId) ?? "user",
     provider: catalogCodeForId(user.ssoProviderId) ?? "local",
+    refugio_id: user.refugioId ?? null,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(localIssuer)
@@ -112,9 +118,11 @@ async function authUserFromPayload(
   const role = typeof payload.role === "string" ? payload.role : undefined;
   const provider =
     typeof payload.provider === "string" ? payload.provider : undefined;
+  const refugioId =
+    typeof payload.refugio_id === "number" ? payload.refugio_id : null;
 
   if (Number.isInteger(id)) {
-    return { id, email, role, provider };
+    return { id, email, role, provider, refugioId };
   }
 
   if (!payload.sub) return null;
@@ -132,6 +140,7 @@ async function authUserFromPayload(
     email: user.email,
     role: catalogCodeForId(user.roleId) ?? "user",
     provider: catalogCodeForId(user.ssoProviderId) ?? "keycloak",
+    refugioId: user.refugioId ?? null,
   };
 }
 
@@ -206,6 +215,19 @@ export async function requireAuth(
   }
 }
 
+/**
+ * Para superadmin: si la request trae ?refugioId=N, lo adjunta como viewRefugioId
+ * para que el scoping multi-tenant trate al superadmin como admin de ese refugio
+ * en esta request. Para el resto de los roles no hace nada.
+ */
+function withViewRefugio(req: Request, authUser: AuthUser): AuthUser {
+  if (authUser.role !== "superadmin") return authUser;
+  const raw = req.query?.refugioId;
+  const val = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof val === "string" && val.trim() !== "" ? Number(val) : NaN;
+  return Number.isInteger(id) ? { ...authUser, viewRefugioId: id } : authUser;
+}
+
 export async function requireAdmin(
   req: Request,
   res: Response,
@@ -219,10 +241,64 @@ export async function requireAdmin(
     const authUser = await authUserFromPayload(payload);
     if (!authUser)
       return res.status(401).json({ error: "Token invalido o expirado" });
-    if (authUser.role !== "admin") {
+    if (authUser.role !== "admin" && authUser.role !== "superadmin") {
       return res
         .status(403)
         .json({ error: "Se requiere rol de administrador" });
+    }
+    req.user = payload;
+    req.authUser = withViewRefugio(req, authUser);
+    return next();
+  } catch (err) {
+    return res.status(401).json({ error: "Token invalido o expirado" });
+  }
+}
+
+export async function requireRefugioAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const token = getRequestToken(req);
+  if (!token) return res.status(401).json({ error: "Falta token Bearer" });
+
+  try {
+    const payload = await verifyToken(token);
+    const authUser = await authUserFromPayload(payload);
+    if (!authUser)
+      return res.status(401).json({ error: "Token invalido o expirado" });
+    // El superadmin también pasa: sin ?refugioId ve el agregado de todos los
+    // refugios; con ?refugioId queda scopeado a ese refugio (via withViewRefugio).
+    if (authUser.role !== "admin" && authUser.role !== "superadmin") {
+      return res
+        .status(403)
+        .json({ error: "Se requiere rol de administrador de refugio" });
+    }
+    req.user = payload;
+    req.authUser = withViewRefugio(req, authUser);
+    return next();
+  } catch (err) {
+    return res.status(401).json({ error: "Token invalido o expirado" });
+  }
+}
+
+export async function requireSuperadmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const token = getRequestToken(req);
+  if (!token) return res.status(401).json({ error: "Falta token Bearer" });
+
+  try {
+    const payload = await verifyToken(token);
+    const authUser = await authUserFromPayload(payload);
+    if (!authUser)
+      return res.status(401).json({ error: "Token invalido o expirado" });
+    if (authUser.role !== "superadmin") {
+      return res
+        .status(403)
+        .json({ error: "Se requiere rol de superadministrador" });
     }
     req.user = payload;
     req.authUser = authUser;

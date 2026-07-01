@@ -110,6 +110,9 @@ export class Pet {
   @Column({ nullable: true, type: "int" })
   userId: number | null;
 
+  @Column({ name: "refugio_id", nullable: true, type: "int" })
+  refugioId: number | null;
+
   @Column({ type: "int", default: CatalogIds.petStatus.perdido })
   statusId: number;
 

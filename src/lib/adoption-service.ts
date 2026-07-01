@@ -1,4 +1,5 @@
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "./db-context.js";
 import { Adoption } from "../entity/Adoption.js";
 import { Catalog } from "./catalog-constants.js";
 import {
@@ -35,7 +36,7 @@ export type CreateAdoptionOptions = {
 };
 
 function adoptionRepo() {
-  return AppDataSource.getRepository(Adoption);
+  return dbManager().getRepository(Adoption);
 }
 
 /**

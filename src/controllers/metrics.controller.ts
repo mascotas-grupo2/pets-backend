@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
-import { AppDataSource } from "../data-source"; // Importa AppDataSource
+import { AppDataSource } from "../data-source";
+import { dbManager } from "../lib/db-context"; // Importa AppDataSource
 import { MoreThanOrEqual } from "typeorm"; // Importa MoreThanOrEqual para filtros de fecha
 
 import { Pet } from "../entity/Pet";
@@ -7,7 +8,9 @@ import { Adoption } from "../entity/Adoption";
 import { Followup } from "../entity/Followup";
 import { User } from "../entity/User";
 
+import { In } from "typeorm";
 import { CatalogIds } from "../lib/catalog-constants"; // Importa CatalogIds
+import { applyTenantScope, scopedUserIds, tenantWhere } from "../lib/tenant";
 
 // Define el tipo MetricasFilter para consistencia con el frontend
 type MetricasFilter = "7d" | "30d" | "90d" | "1y";
@@ -28,6 +31,10 @@ export async function getMetricas(req: Request, res: Response) {
       }
     }
     const dateFilter = startDate ? MoreThanOrEqual(startDate) : undefined;
+
+    // Usuarios "del refugio" (staff + adoptantes); null = superadmin sin scope
+    // (todos). Mantiene las métricas de usuarios consistentes con la lista de Personas.
+    const userIds = await scopedUserIds(req.authUser);
     // ==========================
     // KPI SUPERIORES
     // ==========================
@@ -40,43 +47,48 @@ export async function getMetricas(req: Request, res: Response) {
       usuariosRegistrados,
       mascotasEnAdopcion,
     ] = await Promise.all([
-      AppDataSource.getRepository(Pet).count({
+      dbManager().getRepository(Pet).count({
         where: {
           reportStatusId: CatalogIds.petReportStatus.activo,
+          ...tenantWhere(req.authUser),
           ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
-      AppDataSource.getRepository(Pet).count({
+      dbManager().getRepository(Pet).count({
         where: {
           statusId: CatalogIds.petStatus.adoptado,
+          ...tenantWhere(req.authUser),
           ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
-      AppDataSource.getRepository(Pet).count({
+      dbManager().getRepository(Pet).count({
         where: {
           statusId: CatalogIds.petStatus.perdido,
           ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
-      AppDataSource.getRepository(Followup).count({
+      dbManager().getRepository(Followup).count({
         where: {
           statusId: CatalogIds.followupStatus.pendiente,
+          ...tenantWhere(req.authUser),
           ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
-      AppDataSource.getRepository(User).count({
+      dbManager().getRepository(User).count({
         where: {
+          ...(userIds && { id: In(userIds) }),
           ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
 
-      AppDataSource.getRepository(Pet).count({
+      dbManager().getRepository(Pet).count({
         where: {
           statusId: CatalogIds.petStatus.adopcion,
+          ...tenantWhere(req.authUser),
           ...(dateFilter && { createdAt: dateFilter }),
         },
       }),
@@ -94,10 +106,11 @@ export async function getMetricas(req: Request, res: Response) {
     // MASCOTAS POR ESTADO
     // ==========================
 
-    const mascotasPorEstadoQb = AppDataSource.createQueryBuilder(Pet, "p")
+    const mascotasPorEstadoQb = dbManager().createQueryBuilder(Pet, "p")
       .select("p.statusId", "statusId")
       .addSelect("COUNT(*)", "cantidad")
       .groupBy("p.statusId");
+    applyTenantScope(mascotasPorEstadoQb, "p", req.authUser);
 
     if (startDate) {
       mascotasPorEstadoQb.andWhere("p.createdAt >= :startDate", { startDate });
@@ -114,10 +127,11 @@ export async function getMetricas(req: Request, res: Response) {
     // SOLICITUDES POR ESTADO
     // ==========================
 
-    const solicitudesPorEstadoQb = AppDataSource.createQueryBuilder(Adoption, "a")
+    const solicitudesPorEstadoQb = dbManager().createQueryBuilder(Adoption, "a")
       .select("a.statusId", "statusId")
       .addSelect("COUNT(*)", "cantidad")
       .groupBy("a.statusId");
+    applyTenantScope(solicitudesPorEstadoQb, "a", req.authUser);
 
     if (startDate) {
       solicitudesPorEstadoQb.andWhere("a.createdAt >= :startDate", { startDate });
@@ -134,10 +148,11 @@ export async function getMetricas(req: Request, res: Response) {
     // SEGUIMIENTOS POR ESTADO
     // ==========================
 
-    const seguimientosPorEstadoQb = AppDataSource.createQueryBuilder(Followup, "f")
+    const seguimientosPorEstadoQb = dbManager().createQueryBuilder(Followup, "f")
       .select("f.statusId", "statusId")
       .addSelect("COUNT(*)", "cantidad")
       .groupBy("f.statusId");
+    applyTenantScope(seguimientosPorEstadoQb, "f", req.authUser);
 
     if (startDate) {
       seguimientosPorEstadoQb.andWhere("f.createdAt >= :startDate", { startDate });
@@ -154,12 +169,15 @@ export async function getMetricas(req: Request, res: Response) {
     // USUARIOS POR MES
     // ==========================
 
-    const usuariosPorMesQb = AppDataSource.createQueryBuilder(User, "u")
+    const usuariosPorMesQb = dbManager().createQueryBuilder(User, "u")
       .select("TO_CHAR(DATE_TRUNC('month', u.createdAt), 'YYYY-MM')", "mes")
       .addSelect("COUNT(*)", "cantidad")
       .groupBy("DATE_TRUNC('month', u.createdAt)")
       .orderBy("DATE_TRUNC('month', u.createdAt)", "ASC");
 
+    if (userIds) {
+      usuariosPorMesQb.andWhere("u.id IN (:...userIds)", { userIds });
+    }
     if (startDate) {
       usuariosPorMesQb.andWhere("u.createdAt >= :startDate", { startDate });
     }
@@ -169,10 +187,11 @@ export async function getMetricas(req: Request, res: Response) {
     // MASCOTAS POR TIPO
     // ==========================
 
-    const mascotasPorTipoQb = AppDataSource.createQueryBuilder(Pet, "p")
+    const mascotasPorTipoQb = dbManager().createQueryBuilder(Pet, "p")
       .select("p.animalTypeId", "animalTypeId")
       .addSelect("COUNT(*)", "cantidad")
       .groupBy("p.animalTypeId");
+    applyTenantScope(mascotasPorTipoQb, "p", req.authUser);
 
     if (startDate) {
       mascotasPorTipoQb.andWhere("p.createdAt >= :startDate", { startDate });
@@ -189,9 +208,10 @@ export async function getMetricas(req: Request, res: Response) {
     // TOP PUBLICACIONES
     // ==========================
 
-    const topPublicacionesQb = AppDataSource.createQueryBuilder(Pet, "p")
+    const topPublicacionesQb = dbManager().createQueryBuilder(Pet, "p")
       .orderBy("p.viewsCount", "DESC")
       .limit(5);
+    applyTenantScope(topPublicacionesQb, "p", req.authUser);
 
     if (startDate) {
       topPublicacionesQb.andWhere("p.createdAt >= :startDate", { startDate });
@@ -249,7 +269,7 @@ export async function getMetricas(req: Request, res: Response) {
  */
 export async function getMapaReportes(req: Request, res: Response) {
   try {
-    const qb = AppDataSource.createQueryBuilder(Pet, "p")
+    const qb = dbManager().createQueryBuilder(Pet, "p")
       .select([
         "p.id as id",
         "p.name as nombre",

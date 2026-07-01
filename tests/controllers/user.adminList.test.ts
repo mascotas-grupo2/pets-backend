@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ILike } from "typeorm";
 import { CatalogIds } from "../../src/lib/catalog-constants.js";
-import { mockRes, mockReq } from "../helpers/express.js";
+import { mockRes, authReq } from "../helpers/express.js";
 import { makeUser } from "../factories.js";
 
 const findAndCount = vi.fn();
 const count = vi.fn(async () => 0);
+const find = vi.fn(async () => []);
 
-vi.mock("../../src/data-source.js", () => ({
-  AppDataSource: {
-    getRepository: () => ({ findAndCount, count }),
-  },
-}));
+vi.mock("../../src/data-source.js", () => {
+  const getRepository = () => ({ findAndCount, count, find });
+  return { AppDataSource: { getRepository, manager: { getRepository } } };
+});
+
+// Estos tests cubren la lógica de filtros / paginación / serialización, no el
+// scope multi-tenant. Corren como superadmin para aislar esa lógica del
+// filtrado por refugio (el scope tiene su propio archivo de tests).
+const mockReq = (overrides: any = {}) =>
+  authReq({ id: 1, role: "superadmin" }, overrides);
 
 vi.mock("../../src/lib/catalog-values.js", () => ({
   getCatalogValuesById: vi.fn(async () => new Map()),

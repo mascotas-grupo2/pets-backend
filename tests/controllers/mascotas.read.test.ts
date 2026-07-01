@@ -20,11 +20,12 @@ const createQueryBuilder = vi.fn(() => ({
   getRawMany: async () => [],
 }));
 
-vi.mock("../../src/data-source.js", () => ({
-  AppDataSource: {
-    getRepository: () => ({ findOneBy, findBy, find, createQueryBuilder }),
-  },
-}));
+vi.mock("../../src/data-source.js", () => {
+  const getRepository = () => ({ findOneBy, findBy, find, createQueryBuilder });
+  // El código pasa por dbManager() -> AppDataSource.manager.getRepository(...),
+  // así que exponemos el mismo repo tanto en getRepository como en manager.
+  return { AppDataSource: { getRepository, manager: { getRepository } } };
+});
 
 vi.mock("../../src/lib/catalog-values.js", () => ({
   getCatalogValuesById: vi.fn(async () => new Map()),

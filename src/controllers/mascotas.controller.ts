@@ -1,11 +1,14 @@
 import { Request, Response } from "express";
 import { ILike, In, LessThan } from "typeorm";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
+import { CatalogValue } from "../entity/CatalogValue.js";
 import { Pet } from "../entity/Pet.js";
 import { PetNote } from "../entity/PetNote.js";
 import { User } from "../entity/User.js";
 import { Followup } from "../entity/Followup.js";
 import { Adoption } from "../entity/Adoption.js";
+import { Refugio } from "../entity/Refugio.js";
 import { calculateCompatibility } from "../lib/matching.js";
 import {
   petCreateSchema,
@@ -29,32 +32,106 @@ import {
   resolveCatalogValueId,
 } from "../lib/catalog-values.js";
 import { Catalog, CatalogIds, CatalogName } from "../lib/catalog-constants.js";
-import { canViewPet } from "../lib/pet-visibility.js";
-import { parseOptionalInt, parsePagination } from "../lib/query-utils.js";
-import { serializeMascota, serializePetNote } from "../lib/serializers.js";
+import type { AuthUser } from "../lib/auth.js";
+import {
+  applyPetVisibility,
+  petVisibilityWhere,
+  stampRefugioIfManaged,
+} from "../lib/tenant.js";
 import {
   DAY_MS,
   EXPIRY_GRACE_DAYS,
   EXPIRY_WARN_DAYS,
   expiryFromStatus,
+  expiryInfo,
   isExpiredBeyondGrace,
 } from "../lib/pet-expiry.js";
 
 function repo() {
-  return AppDataSource.getRepository(Pet);
+  return dbManager().getRepository(Pet);
 }
 
 function userRepo() {
-  return AppDataSource.getRepository(User);
+  return dbManager().getRepository(User);
 }
 
 function noteRepo() {
-  return AppDataSource.getRepository(PetNote);
+  return dbManager().getRepository(PetNote);
 }
 
 function followupRepo() {
-  return AppDataSource.getRepository(Followup);
+  return dbManager().getRepository(Followup);
 }
+
+type CatalogValueMap = Map<number, CatalogValue>;
+
+function catalogInfo(
+  catalogValuesById: CatalogValueMap,
+  id: number | null | undefined,
+) {
+  const item = id ? (catalogValuesById.get(id) ?? null) : null;
+  return item ? { id: item.id, code: item.code, label: item.label } : null;
+}
+
+function serializeMascota(mascota: Pet, catalogValuesById: CatalogValueMap) {
+  const animalType = catalogInfo(catalogValuesById, mascota.animalTypeId);
+  const sex = catalogInfo(catalogValuesById, mascota.sexId);
+  const status = catalogInfo(catalogValuesById, mascota.statusId);
+  const reportStatus = catalogInfo(catalogValuesById, mascota.reportStatusId);
+  const medicalStatus = catalogInfo(catalogValuesById, mascota.medicalStatusId);
+  const activityLevel = catalogInfo(catalogValuesById, mascota.activityLevelId);
+  const payload = { ...(mascota as any) };
+
+  const exp = expiryInfo(mascota.expiresAt);
+  return {
+    ...payload,
+    viewsCount: mascota.viewsCount ?? 0,
+    expiresAt: mascota.expiresAt ?? null,
+    daysLeft: exp.daysLeft,
+    expired: exp.expired,
+    animalType: animalType?.code ?? null,
+    animalTypeLabel: animalType?.label ?? null,
+    animalTypeInfo: animalType,
+    sex: sex?.code ?? null,
+    sexLabel: sex?.label ?? null,
+    sexInfo: sex,
+    status: status?.code ?? null,
+    statusLabel: status?.label ?? null,
+    statusInfo: status,
+    medicalStatus: medicalStatus?.code ?? null,
+    medicalStatusLabel: medicalStatus?.label ?? null,
+    medicalStatusInfo: medicalStatus,
+    reportStatus: reportStatus?.code ?? null,
+    reportStatusLabel: reportStatus?.label ?? null,
+    reportStatusInfo: reportStatus,
+    activityLevel: activityLevel?.code ?? null,
+    activityLevelLabel: activityLevel?.label ?? null,
+    activityLevelInfo: activityLevel,
+  };
+}
+
+function serializePetNote(note: PetNote, catalogValuesById: CatalogValueMap) {
+  const kind = catalogInfo(catalogValuesById, note.kindId);
+  return {
+    ...note,
+    kind: kind?.code ?? null,
+    kindLabel: kind?.label ?? null,
+    kindInfo: kind,
+  };
+}
+
+/**
+ * ¿Puede el solicitante ver esta mascota? Los reportes públicos (activo) son
+ * visibles para todos; los demás estados (pendiente/rechazado/finalizado) solo
+ * para el dueño o un admin. Evita IDOR en los endpoints sin filtro de estado.
+ */
+function canViewPet(mascota: Pet, authUser?: { id: number; role?: string }) {
+  if (mascota.reportStatusId === CatalogIds.petReportStatus.activo) return true;
+  if (!authUser) return false;
+  if (authUser.role === "admin") return true;
+  return mascota.userId === authUser.id;
+}
+
 function handleCatalogError(error: unknown, res: Response) {
   if (error instanceof CatalogValidationError) {
     res.status(400).json({ error: error.message });
@@ -95,19 +172,27 @@ export async function listCatalogValueCatalog(req: Request, res: Response) {
 
 export async function listMascotas(req: Request, res: Response) {
   const userId = req.authUser?.id ?? null;
+  const refugioId = parseOptionalInt(req.query.refugioId);
+  const zonaRaw = typeof req.query.zona === "string" ? req.query.zona.trim() : "";
+  const zonaFilter = zonaRaw ? ILike(`%${zonaRaw}%`) : undefined;
+  const extra = {
+    ...(refugioId ? { refugioId } : {}),
+    ...(zonaFilter ? { location: zonaFilter } : {}),
+  };
   const mascotas = await repo().find({
     where: userId
       ? [
-          { reportStatusId: CatalogIds.petReportStatus.activo },
+          { reportStatusId: CatalogIds.petReportStatus.activo, ...extra },
           {
             userId,
             reportStatusId: In([
               CatalogIds.petReportStatus.pendiente,
               CatalogIds.petReportStatus.rechazado,
             ]),
+            ...extra,
           },
         ]
-      : { reportStatusId: CatalogIds.petReportStatus.activo },
+      : { reportStatusId: CatalogIds.petReportStatus.activo, ...extra },
     order: { id: "DESC" },
   });
   // Ocultar del público las publicaciones vencidas hace más que la gracia
@@ -121,8 +206,29 @@ export async function listMascotas(req: Request, res: Response) {
     return userId != null && (m.userId === userId || m.ownerUserId === userId);
   });
   const catalogValuesById = await getCatalogValuesById();
+  const refugioIds = [
+    ...new Set(
+      mascotas
+        .map((m) => m.refugioId)
+        .filter((r): r is number => Number.isInteger(r)),
+    ),
+  ];
+  const refugios = refugioIds.length
+    ? await dbManager().getRepository(Refugio).find({ where: { id: In(refugioIds) } })
+    : [];
+  const refugioById = new Map(refugios.map((r) => [r.id, r]));
   res.json(
-    visibles.map((mascota) => serializeMascota(mascota, catalogValuesById)),
+    visibles.map((mascota) => ({
+      ...serializeMascota(mascota, catalogValuesById),
+      refugioName:
+        mascota.refugioId != null
+          ? (refugioById.get(mascota.refugioId)?.name ?? null)
+          : null,
+      location:
+        mascota.refugioId != null
+          ? (refugioById.get(mascota.refugioId)?.location ?? mascota.location)
+          : mascota.location,
+    })),
   );
 }
 
@@ -155,6 +261,12 @@ function buildAdminPetQuery(reportStatusId?: number | null) {
   return undefined;
 }
 
+function parseOptionalInt(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) return undefined;
+  return numeric;
+}
+
 // Sort server-side (mismo patrón que solicitudes): ?sort=campo:ASC,campo2:DESC
 const PET_SORT_MAP: Record<string, string> = {
   name: "name",
@@ -177,6 +289,7 @@ function parsePetOrder(req: Request): Record<string, "ASC" | "DESC"> {
   if (Object.keys(order).length === 0) order.createdAt = "DESC";
   return order;
 }
+
 function buildAdminFilters(req: Request) {
   const animalTypeId = parseOptionalInt(req.query.animalTypeId);
   const statusId = parseOptionalInt(req.query.statusId);
@@ -193,6 +306,12 @@ function buildAdminFilters(req: Request) {
     ...(nameFilter ? { name: nameFilter } : {}),
     ...(soloVencidas ? { expiresAt: LessThan(new Date()) } : {}),
   };
+}
+
+function parsePagination(req: Request) {
+  const page = Math.max(1, Number(req.query.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
+  return { page, pageSize, skip: (page - 1) * pageSize };
 }
 
 async function serializeAdminPets(mascotas: Pet[]) {
@@ -251,11 +370,29 @@ async function serializeAdminPets(mascotas: Pet[]) {
     : [];
   const ownerById = new Map(owners.map((u) => [u.id, u]));
 
+  const refugioIds = [
+    ...new Set(
+      mascotas
+        .map((m) => m.refugioId)
+        .filter((r): r is number => Number.isInteger(r)),
+    ),
+  ];
+  const refugios = refugioIds.length
+    ? await dbManager().getRepository(Refugio).find({ where: { id: In(refugioIds) } })
+    : [];
+  const refugioById = new Map(refugios.map((r) => [r.id, r]));
+
   return mascotas.map((m) => {
     const s = byPet.get(m.id)!;
     const owner = m.userId != null ? ownerById.get(m.userId) : null;
     return {
       ...serializeMascota(m, catalogValuesById),
+      refugioName:
+        m.refugioId != null ? (refugioById.get(m.refugioId)?.name ?? null) : null,
+      location:
+        m.refugioId != null
+          ? (refugioById.get(m.refugioId)?.location ?? m.location)
+          : m.location,
       ownerName: owner?.name ?? null,
       ownerEmail: owner?.email ?? null,
       ownerIsAdmin: owner?.roleId === CatalogIds.userRole.admin,
@@ -267,13 +404,16 @@ async function serializeAdminPets(mascotas: Pet[]) {
   });
 }
 
-export async function adminListMascotas(_req: Request, res: Response) {
-  const mascotas = await repo().find({ order: { createdAt: "DESC" } });
+export async function adminListMascotas(req: Request, res: Response) {
+  const mascotas = await repo().find({
+    where: petVisibilityWhere({}, req.authUser),
+    order: { createdAt: "DESC" },
+  });
   res.json(await serializeAdminPets(mascotas));
 }
 
 export async function adminListMascotasPaged(req: Request, res: Response) {
-  const { page, pageSize, skip } = parsePagination(req.query);
+  const { page, pageSize, skip } = parsePagination(req);
   let reportStatusId: number | undefined;
   try {
     reportStatusId = await resolveReportStatusId(
@@ -291,7 +431,10 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
   const categoryIds =
     PET_STATUS_CATEGORY[String(req.query.statusCategory ?? "")];
   const categoryFilter = categoryIds ? { statusId: In(categoryIds) } : {};
-  const where = { ...(baseQuery ?? {}), ...filters, ...categoryFilter };
+  const where = petVisibilityWhere(
+    { ...(baseQuery ?? {}), ...filters, ...categoryFilter },
+    req.authUser,
+  );
 
   const [mascotas, total] = await repo().findAndCount({
     where,
@@ -307,8 +450,8 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
     pageSize,
     // Totales por estado del conjunto completo (para las cards), independientes
     // del filtro aplicado a la lista paginada.
-    statusTotals: await reportStatusTotals(),
-    petStatusTotals: await petStatusTotals(),
+    statusTotals: await reportStatusTotals(req.authUser),
+    petStatusTotals: await petStatusTotals(req.authUser),
   });
 }
 
@@ -325,13 +468,14 @@ const PET_STATUS_CATEGORY: Record<string, number[]> = {
 };
 
 // Conteos por categoría de situación (para las cards de la sección Mascotas).
-async function petStatusTotals() {
-  const rows = await repo()
+async function petStatusTotals(authUser?: AuthUser | null) {
+  const totalsQb = repo()
     .createQueryBuilder("pet")
     .select("pet.statusId", "statusId")
     .addSelect("COUNT(*)", "count")
-    .groupBy("pet.statusId")
-    .getRawMany<{ statusId: string; count: string }>();
+    .groupBy("pet.statusId");
+  applyPetVisibility(totalsQb, "pet", authUser);
+  const rows = await totalsQb.getRawMany<{ statusId: string; count: string }>();
 
   const totals = {
     todas: 0,
@@ -353,13 +497,14 @@ async function petStatusTotals() {
 }
 
 // Cuenta publicaciones agrupadas por reportStatus (para las cards del panel).
-async function reportStatusTotals() {
-  const rows = await repo()
+async function reportStatusTotals(authUser?: AuthUser | null) {
+  const totalsQb = repo()
     .createQueryBuilder("pet")
     .select("pet.reportStatusId", "reportStatusId")
     .addSelect("COUNT(*)", "count")
-    .groupBy("pet.reportStatusId")
-    .getRawMany<{ reportStatusId: string; count: string }>();
+    .groupBy("pet.reportStatusId");
+  applyPetVisibility(totalsQb, "pet", authUser);
+  const rows = await totalsQb.getRawMany<{ reportStatusId: string; count: string }>();
 
   const totals: Record<string, number> = {
     pendiente: 0,
@@ -382,19 +527,20 @@ async function reportStatusTotals() {
 
   // Vencidas: publicaciones activas cuyo vencimiento ya pasó (transversal: una
   // "Publicada" puede estar vencida). No es un reportStatus, va aparte.
-  const vencidas = await repo()
+  const vencidasQb = repo()
     .createQueryBuilder("pet")
     .where("pet.reportStatusId = :activo", {
       activo: CatalogIds.petReportStatus.activo,
     })
-    .andWhere("pet.expiresAt < :now", { now: new Date() })
-    .getCount();
+    .andWhere("pet.expiresAt < :now", { now: new Date() });
+  applyPetVisibility(vencidasQb, "pet", authUser);
+  const vencidas = await vencidasQb.getCount();
 
   return { ...totals, vencidas };
 }
 
 export async function adminListMascotasByStatus(req: Request, res: Response) {
-  const { page, pageSize, skip } = parsePagination(req.query);
+  const { page, pageSize, skip } = parsePagination(req);
   let reportStatusId: number | undefined;
   try {
     reportStatusId = await resolveReportStatusId(req.params.status);
@@ -405,7 +551,10 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
 
   const filters = buildAdminFilters(req);
   const baseQuery = buildAdminPetQuery(reportStatusId);
-  const where = baseQuery ? { ...baseQuery, ...filters } : filters;
+  const where = petVisibilityWhere(
+    { ...(baseQuery ?? {}), ...filters },
+    req.authUser,
+  );
 
   const [mascotas, total] = await repo().findAndCount({
     where,
@@ -419,7 +568,7 @@ export async function adminListMascotasByStatus(req: Request, res: Response) {
     total,
     page,
     pageSize,
-    statusTotals: await reportStatusTotals(),
+    statusTotals: await reportStatusTotals(req.authUser),
   });
 }
 
@@ -428,7 +577,11 @@ export async function getAdminPetById(req: Request, res: Response) {
   const id = req.params.id;
   let pet;
   try {
-    pet = await repo().findOneBy({ id });
+    // Scoped al refugio del admin (más reportes públicos sin refugio); el
+    // superadmin ve cualquiera. Evita abrir por id mascotas de otro refugio.
+    pet = await repo().findOne({
+      where: petVisibilityWhere({ id }, req.authUser),
+    });
   } catch {
     return res.status(400).json({ error: "Id invalido" });
   }
@@ -475,9 +628,11 @@ export async function getMascota(req: Request, res: Response) {
     }
   }
   const catalogValuesById = await getCatalogValuesById();
+  const refugio =
+    mascota.refugioId != null
+      ? await dbManager().getRepository(Refugio).findOneBy({ id: mascota.refugioId })
+      : null;
 
-  // ¿El usuario autenticado ya reclamó esta mascota? (para que el front muestre
-  // "reclamo en revisión" en vez de habilitar el botón de reclamar otra vez).
   let claimedByMe = false;
   if (req.authUser?.id) {
     const userTag = `Usuario ID: ${req.authUser.id}`;
@@ -487,7 +642,12 @@ export async function getMascota(req: Request, res: Response) {
     );
   }
 
-  res.json({ ...serializeMascota(mascota, catalogValuesById), claimedByMe });
+  res.json({
+    ...serializeMascota(mascota, catalogValuesById),
+    refugioName: refugio?.name ?? null,
+    location: refugio?.location ?? mascota.location,
+    claimedByMe,
+  });
 }
 
 /**
@@ -509,7 +669,7 @@ export async function getMascotaCompatibility(req: Request, res: Response) {
   }
   if (!pet) return res.status(404).json({ error: "Pet no encontrada" });
 
-  const adoptionRepo = AppDataSource.getRepository(Adoption);
+  const adoptionRepo = dbManager().getRepository(Adoption);
   const forPet = await adoptionRepo.findOne({
     where: { userId: userId as number, petId: id },
     order: { createdAt: "DESC" },
@@ -802,6 +962,7 @@ export async function createMascota(req: Request, res: Response) {
     type: "publicacion",
     title: `Nueva publicación: ${reloaded.name ?? "mascota"}`,
     actorUserId: userId,
+    refugioId: reloaded.refugioId ?? null,
     refType: "pet",
     refId: reloaded.id,
     link: "/admin/publicacion",
@@ -1134,6 +1295,11 @@ export async function updateMascota(req: Request, res: Response) {
       : {}),
     ...coords,
   });
+  const beforeRefugioId = updated.refugioId;
+  stampRefugioIfManaged(updated, req.authUser);
+  if (updated.refugioId !== beforeRefugioId) {
+    await repo().save(updated);
+  }
   const reloaded = await repo().findOneByOrFail({ id: updated.id });
   const catalogValuesById = await getCatalogValuesById();
 
@@ -1168,7 +1334,7 @@ export async function updateMascota(req: Request, res: Response) {
       const admins = await userRepo().find({
         where: { roleId: CatalogIds.userRole.admin },
       });
-      const messageRepository = AppDataSource.getRepository(Message);
+      const messageRepository = dbManager().getRepository(Message);
       for (const admin of admins) {
         const msg = messageRepository.create({
           senderId: owner.id,
@@ -1451,6 +1617,7 @@ export async function entregaDirecta(req: Request, res: Response) {
 
   existing.statusId = CatalogIds.petStatus.adoptado;
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
+  stampRefugioIfManaged(existing, req.authUser);
   existing.expiresAt = null; // publicación cerrada: ya no vence
   const saved = await repo().save(existing);
 
@@ -1549,7 +1716,7 @@ export async function deleteMascota(req: Request, res: Response) {
   }
 
   try {
-    await AppDataSource.transaction(async (manager) => {
+    await dbManager().transaction(async (manager) => {
       await manager.getRepository(Followup).delete({ petId: id });
       await manager.getRepository(PetNote).delete({ petId: id });
       await manager.getRepository(Pet).remove(existing);
@@ -1830,7 +1997,7 @@ export async function claimPet(req: Request, res: Response) {
   const admins = await userRepo().find({
     where: { roleId: CatalogIds.userRole.admin },
   });
-  const messageRepo = AppDataSource.getRepository(Message);
+  const messageRepo = dbManager().getRepository(Message);
 
   // Aviso a los admins: best-effort. La nota del reclamo ya quedó guardada, así
   // que un fallo acá (p. ej. una sesión vieja cuyo usuario ya no existe) NO debe
@@ -1923,7 +2090,7 @@ export async function approveClaim(req: Request, res: Response) {
   // Guardar referencias antes de la transacción
   const originalPublisherUserId = existing.userId;
 
-  await AppDataSource.transaction(async (manager) => {
+  await dbManager().transaction(async (manager) => {
     const petRepo = manager.getRepository(Pet);
     const noteRepoM = manager.getRepository(PetNote);
 
@@ -2126,7 +2293,7 @@ export async function confirmReturn(req: Request, res: Response) {
   }
 
   // Transacción: cambiar estado + cerrar + cancelar adopciones activas + nota
-  await AppDataSource.transaction(async (manager) => {
+  await dbManager().transaction(async (manager) => {
     const petRepo = manager.getRepository(Pet);
     const adoptionRepo = manager.getRepository(Adoption);
     const followupRepo = manager.getRepository(Followup);
@@ -2212,7 +2379,7 @@ export async function confirmReturn(req: Request, res: Response) {
         const m = n.text.match(/Usuario ID:\s*(\d+)/);
         if (m && n.text.includes("🔔 RECLAMO")) claimantIds.add(Number(m[1]));
       }
-      const messageRepo = AppDataSource.getRepository(Message);
+      const messageRepo = dbManager().getRepository(Message);
       for (const cid of claimantIds) {
         if (cid === adminId) continue;
         const exists = await userRepo().findOneBy({ id: cid });

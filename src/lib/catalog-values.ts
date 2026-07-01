@@ -1,4 +1,5 @@
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "./db-context.js";
 import { CatalogValue } from "../entity/CatalogValue.js";
 import {
   catalogIdForCode,
@@ -16,7 +17,7 @@ export class CatalogValidationError extends Error {
 }
 
 function repo() {
-  return AppDataSource.getRepository(CatalogValue);
+  return dbManager().getRepository(CatalogValue);
 }
 
 function numericReference(value: CatalogReference) {

@@ -12,16 +12,16 @@ const adoptionRepoMock = {
 const userRepoMock = { findOneBy: vi.fn(), findBy: vi.fn(async () => []) };
 const petRepoMock = { findOneBy: vi.fn(), findBy: vi.fn(async () => []) };
 
-vi.mock("../../src/data-source.js", () => ({
-  AppDataSource: {
-    getRepository: (entity: any) => {
-      const name = entity?.name;
-      if (name === "User") return userRepoMock;
-      if (name === "Pet") return petRepoMock;
-      return adoptionRepoMock;
-    },
-  },
-}));
+vi.mock("../../src/data-source.js", () => {
+  const getRepository = (entity: any) => {
+    const name = entity?.name;
+    if (name === "User") return userRepoMock;
+    if (name === "Pet") return petRepoMock;
+    return adoptionRepoMock;
+  };
+  // El código pasa por dbManager() -> AppDataSource.manager.getRepository(...).
+  return { AppDataSource: { getRepository, manager: { getRepository } } };
+});
 
 vi.mock("../../src/lib/catalog-values.js", () => ({
   getCatalogValuesById: vi.fn(async () => new Map()),

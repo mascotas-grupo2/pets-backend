@@ -19,6 +19,10 @@ export class Followup {
   @Column({ name: "user_id", type: "int" })
   userId!: number;
 
+  @Index()
+  @Column({ name: "refugio_id", type: "int", nullable: true })
+  refugioId!: number | null;
+
   @Column({ name: "type_id", type: "int" })
   typeId!: number;
 
