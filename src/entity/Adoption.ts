@@ -11,6 +11,9 @@ export class Adoption {
   @Column({ type: "uuid", nullable: true })
   petId!: string | null;
 
+  @Column({ name: "refugio_id", type: "int", nullable: true })
+  refugioId!: number | null;
+
   @Column({ type: "int", nullable: true })
   preferredAnimalTypeId!: number | null;
 

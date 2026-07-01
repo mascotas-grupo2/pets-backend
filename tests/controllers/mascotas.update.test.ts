@@ -7,11 +7,10 @@ const findOneBy = vi.fn();
 const findOneByOrFail = vi.fn();
 const save = vi.fn();
 
-vi.mock("../../src/data-source.js", () => ({
-  AppDataSource: {
-    getRepository: () => ({ findOneBy, findOneByOrFail, save }),
-  },
-}));
+vi.mock("../../src/data-source.js", () => {
+  const getRepository = () => ({ findOneBy, findOneByOrFail, save });
+  return { AppDataSource: { getRepository, manager: { getRepository } } };
+});
 
 vi.mock("../../src/lib/catalog-values.js", () => ({
   getCatalogValuesById: vi.fn(async () => new Map()),

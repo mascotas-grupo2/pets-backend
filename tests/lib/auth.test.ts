@@ -5,11 +5,10 @@ import { makeUser } from "../factories.js";
 
 const userFindOneBy = vi.fn();
 
-vi.mock("../../src/data-source.js", () => ({
-  AppDataSource: {
-    getRepository: () => ({ findOneBy: userFindOneBy }),
-  },
-}));
+vi.mock("../../src/data-source.js", () => {
+  const getRepository = () => ({ findOneBy: userFindOneBy });
+  return { AppDataSource: { getRepository, manager: { getRepository } } };
+});
 
 import {
   getRequestToken,

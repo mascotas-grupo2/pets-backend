@@ -7,8 +7,14 @@ import { Pet } from "./entity/Pet.js";
 import { User } from "./entity/User.js";
 import { Followup } from "./entity/Followup.js";
 import { Adoption } from "./entity/Adoption.js";
+import { Refugio } from "./entity/Refugio.js";
 import { Message } from "./entity/Message.js";
-import { CatalogIds, catalogIdForCode } from "./lib/catalog-constants.js";
+import { PetNote } from "./entity/PetNote.js";
+import { Sighting } from "./entity/Sighting.js";
+import { PetComment } from "./entity/PetComment.js";
+import { Notification } from "./entity/Notification.js";
+import { Activity } from "./entity/Activity.js";
+import { CatalogIds, CatalogSeed, catalogIdForCode } from "./lib/catalog-constants.js";
 import { uploadFileToMinio } from "./lib/minio.js";
 import { calculateCompatibility } from "./lib/matching.js";
 
@@ -46,6 +52,37 @@ async function uploadSeedPhoto(
 async function seed() {
   await AppDataSource.initialize();
   await AppDataSource.runMigrations();
+
+  const refugioRepo = AppDataSource.getRepository(Refugio);
+  const MORON_LOCATION = "Av. Rivadavia 18500, Morón, Buenos Aires";
+  const HURLINGHAM_LOCATION = "Av. Vergara 2210, Hurlingham, Buenos Aires";
+  let refugioMoron = await refugioRepo.findOneBy({ slug: "refugio-moron" });
+  if (!refugioMoron) refugioMoron = refugioRepo.create({ slug: "refugio-moron" });
+  refugioMoron.name = "Refugio Morón";
+  refugioMoron.location = MORON_LOCATION;
+  refugioMoron.active = true;
+  refugioMoron = await refugioRepo.save(refugioMoron);
+  let refugioHurlingham = await refugioRepo.findOneBy({ slug: "refugio-hurlingham" });
+  if (!refugioHurlingham) refugioHurlingham = refugioRepo.create({ slug: "refugio-hurlingham" });
+  refugioHurlingham.name = "Refugio Hurlingham";
+  refugioHurlingham.location = HURLINGHAM_LOCATION;
+  refugioHurlingham.active = true;
+  refugioHurlingham = await refugioRepo.save(refugioHurlingham);
+  const refugioMoronId = refugioMoron.id;
+  const refugioHurlinghamId = refugioHurlingham.id;
+  // Seed auto-suficiente: asegurar que todos los catalog values existan en la BD
+  for (const item of CatalogSeed) {
+    await AppDataSource.query(
+      `INSERT INTO "catalog_value" ("id", "catalog", "code", "label")
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT ("id") DO UPDATE SET
+         "catalog" = EXCLUDED."catalog",
+         "code" = EXCLUDED."code",
+         "label" = EXCLUDED."label"`,
+      [item.id, item.catalog, item.code, item.label],
+    );
+  }
+
 
   // Clear dependent tables first (those with foreign keys to pet)
   const repoFollowup = AppDataSource.getRepository(Followup);
@@ -373,6 +410,19 @@ async function seed() {
 
   const keepPending = new Set(["Coco", "Manchas"]);
 
+  // Fotos adicionales para algunas mascotas: el alta real soporta hasta 6 fotos
+  // y el detalle muestra una galería de miniaturas, pero el seed daba 1 sola foto
+  // por mascota, así que la galería nunca se veía. Acá sumamos imágenes extra
+  // (de la misma especie) a unas pocas mascotas para que la galería sea visible
+  // en la demo. Son solo assets de muestra, no fotos reales del mismo animal.
+  const extraSeedImages: Record<string, string[]> = {
+    Max: ["bobi.png", "bruno.png"],
+    Rocco: ["balto.png", "thor.png"],
+    Toby: ["rambo.png"],
+    Luna: ["michi.png", "pelusa.png"],
+    Mishi: ["michi.png", "salem.png"],
+  };
+
   const createdPets: { id: string; name: string | null }[] = [];
   for (const item of petsData) {
     // El campo `seedImage` es opcional y solo está presente en algunas
@@ -389,12 +439,18 @@ async function seed() {
     createdPets.push({ id: created.id, name: created.name ?? null });
     if (seedImage) {
       try {
-        const url = await uploadSeedPhoto(
-          bucket,
-          seedImage,
-          String(created.id),
-        );
-        created.photos = [url];
+        const urls = [
+          await uploadSeedPhoto(bucket, seedImage, String(created.id)),
+        ];
+        for (const extra of extraSeedImages[(item as any).name] ?? []) {
+          try {
+            urls.push(await uploadSeedPhoto(bucket, extra, String(created.id)));
+          } catch (e) {
+            console.warn("No se pudo subir imagen extra de seed", extra, e);
+          }
+        }
+        created.photo = urls[0];
+        created.photos = urls;
         await repoPets.save(created);
       } catch (e) {
         console.warn("No se pudo subir imagen de seed para pet", created.id, e);
@@ -411,15 +467,16 @@ async function seed() {
   const password = "Admin1234!";
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto
-    .pbkdf2Sync(password, salt, 310000, 32, "sha256")
+    .pbkdf2Sync("Moron1234!", salt, 310000, 32, "sha256")
     .toString("hex");
   const adminSaved = await repoUsers.save(
     repoUsers.create({
       name: "Laura Fernández",
-      email: "admin@admin.com",
+      email: "admin@refugiomoron.com",
       passwordHash: hash,
       passwordSalt: salt,
       roleId: CatalogIds.userRole.admin,
+      refugioId: refugioMoronId,
       emailVerified: true,
     }),
   );
@@ -430,7 +487,66 @@ async function seed() {
   } catch (e) {
     console.warn("No se pudo subir imagen de seed para admin", e);
   }
-  console.log("Seed completed: Admin user inserted (role=admin).");
+  console.log("Seed completed: Admin Morón inserted (admin@refugiomoron.com).");
+
+  const salt2 = crypto.randomBytes(16).toString("hex");
+  const hash2 = crypto
+    .pbkdf2Sync("Hurlingham1234!", salt2, 310000, 32, "sha256")
+    .toString("hex");
+  await repoUsers.save(
+    repoUsers.create({
+      name: "Diego Sosa",
+      email: "admin@refugiohurlingham.com",
+      passwordHash: hash2,
+      passwordSalt: salt2,
+      roleId: CatalogIds.userRole.admin,
+      refugioId: refugioHurlinghamId,
+      emailVerified: true,
+    }),
+  );
+  console.log("Seed completed: Admin Hurlingham inserted (admin@refugiohurlingham.com).");
+
+  const saltSuper = crypto.randomBytes(16).toString("hex");
+  const hashSuper = crypto
+    .pbkdf2Sync(password, saltSuper, 310000, 32, "sha256")
+    .toString("hex");
+  await repoUsers.save(
+    repoUsers.create({
+      name: "Super Admin",
+      email: "admin@admin.com",
+      passwordHash: hashSuper,
+      passwordSalt: saltSuper,
+      roleId: CatalogIds.userRole.superadmin,
+      refugioId: null,
+      emailVerified: true,
+    }),
+  );
+  console.log("Seed completed: Superadmin user inserted (admin@admin.com).");
+
+  // Segundo admin: habilita las conversaciones "Internas" (admin ↔ admin) del
+  // panel de Mensajes. Con un solo admin, la pestaña "Internos" siempre daría 0.
+  const admin2Salt = crypto.randomBytes(16).toString("hex");
+  const admin2Hash = crypto
+    .pbkdf2Sync(password, admin2Salt, 310000, 32, "sha256")
+    .toString("hex");
+  const admin2Saved = await repoUsers.save(
+    repoUsers.create({
+      name: "Diego Suárez",
+      email: "admin2@admin.com",
+      passwordHash: admin2Hash,
+      passwordSalt: admin2Salt,
+      roleId: CatalogIds.userRole.admin,
+      emailVerified: true,
+    }),
+  );
+  try {
+    const url = await uploadSeedPhoto(bucket, "diego.png", "users");
+    admin2Saved.photo = url;
+    await repoUsers.save(admin2Saved);
+  } catch (e) {
+    console.warn("No se pudo subir imagen de seed para admin2", e);
+  }
+  console.log("Seed completed: 2º admin insertado (habilita pestaña Internos).");
 
   // Add two regular users (role = user)
   const usersToCreate = [
@@ -662,9 +778,20 @@ async function seed() {
     [-34.5547, -58.4869], // Parque Saavedra
   ];
 
+  // Vacunación coherente con el estado (sin valores inventados): las que ya están
+  // en el circuito del refugio (en adopción / tránsito / tratamiento) salen
+  // vacunadas y castradas como parte de la preparación para adopción; las
+  // perdidas/encontradas quedan SIN dato (null) porque depende de lo que sepa
+  // quien las reporta —se completa al publicar o lo carga el refugio después—.
+  const refugioFlowStatuses = new Set<number>([
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+  ]);
   const extraPets = [] as any[];
   for (let i = 0; i < extraPetNames.length; i++) {
     const name = extraPetNames[i];
+    const enRefugio = refugioFlowStatuses.has(extraPetStatuses[i]);
     extraPets.push({
       name,
       animalTypeId: extraPetTypes[i],
@@ -679,8 +806,9 @@ async function seed() {
       breed: "Común",
       ageMonths: 6 + i,
       color: "Mixto",
+      vaccinated: enRefugio ? true : null,
+      neutered: enRefugio ? true : null,
       weightKg: extraPetWeights[i],
-      vaccinated: i % 3 !== 0,
       friendlyWithKids: i % 2 === 0,
       friendlyWithPets: i % 4 !== 0,
       activityLevelId:
@@ -797,6 +925,30 @@ async function seed() {
     await repoPets.save(p);
   }
   console.log(`Seed completed: vencimiento asignado a ${conVencimiento} publicaciones.`);
+
+  // Demo de vencimiento: como el createdAt es reciente, sin esto TODAS quedarían
+  // vigentes y el flujo no se podría mostrar. Forzamos 2 publicaciones perdidas
+  // ACTIVAS (con dueño) a estado vencido:
+  //   - "en gracia" (vencida hace 5 días): sigue visible al público y se puede Renovar.
+  //   - "fuera de gracia" (vencida hace 20 días): se oculta del listado público.
+  // expiryNotifiedAt = null => el barrido del arranque avisa al dueño ("tu publicación venció").
+  const activasPerdidas = (await repoPets.find()).filter(
+    (p) =>
+      p.statusId === CatalogIds.petStatus.perdido &&
+      p.reportStatusId === CatalogIds.petReportStatus.activo &&
+      p.userId != null,
+  );
+  const ahora = Date.now();
+  const diasVencidaDemo = [5, 20];
+  let vencidasDemo = 0;
+  for (let i = 0; i < diasVencidaDemo.length && i < activasPerdidas.length; i++) {
+    const p = activasPerdidas[i];
+    p.expiresAt = new Date(ahora - diasVencidaDemo[i] * DAY);
+    p.expiryNotifiedAt = null;
+    await repoPets.save(p);
+    vencidasDemo++;
+  }
+  console.log(`Seed completed: ${vencidasDemo} publicaciones vencidas para demo de vencimiento.`);
 
   // --- Fechas variadas para los filtros del listado ---
   // El filtro de fecha (hoy/semana/mes) usa `createdAt`, no `date`. Como el seed
@@ -920,11 +1072,12 @@ async function seed() {
   }
   await repoAdopt.save(adoptionSamples);
   // created_at es @CreateDateColumn (TypeORM lo pisa con now() en el INSERT), así
-  // que todas quedarían con la MISMA fecha y la columna "Fecha" del admin no
-  // ordenaría. Lo espaciamos 1 día entre sí con un UPDATE posterior.
+  // que todas quedarían con la MISMA fecha. Las espaciamos a lo largo del último
+  // AÑO (≈33 días entre sí) para que las métricas anuales y la columna "Fecha"
+  // del admin tengan recorrido temporal.
   await AppDataSource.query(`
-    UPDATE adoption a SET created_at = now() - (s.rn * interval '1 day')
-    FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM adoption) s
+    UPDATE adoption a SET created_at = now() - ((s.rn - 1) * interval '33 days') - (interval '4 days')
+    FROM (SELECT id, row_number() OVER (ORDER BY id DESC) AS rn FROM adoption) s
     WHERE a.id = s.id
   `);
   console.log(
@@ -952,6 +1105,576 @@ async function seed() {
   console.log(
     `Seed completed: ${followupsToSave.length} seguimientos insertados.`,
   );
+
+  // ============================================================================
+  // FLUJOS HISTÓRICOS — DATOS DISTRIBUIDOS A LO LARGO DEL ÚLTIMO AÑO
+  // ----------------------------------------------------------------------------
+  // Las métricas/dashboard ofrecen un período "1y" y un gráfico "Usuarios por mes"
+  // (DATE_TRUNC por mes). Sin datos repartidos en 12 meses esos gráficos muestran
+  // una sola barra. Acá sembramos el histórico de TODOS los flujos
+  // (usuarios, mascotas adoptadas, solicitudes, seguimientos, avistamientos,
+  // comentarios, mensajes, notificaciones y la tabla de actividad) con fechas
+  // distribuidas. Las mascotas históricas quedan en estado TERMINAL
+  // (adoptado/devuelta) → expiresAt = null, así no se ocultan por vencimiento.
+  // ============================================================================
+  const MS_DAY = 24 * 60 * 60 * 1000;
+  const dAgo = (days: number) => new Date(Date.now() - days * MS_DAY);
+  const deaccent = (s: string) =>
+    s.normalize("NFD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "").toLowerCase();
+  // Backdatea una columna @CreateDateColumn (TypeORM la pisa con now() en INSERT).
+  const bd = (table: string, col: string, id: number | string, date: Date) =>
+    AppDataSource.query(
+      `UPDATE "${table}" SET "${col}" = $1 WHERE "id" = $2`,
+      [date.toISOString(), id],
+    );
+
+  // --- USUARIOS repartidos en 12 meses (alimenta "Usuarios por mes") ---------
+  // Offsets en días con 2-4 altas por mes (leve crecimiento) → ~36 usuarios.
+  const userOffsets: number[] = [];
+  for (let m = 11; m >= 0; m--) {
+    const perMonth = 2 + (m % 3);
+    for (let k = 0; k < perMonth; k++) userOffsets.push(m * 30 + k * 7 + 3);
+  }
+  const existingUserCount = await repoUsers.count();
+  const needHist = Math.max(0, userOffsets.length - existingUserCount);
+  const firstPool = [
+    "Martín", "Florencia", "Gabriel", "Camila", "Nicolás", "Julieta",
+    "Tomás", "Agustina", "Lucas", "Brenda", "Federico", "Rocío",
+    "Emiliano", "Carolina", "Joaquín", "Micaela", "Bruno", "Daniela",
+    "Iván", "Paula", "Andrés", "Verónica", "Sebastián", "Natalia",
+  ];
+  const lastPool = [
+    "Acosta", "Benítez", "Cabrera", "Domínguez", "Escobar", "Figueroa",
+    "Herrera", "Ibáñez", "Juárez", "Ledesma", "Molina", "Navarro",
+    "Ortega", "Paredes", "Quiroga", "Ramos", "Sosa", "Torres",
+    "Vega", "Wagner", "Costa", "Méndez", "Ríos", "Vera",
+  ];
+  for (let i = 0; i < needHist; i++) {
+    const fn = firstPool[i % firstPool.length];
+    const ln = lastPool[(i * 7) % lastPool.length];
+    const usalt = crypto.randomBytes(16).toString("hex");
+    const uhash = crypto
+      .pbkdf2Sync(password, usalt, 310000, 32, "sha256")
+      .toString("hex");
+    await repoUsers.save(
+      repoUsers.create({
+        name: `${fn} ${ln}`,
+        email: `${deaccent(fn)}.${deaccent(ln)}.h${i}@example.com`,
+        passwordHash: uhash,
+        passwordSalt: usalt,
+        roleId: CatalogIds.userRole.user,
+        emailVerified: true,
+      }),
+    );
+  }
+  // Aplicar las fechas a TODOS los usuarios (created_at es @CreateDateColumn).
+  const allUsersForDates = await repoUsers.find({ order: { id: "ASC" } });
+  for (let i = 0; i < allUsersForDates.length; i++) {
+    const off = userOffsets[i % userOffsets.length];
+    await bd("user", "created_at", allUsersForDates[i].id, dAgo(off));
+  }
+  console.log(
+    `Seed completed: ${needHist} usuarios históricos + ${allUsersForDates.length} con createdAt repartido en 12 meses.`,
+  );
+
+  // --- VISTAS de publicaciones (alimenta "Top publicaciones") ----------------
+  const petsForViews = await repoPets.find();
+  for (let i = 0; i < petsForViews.length; i++) {
+    const views = ((i * 53 + 17) % 240) + 8;
+    await AppDataSource.query(
+      `UPDATE "pet" SET "viewsCount" = $1 WHERE "id" = $2`,
+      [views, petsForViews[i].id],
+    );
+  }
+  console.log(`Seed completed: viewsCount asignado a ${petsForViews.length} publicaciones.`);
+
+  // --- MASCOTAS históricas en estado TERMINAL (adoptado/devuelta) ------------
+  // Sin vencimiento (expiresAt=null) y reportStatus finalizado → no se ocultan
+  // ni inflan "publicaciones activas". Alimentan adopciones/tasaAdopción anuales.
+  const histPetNames = [
+    "Lola", "Duque", "Nina", "Otto", "Frida", "Rex",
+    "Cleo", "Tango", "Olivia", "Bongo", "Lupe", "Ringo",
+  ];
+  const histPets: { id: string; date: Date; animalTypeId: number; name: string }[] = [];
+  for (let i = 0; i < histPetNames.length; i++) {
+    const isPerro = i % 2 === 0;
+    const status =
+      i >= histPetNames.length - 2
+        ? CatalogIds.petStatus.devueltaAlDueno
+        : CatalogIds.petStatus.adoptado;
+    const date = dAgo((i + 1) * 28 + 10); // 38 .. 346 días atrás
+    const created = await repoPets.save(
+      repoPets.create({
+        name: histPetNames[i],
+        animalTypeId: isPerro
+          ? CatalogIds.animalType.perro
+          : CatalogIds.animalType.gato,
+        description: `Caso cerrado: ${histPetNames[i]} encontró un hogar. Registro histórico para métricas anuales.`,
+        date: date.toISOString().slice(0, 10),
+        location: "CABA",
+        contactPhone: `117000${String(100 + i)}`,
+        contactEmail: `hist${i}@example.com`,
+        sexId: isPerro ? CatalogIds.petSex.macho : CatalogIds.petSex.hembra,
+        breed: "Mestizo",
+        ageMonths: 12 + i,
+        color: "Variado",
+        weightKg: 5 + i,
+        vaccinated: true,
+        neutered: true,
+        statusId: status,
+        reportStatusId: CatalogIds.petReportStatus.finalizado,
+        expiresAt: null,
+      }),
+    );
+    histPets.push({ id: created.id, date, animalTypeId: created.animalTypeId, name: created.name! });
+  }
+  for (const hp of histPets) {
+    await AppDataSource.query(
+      `UPDATE "pet" SET "createdAt" = $1, "date" = $2 WHERE "id" = $3`,
+      [hp.date.toISOString(), hp.date.toISOString().slice(0, 10), hp.id],
+    );
+  }
+  console.log(`Seed completed: ${histPets.length} mascotas históricas (terminal) repartidas en el año.`);
+
+  // --- SOLICITUDES de adopción históricas (terminales) -----------------------
+  const regularUsers = (await repoUsers.find()).filter(
+    (u) => u.roleId === CatalogIds.userRole.user,
+  );
+  const histFirst = ["Juan", "Maria", "Carlos", "Ana", "Laura", "Ricardo", "Pedro", "Lucia", "Sofia", "Diego", "Martin", "Paula"];
+  const histLast = ["Perez", "Gomez", "Ruiz", "Lopez", "Martinez", "Silva", "Gonzalez", "Rodriguez", "Fernandez", "Diaz", "Acosta", "Vega"];
+  const adopterIds = new Set<number>();
+  const histAdoptions: { id: string; date: Date }[] = [];
+  for (let i = 0; i < histPets.length; i++) {
+    const hp = histPets[i];
+    const adopter = regularUsers[i % regularUsers.length];
+    if (adopter) adopterIds.add(adopter.id);
+    // 10 aceptadas (terminó en adopción) + 2 descartadas, coherente con el cierre.
+    const status =
+      i >= histPets.length - 2
+        ? CatalogIds.adoptionStatus.descartada
+        : CatalogIds.adoptionStatus.aceptada;
+    const a = repoAdopt.create({
+      userId: adopter?.id ?? null,
+      petId: hp.id,
+      preferredAnimalTypeId: hp.animalTypeId,
+      firstName: histFirst[i % histFirst.length],
+      lastName: histLast[i % histLast.length],
+      email: `${histFirst[i % histFirst.length].toLowerCase()}.${histLast[i % histLast.length].toLowerCase()}.h${i}@example.com`,
+      phone: `11650000${i}`,
+      addressLine1: `Av. Siempreviva ${100 + i}`,
+      addressLine2: null,
+      postcode: `C10${i}0`,
+      town: "Ciudad Autónoma de Buenos Aires",
+      hasGardenId: i % 2 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
+      livingSituationId:
+        i % 2 === 0
+          ? CatalogIds.livingSituation.casa
+          : CatalogIds.livingSituation.departamento,
+      householdSettingId: CatalogIds.householdSetting.urbano,
+      activityLevelId:
+        i % 3 === 0
+          ? CatalogIds.activityLevel.activo
+          : i % 3 === 1
+            ? CatalogIds.activityLevel.moderado
+            : CatalogIds.activityLevel.tranquilo,
+      adults: (i % 3) + 1,
+      children: i % 4,
+      visitingChildrenId: i % 3 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
+      hasFlatmatesId: CatalogIds.yesNo.no,
+      allergies: null,
+      otherAnimalsId: i % 2 === 0 ? CatalogIds.yesNo.si : CatalogIds.yesNo.no,
+      otherAnimalsDetail: i % 2 === 0 ? "Convive con otra mascota" : null,
+      neuteredId: CatalogIds.yesNo.si,
+      vaccinatedId: CatalogIds.yesNo.si,
+      experience: i % 2 === 0 ? "Experiencia previa con rescatados" : "Primera adopción",
+      acceptsTerms: true,
+      statusId: status,
+      compatibilityScore: 62 + ((i * 7) % 34),
+    });
+    const saved = await repoAdopt.save(a as any);
+    // La solicitud se cargó unos días antes de cerrar el caso.
+    const reqDate = new Date(hp.date.getTime() - 4 * MS_DAY);
+    histAdoptions.push({ id: (saved as any).id, date: reqDate });
+  }
+  for (const ha of histAdoptions) await bd("adoption", "created_at", ha.id, ha.date);
+  // Marcar como adoptantes a quienes concretaron una adopción.
+  if (adopterIds.size > 0) {
+    await AppDataSource.query(
+      `UPDATE "user" SET adopter = true WHERE id = ANY($1)`,
+      [Array.from(adopterIds)],
+    );
+  }
+  console.log(`Seed completed: ${histAdoptions.length} solicitudes históricas (terminales) repartidas en el año.`);
+
+  // --- SEGUIMIENTOS históricos (completados/confirmados) + 2 para HOY ---------
+  const histFollowups: { id: number; date: Date }[] = [];
+  for (let i = 0; i < histPets.length; i++) {
+    const hp = histPets[i];
+    const user = regularUsers[i % regularUsers.length];
+    if (!user) continue;
+    // Cita post-adopción unos días después del cierre del caso.
+    const appt = new Date(hp.date.getTime() + 7 * MS_DAY);
+    const fu = await repoF.save(
+      repoF.create({
+        petId: hp.id,
+        userId: user.id,
+        typeId: CatalogIds.followupType.postAdopcion,
+        appointmentAt: appt,
+        statusId:
+          i % 3 === 0
+            ? CatalogIds.followupStatus.confirmado
+            : CatalogIds.followupStatus.completado,
+      }),
+    );
+    histFollowups.push({ id: fu.id, date: new Date(hp.date.getTime() + 1 * MS_DAY) });
+  }
+  for (const hf of histFollowups) await bd("seguimientos", "created_at", hf.id, hf.date);
+  // Dos seguimientos con turno HOY → tarjeta "Seguimientos hoy" del dashboard.
+  const lostPetsNow = (await repoPets.find()).filter(
+    (p) => p.statusId === CatalogIds.petStatus.perdido,
+  );
+  const hoy = new Date();
+  hoy.setHours(11, 0, 0, 0);
+  for (let i = 0; i < 2 && i < lostPetsNow.length; i++) {
+    const user = regularUsers[i % regularUsers.length];
+    if (!user) continue;
+    await repoF.save(
+      repoF.create({
+        petId: lostPetsNow[i].id,
+        userId: user.id,
+        typeId: CatalogIds.followupType.visita,
+        appointmentAt: hoy,
+        statusId: CatalogIds.followupStatus.pendiente,
+      }),
+    );
+  }
+  console.log(`Seed completed: ${histFollowups.length} seguimientos históricos + 2 para hoy.`);
+
+  // --- AVISTAMIENTOS ("La vi") sobre mascotas perdidas -----------------------
+  const repoSighting = AppDataSource.getRepository(Sighting);
+  const sightingPlaces = [
+    "Plaza Serrano, Palermo", "Av. Cabildo y Juramento, Belgrano",
+    "Parque Centenario, Caballito", "Estación Once",
+    "Av. Rivadavia y Acoyte", "Parque Lezama, San Telmo",
+    "Plaza Flores", "Av. Corrientes y Medrano", "Barrancas de Belgrano",
+    "Parque Chacabuco",
+  ];
+  const sightingNotes = [
+    "Lo vi cruzando la plaza, parecía asustado.",
+    "Estaba tomando agua en una fuente, se fue para el norte.",
+    "Una vecina lo tiene en su patio, dejó este contacto.",
+    "Lo vi en la esquina con un grupo de chicos.",
+    "Pasó corriendo, no pude alcanzarlo.",
+    "Está merodeando la zona hace dos días.",
+    "Coincide con la foto, tenía collar.",
+    "Lo vio el portero del edificio esta mañana.",
+    "Andaba cerca del parque, se metió entre los autos.",
+    "Una panadería de la zona le da de comer.",
+  ];
+  let sightingCount = 0;
+  for (let i = 0; i < sightingPlaces.length && lostPetsNow.length > 0; i++) {
+    const pet = lostPetsNow[i % lostPetsNow.length];
+    const reporter = i % 3 === 0 ? null : regularUsers[i % regularUsers.length]?.id ?? null;
+    const created = dAgo((i * 11) % 130 + 2); // repartidos en ~4 meses
+    const s = await repoSighting.save(
+      repoSighting.create({
+        petId: pet.id,
+        reporterUserId: reporter,
+        place: sightingPlaces[i],
+        sightedOn: created.toISOString().slice(0, 10),
+        note: sightingNotes[i % sightingNotes.length],
+        contact: reporter ? null : `11${String(40000000 + i)}`,
+      }),
+    );
+    await bd("sighting", "created_at", s.id, created);
+    sightingCount++;
+  }
+  console.log(`Seed completed: ${sightingCount} avistamientos insertados.`);
+
+  // --- COMENTARIOS públicos en publicaciones (mix aprobado/pendiente) --------
+  const repoComment = AppDataSource.getRepository(PetComment);
+  const allPetsForComments = await repoPets.find();
+  const commentTexts = [
+    "¡Ojalá aparezca pronto! Comparto en mi barrio.",
+    "Lo vi parecido por la zona, te escribo por privado.",
+    "Qué hermoso, espero que encuentre familia.",
+    "¿Sigue disponible para adopción?",
+    "Estuvimos buscando, cualquier novedad avisamos.",
+    "Mucha fuerza, ya va a volver a casa.",
+    "Compartido en el grupo del barrio.",
+    "¿Tiene chip? Pregunto para difundir mejor.",
+    "Hermoso animal, ojalá todo salga bien.",
+    "Lo vamos a tener en cuenta, gracias por publicar.",
+    "Pasó algo similar con mi mascota, no pierdan la esperanza.",
+    "Avisé a la veterinaria de la zona por las dudas.",
+  ];
+  let commentCount = 0;
+  for (let i = 0; i < commentTexts.length && allPetsForComments.length > 0; i++) {
+    const pet = allPetsForComments[(i * 3) % allPetsForComments.length];
+    const author = regularUsers[i % regularUsers.length];
+    const created = dAgo((i * 9) % 150 + 1);
+    const status = i % 4 === 0 ? "pending" : "approved";
+    const c = await repoComment.save(
+      repoComment.create({
+        petId: pet.id,
+        authorUserId: author?.id ?? null,
+        authorName: author?.name ?? "Vecino/a",
+        authorEmail: author?.email ?? null,
+        text: commentTexts[i],
+        status,
+      }),
+    );
+    await bd("pet_comment", "created_at", c.id, created);
+    commentCount++;
+  }
+  console.log(`Seed completed: ${commentCount} comentarios insertados.`);
+
+  // --- MENSAJES entre usuarios y admin (algunos sin leer para el admin) ------
+  const adminId = adminSaved.id;
+  const msgBodies = [
+    "Hola, vi la publicación, ¿sigue disponible?",
+    "Buenas, quería consultar por el proceso de adopción.",
+    "Gracias por la info, coordino la visita.",
+    "¿Puedo pasar este fin de semana a conocerlo?",
+    "Perfecto, quedo atento a tu respuesta.",
+    "Adjunto una foto de mi casa como me pediste.",
+    "Muchas gracias por todo, excelente atención.",
+    "¿Necesitan algo más de mi parte?",
+  ];
+  let msgCount = 0;
+  for (let i = 0; i < 16; i++) {
+    const user = regularUsers[i % regularUsers.length];
+    if (!user) continue;
+    const fromUser = i % 2 === 0; // alterna usuario→admin y admin→usuario
+    const senderId = fromUser ? user.id : adminId;
+    const receiverId = fromUser ? adminId : user.id;
+    // Los dirigidos al admin: la mitad sin leer → tarjeta "Mensajes sin leer".
+    const read = fromUser ? i % 4 !== 0 : true;
+    const created = dAgo((i * 13) % 200 + 1);
+    const m = await repoMessages.save(
+      repoMessages.create({
+        senderId,
+        receiverId,
+        content: msgBodies[i % msgBodies.length],
+        read,
+      }),
+    );
+    await bd("message", "created_at", m.id, created);
+    msgCount++;
+  }
+  console.log(`Seed completed: ${msgCount} mensajes insertados.`);
+
+  // --- MENSAJES INTERNOS (admin ↔ admin) → pestaña "Internos" del panel --------
+  // Conversación entre los dos admins (Laura ↔ Diego). Como el otro participante
+  // es admin, el front la clasifica como "Interna".
+  const internoMsgs: { from: number; to: number; text: string; read: boolean }[] = [
+    { from: admin2Saved.id, to: adminId, text: "Laura, ¿revisaste la solicitud de adopción de Duque?", read: true },
+    { from: adminId, to: admin2Saved.id, text: "Sí, la pasé a evaluación. Falta coordinar la visita.", read: true },
+    { from: admin2Saved.id, to: adminId, text: "Dale. Yo me encargo del seguimiento post-adopción de Max.", read: true },
+    { from: adminId, to: admin2Saved.id, text: "Perfecto. Avisame si entra algún reclamo nuevo.", read: true },
+    { from: admin2Saved.id, to: adminId, text: "Entró uno de Bruno, te lo derivo para que lo veas.", read: false },
+  ];
+  let internoCount = 0;
+  for (let i = 0; i < internoMsgs.length; i++) {
+    const im = internoMsgs[i];
+    const created = dAgo(internoMsgs.length - i); // del más viejo al más nuevo
+    const m = await repoMessages.save(
+      repoMessages.create({
+        senderId: im.from,
+        receiverId: im.to,
+        content: im.text,
+        read: im.read,
+      }),
+    );
+    await bd("message", "created_at", m.id, created);
+    internoCount++;
+  }
+  console.log(`Seed completed: ${internoCount} mensajes internos (admin↔admin) insertados.`);
+
+  // --- NOTIFICACIONES in-app (mix leído/no leído) ----------------------------
+  const repoNotif = AppDataSource.getRepository(Notification);
+  const notifSpecs: { type: string; title: string; body: string; link: string }[] = [
+    { type: "comment", title: "Nuevo comentario en tu publicación", body: "Alguien comentó en tu mascota publicada.", link: "/mis-reportes" },
+    { type: "avistamiento", title: "¡Reportaron un avistamiento!", body: "Alguien dice haber visto a tu mascota.", link: "/mis-reportes" },
+    { type: "adoption_status", title: "Actualización de tu solicitud", body: "El estado de tu solicitud de adopción cambió.", link: "/mis-solicitudes" },
+    { type: "message", title: "Tenés un nuevo mensaje", body: "Recibiste un mensaje privado.", link: "/mensajes" },
+    { type: "publication", title: "Tu publicación fue aprobada", body: "Ya está visible para la comunidad.", link: "/mis-reportes" },
+    { type: "actividad", title: "Recordatorio de seguimiento", body: "Tenés un seguimiento próximo.", link: "/seguimientos" },
+  ];
+  let notifCount = 0;
+  for (let i = 0; i < 15; i++) {
+    const user = regularUsers[i % regularUsers.length];
+    if (!user) continue;
+    const spec = notifSpecs[i % notifSpecs.length];
+    const created = dAgo((i * 17) % 120 + 1);
+    const n = await repoNotif.save(
+      repoNotif.create({
+        userId: user.id,
+        type: spec.type,
+        title: spec.title,
+        body: spec.body,
+        link: spec.link,
+        read: i % 3 === 0, // ~1/3 leídas, el resto sin leer (campana con badge)
+      }),
+    );
+    await bd("notification", "created_at", n.id, created);
+    notifCount++;
+  }
+  console.log(`Seed completed: ${notifCount} notificaciones insertadas.`);
+
+  // --- RECLAMOS demo (carrusel de alertas) -----------------------------------
+  // Un reclamo real crea 3 cosas juntas: NOTA en la mascota (lo que lee el
+  // carrusel), MENSAJE al admin y NOTIFICACIÓN. Acá lo replicamos para que el
+  // carrusel tenga datos consistentes apenas se levanta el proyecto, incluyendo
+  // un caso ya cerrado (mascota "devuelta al dueño").
+  const repoNote = AppDataSource.getRepository(PetNote);
+  const fotoDe = (p: Pet) =>
+    p.photo ?? (p.photos && p.photos.length ? p.photos[0] : null);
+  const perdidasActivas = (await repoPets.find()).filter(
+    (p) =>
+      p.statusId === CatalogIds.petStatus.perdido &&
+      p.reportStatusId === CatalogIds.petReportStatus.activo,
+  );
+  const demoClaims = [
+    { devuelto: false, motivo: "Es mi perro, lo perdí hace una semana en el barrio." },
+    { devuelto: false, motivo: "Reconozco la cicatriz de la oreja, es mía." },
+    { devuelto: true, motivo: "Tiene microchip a mi nombre; ya coordinamos la entrega." },
+  ];
+  let reclamosDemo = 0;
+  for (let i = 0; i < demoClaims.length; i++) {
+    const c = demoClaims[i];
+    const pet = perdidasActivas[i];
+    const user = regularUsers[i % regularUsers.length];
+    if (!pet || !user) continue;
+    const foto = fotoDe(pet);
+
+    // NOTA (la fuente de las alertas del carrusel)
+    await repoNote.save(
+      repoNote.create({
+        petId: pet.id,
+        authorName: user.name,
+        kindId: CatalogIds.petNoteKind.general,
+        text: [
+          `🔔 RECLAMO de ${user.name}`,
+          `Mensaje: ${c.motivo}`,
+          foto ? `Fotos de prueba: ${foto}` : null,
+          `Usuario ID: ${user.id}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      }),
+    );
+
+    // MENSAJE al admin (mismo formato que un reclamo real)
+    const msg = await repoMessages.save(
+      repoMessages.create({
+        senderId: user.id,
+        receiverId: adminId,
+        photo: foto,
+        read: false,
+        content: [
+          `🔔 RECLAMO DE MASCOTA`,
+          ``,
+          `Mascota: ${pet.name ?? "sin nombre"}`,
+          `Link: /mascotas-perdidas/${pet.id}`,
+          ``,
+          `— Datos de quien reclama —`,
+          `Nombre: ${user.name}`,
+          `Motivo: ${c.motivo}`,
+          `Usuario ID: ${user.id}`,
+          ``,
+          `Respondé a este mensaje para coordinar el reencuentro.`,
+        ].join("\n"),
+      }),
+    );
+    await bd("message", "created_at", msg.id, dAgo(i + 1));
+
+    // NOTIFICACIÓN al admin
+    const n = await repoNotif.save(
+      repoNotif.create({
+        userId: adminId,
+        type: "message",
+        title: `🔔 Reclamo: ${pet.name ?? "mascota"} – ${user.name}`,
+        body: "Reclama ser el dueño. Respondé desde Mensajes.",
+        link: `/admin/mensajes?user=${user.id}`,
+        read: false,
+      }),
+    );
+    await bd("notification", "created_at", n.id, dAgo(i + 1));
+
+    // Caso cerrado: la mascota ya fue devuelta a su dueño.
+    if (c.devuelto) {
+      pet.statusId = CatalogIds.petStatus.devueltaAlDueno;
+      pet.reportStatusId = CatalogIds.petReportStatus.finalizado;
+      pet.expiresAt = null;
+      await repoPets.save(pet);
+    }
+    reclamosDemo++;
+  }
+  console.log(`Seed completed: ${reclamosDemo} reclamos demo (carrusel de alertas).`);
+
+  // --- ACTIVIDAD: backfill desde los datos reales (mismo criterio que el ------
+  // script backfill-activity, pero integrado al seed para que quede consistente
+  // con todas las fechas distribuidas). createdAt es columna seteable directa.
+  const repoActivity = AppDataSource.getRepository(Activity);
+  await repoActivity.clear();
+  const [actUsers, actAdoptions, actFollowups, actPets, actComments] =
+    await Promise.all([
+      repoUsers.find(),
+      repoAdopt.find(),
+      repoF.find(),
+      repoPets.find(),
+      repoComment.find(),
+    ]);
+  const actPetName = new Map(actPets.map((p) => [p.id, p.name ?? "una mascota"]));
+  const actRows: Partial<Activity>[] = [];
+  for (const u of actUsers) {
+    actRows.push({ type: "usuario_nuevo", title: `Nuevo usuario: ${u.name}`, actorUserId: u.id, refType: "user", refId: String(u.id), link: "/admin/personas", createdAt: u.createdAt });
+    if (u.adopter) actRows.push({ type: "adoptante_nuevo", title: `Nuevo adoptante: ${u.name}`, actorUserId: u.id, refType: "user", refId: String(u.id), link: "/admin/personas", createdAt: u.createdAt });
+  }
+  for (const a of actAdoptions) {
+    if (!a.petId) continue;
+    actRows.push({ type: "solicitud", title: `Solicitud de ${a.firstName} ${a.lastName}`.trim(), actorUserId: a.userId, refType: "adoption", refId: String(a.id), link: `/admin/solicitudes?requestId=${a.id}`, createdAt: a.createdAt });
+  }
+  for (const f of actFollowups) {
+    actRows.push({ type: "seguimiento", title: "Seguimiento agendado", actorUserId: f.userId, refType: "followup", refId: String(f.id), link: "/admin/seguimientos", createdAt: f.createdAt });
+  }
+  for (const p of actPets) {
+    actRows.push({ type: "publicacion", title: `Publicación: ${p.name ?? "mascota"}`, actorUserId: p.userId, refType: "pet", refId: p.id, link: "/admin/publicacion", createdAt: p.createdAt });
+  }
+  for (const c of actComments) {
+    actRows.push({ type: "comentario", title: `Comentario en ${actPetName.get(c.petId) ?? "una publicación"}`, actorUserId: c.authorUserId, refType: "comment", refId: String(c.id), link: `/mascotas-perdidas/${c.petId}`, createdAt: c.createdAt });
+  }
+  await repoActivity.save(repoActivity.create(actRows));
+  console.log(`Seed completed: ${actRows.length} registros de actividad (backfill integrado).`);
+
+  // Asignación de refugios: se corre AL FINAL, una vez que existen TODAS las
+  // mascotas (incluidas las históricas terminales que crea el bloque de flujos
+  // históricos). Si se corriera antes, esas históricas quedarían con
+  // refugio_id NULL y se filtrarían como "públicas" en las métricas de todos
+  // los refugios. Las mascotas en estados gestionados se reparten entre los dos
+  // refugios; adopciones y seguimientos heredan el refugio de su mascota.
+  const managedStatuses = [
+    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.adoptado,
+    CatalogIds.petStatus.devueltaAlDueno,
+  ];
+  await AppDataSource.query(
+    `UPDATE pet p SET refugio_id = CASE WHEN s.rn % 2 = 0 THEN $1::int ELSE $2::int END
+     FROM (SELECT id, row_number() OVER (PARTITION BY "statusId" ORDER BY id) AS rn FROM pet WHERE "statusId" = ANY($3)) s
+     WHERE p.id = s.id`,
+    [refugioMoronId, refugioHurlinghamId, managedStatuses],
+  );
+  await AppDataSource.query(
+    `UPDATE adoption a SET refugio_id = p.refugio_id FROM pet p WHERE a."petId" = p.id`,
+  );
+  await AppDataSource.query(
+    `UPDATE seguimientos f SET refugio_id = p.refugio_id FROM pet p WHERE f.pet_id = p.id`,
+  );
+  console.log("Seed completed: refugios asignados (moron + hurlingham).");
 
   await AppDataSource.destroy();
 }

@@ -24,7 +24,10 @@ export function mockReq(overrides: Partial<Request> = {}): Request {
   return base as Request;
 }
 
-export function authReq(authUser: { id: number; role?: string }, overrides: Partial<Request> = {}): Request {
+export function authReq(
+  authUser: { id: number; role?: string; refugioId?: number | null },
+  overrides: Partial<Request> = {},
+): Request {
   const r = mockReq(overrides) as any;
   r.authUser = authUser;
   return r as Request;

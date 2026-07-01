@@ -1,9 +1,10 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
+import { dbManager } from "../lib/db-context.js";
 import { Notification } from "../entity/Notification.js";
 
 function repo() {
-  return AppDataSource.getRepository(Notification);
+  return dbManager().getRepository(Notification);
 }
 
 /** Lista las notificaciones del usuario (más nuevas primero) + total sin leer. */

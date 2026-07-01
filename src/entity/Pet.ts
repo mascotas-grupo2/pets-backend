@@ -55,6 +55,10 @@ export class Pet {
   @Column({ nullable: true, type: "timestamp" })
   expiryNotifiedAt: Date | null;
 
+  /** Cuándo se avisó que ESTÁ POR vencer (aviso previo). Se resetea al renovar. */
+  @Column({ nullable: true, type: "timestamp" })
+  expiryWarnedAt: Date | null;
+
   @Column({ nullable: true, type: "int" })
   sexId: number | null;
 
@@ -105,6 +109,9 @@ export class Pet {
 
   @Column({ nullable: true, type: "int" })
   userId: number | null;
+
+  @Column({ name: "refugio_id", nullable: true, type: "int" })
+  refugioId: number | null;
 
   @Column({ type: "int", default: CatalogIds.petStatus.perdido })
   statusId: number;

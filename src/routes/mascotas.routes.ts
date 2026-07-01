@@ -4,6 +4,7 @@ import {
   adminListMascotas,
   adminListMascotasByStatus,
   adminListMascotasPaged,
+  getAdminPetById,
   approveClaim,
   claimPet,
   renewMascota,
@@ -23,6 +24,7 @@ import {
   finalizeMascota,
   resolveMascota,
   rejectMascota,
+  rejectClaim,
   entregaDirecta,
   getMascotaCompatibility,
 } from "../controllers/mascotas.controller.js";
@@ -35,17 +37,18 @@ import {
   rejectComment,
 } from "../controllers/comments.controller.js";
 import { createSighting, listSightings } from "../controllers/sightings.controller.js";
-import { optionalAuth, requireAdmin, requireAuth } from "../lib/auth.js";
+import { optionalAuth, requireRefugioAdmin, requireAuth } from "../lib/auth.js";
 
 export const mascotasRouter = Router();
 
 mascotasRouter.get("/", optionalAuth, listMascotas);
 // Nuevo endpoint para métricas administrativas
-mascotasRouter.get("/admin/metricas", requireAdmin, getMetricas);
-mascotasRouter.get("/admin/mapa", requireAdmin, getMapaReportes);
-mascotasRouter.get("/admin/list", requireAdmin, adminListMascotas);
-mascotasRouter.get("/admin/paged", requireAdmin, adminListMascotasPaged);
-mascotasRouter.get("/admin/status/:status", requireAdmin, adminListMascotasByStatus);
+mascotasRouter.get("/admin/metricas", requireRefugioAdmin, getMetricas);
+mascotasRouter.get("/admin/mapa", requireRefugioAdmin, getMapaReportes);
+mascotasRouter.get("/admin/list", requireRefugioAdmin, adminListMascotas);
+mascotasRouter.get("/admin/paged", requireRefugioAdmin, adminListMascotasPaged);
+mascotasRouter.get("/admin/status/:status", requireRefugioAdmin, adminListMascotasByStatus);
+mascotasRouter.get("/admin/pet/:id", requireRefugioAdmin, getAdminPetById);
 mascotasRouter.get("/animal-types", listAnimalTypeCatalog);
 mascotasRouter.get("/userPetsById", requireAuth, listMascotasByUser);
 mascotasRouter.get("/user/:id", requireAuth, listMascotasByUser);
@@ -55,19 +58,20 @@ mascotasRouter.post("/", optionalAuth, multiple("photo", 6), multerErrorHandler,
 mascotasRouter.put("/:id", requireAuth, updateMascota);
 mascotasRouter.put("/:id/photos", requireAuth, multiple("photo", 6), multerErrorHandler, updatePetPhotos);
 mascotasRouter.delete("/:id", requireAuth, deleteMascota);
-mascotasRouter.post("/:id/approve", requireAdmin, approveMascota);
-mascotasRouter.post("/:id/finalize", requireAdmin, finalizeMascota);
+mascotasRouter.post("/:id/approve", requireRefugioAdmin, approveMascota);
+mascotasRouter.post("/:id/finalize", requireRefugioAdmin, finalizeMascota);
 mascotasRouter.post("/:id/resolve", requireAuth, resolveMascota);
-mascotasRouter.post("/:id/entrega-directa", requireAdmin, entregaDirecta);
-mascotasRouter.post("/:id/reject", requireAdmin, rejectMascota);
+mascotasRouter.post("/:id/entrega-directa", requireRefugioAdmin, entregaDirecta);
+mascotasRouter.post("/:id/reject", requireRefugioAdmin, rejectMascota);
 
 // Reclamo de mascota (público) y aprobación / confirmación (solo admin).
 mascotasRouter.post("/:id/claim", optionalAuth, multiple("photo", 5), multerErrorHandler, claimPet);
 mascotasRouter.post("/:id/renew", requireAuth, renewMascota);
-mascotasRouter.post("/:id/approve-claim", requireAdmin, approveClaim);
-mascotasRouter.post("/:id/confirm-return", requireAdmin, confirmReturn);
-mascotasRouter.get("/:id/notes", requireAdmin, listPetNotes);
-mascotasRouter.post("/:id/notes", requireAdmin, createPetNote);
+mascotasRouter.post("/:id/approve-claim", requireRefugioAdmin, approveClaim);
+mascotasRouter.post("/:id/reject-claim", requireRefugioAdmin, rejectClaim);
+mascotasRouter.post("/:id/confirm-return", requireRefugioAdmin, confirmReturn);
+mascotasRouter.get("/:id/notes", requireRefugioAdmin, listPetNotes);
+mascotasRouter.post("/:id/notes", requireRefugioAdmin, createPetNote);
 
 // Compatibilidad usuario↔mascota (detalle público).
 mascotasRouter.get("/:id/compatibility", requireAuth, getMascotaCompatibility);
