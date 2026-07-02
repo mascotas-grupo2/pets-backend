@@ -133,6 +133,9 @@ export async function createFollowup(req: Request, res: Response) {
     refugioId: req.authUser?.refugioId ?? null,
   });
   const saved = await repo().save(followup);
+  const catalogValuesById = await getCatalogValuesById();
+  const tipoLabel = catalogValuesById.get(saved.typeId)?.label ?? "Seguimiento";
+
   await recordActivity({
     type: "seguimiento",
     title: "Nuevo seguimiento agendado",
@@ -142,11 +145,20 @@ export async function createFollowup(req: Request, res: Response) {
     refId: saved.id,
     link: "/admin/seguimientos",
   });
-  // Avisar al adoptante que le agendaron un seguimiento.
+
+  // Avisar al RESPONSABLE del seguimiento. OJO: `values.userId` es el responsable
+  // elegido en el alta (staff / veterinario / adoptante, según el caso), NO
+  // necesariamente el adoptante. Por eso el texto es contextual al TIPO y no
+  // asume "post-adopción". El seguimiento post-adopción es solo uno de los tipos.
+  const esPostAdopcion = saved.typeId === CatalogIds.followupType.postAdopcion;
   await notify(values.userId, {
     type: "adoption_status",
-    title: "Se agendó un seguimiento post-adopción",
-    body: "Un administrador programó un nuevo seguimiento para tu adopción.",
+    title: esPostAdopcion
+      ? "Se agendó un seguimiento post-adopción"
+      : `Se te asignó un seguimiento: ${tipoLabel}`,
+    body: esPostAdopcion
+      ? "Un administrador programó un seguimiento para tu adopción."
+      : `Un administrador te asignó como responsable de un seguimiento (${tipoLabel}).`,
     link: "/account",
   });
 
@@ -156,7 +168,6 @@ export async function createFollowup(req: Request, res: Response) {
   // llega al que lo creó, porque es un recordatorio de su agenda inmediata.
   await notifyTodayReminder(saved, req.authUser?.refugioId ?? null);
 
-  const catalogValuesById = await getCatalogValuesById();
   res.status(201).json({ ...saved, type: catalogValuesById.get(saved.typeId) ?? null, status: catalogValuesById.get(saved.statusId) ?? null });
 }
 
