@@ -2,10 +2,13 @@ import { Request, Response } from "express";
 import { AppDataSource } from "../data-source.js";
 import { dbManager } from "../lib/db-context.js";
 import { Followup } from "../entity/Followup.js";
+import { Pet } from "../entity/Pet.js";
+import { User } from "../entity/User.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
 import { FollowupCreateInput, followupCreateSchema, followupListQuerySchema, FollowupUpdateInput, followupUpdateSchema } from "../schemas/followup.schema.js";
 import { getCatalogValuesById } from "../lib/catalog-values.js";
 import { recordActivity } from "../lib/activity.js";
+import { notify } from "../lib/notify.js";
 import { parseOptionalInt } from "../controllers/_shared_parsers.js";
 import { applyTenantScope } from "../lib/tenant.js";
 
@@ -17,6 +20,103 @@ function parsePagination(req: Request) {
   const page = Math.max(1, Number(req.query.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
   return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+/** ¿La fecha cae en el día de hoy (hora local del server)? */
+function isToday(d: Date): boolean {
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+/**
+ * Si el seguimiento es para hoy, notifica a los admins del refugio (incluido el
+ * que lo agendó) con un recordatorio de agenda del día. Best-effort.
+ */
+async function notifyTodayReminder(followup: Followup, refugioId: number | null) {
+  try {
+    const when = new Date(followup.appointmentAt);
+    if (Number.isNaN(when.getTime()) || !isToday(when)) return;
+
+    const pet = await dbManager()
+      .getRepository(Pet)
+      .findOneBy({ id: followup.petId });
+    const petName = pet?.name ?? "una mascota";
+    const hora = when.toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
+    const admins = await dbManager().getRepository(User).find({
+      where:
+        refugioId != null
+          ? { roleId: CatalogIds.userRole.admin, refugioId }
+          : { roleId: CatalogIds.userRole.admin },
+    });
+    for (const admin of admins) {
+      await notify(admin.id, {
+        type: "adoption_status",
+        title: "📅 Seguimiento para hoy",
+        body: `Tenés un seguimiento agendado para hoy a las ${hora} (${petName}).`,
+        link: "/admin/seguimientos",
+      });
+    }
+  } catch (e) {
+    console.warn(
+      "[followup] no se pudo enviar recordatorio de hoy:",
+      (e as Error).message,
+    );
+  }
+}
+
+/**
+ * Pone la mascota "En tratamiento médico" (petStatus.medico) cuando se aprueba un
+ * seguimiento médico. Solo si viene de una etapa previa a la adopción (perdido /
+ * en refugio / en tránsito); si ya está en tratamiento o en una etapa posterior
+ * (adopción / adoptado / devuelta), no hace nada. Best-effort. Deja nota y avisa.
+ */
+async function promotePetToMedico(petId: string, actorId: number | null) {
+  try {
+    const S = CatalogIds.petStatus;
+    const ORIGENES_VALIDOS: number[] = [S.perdido, S.encontrado, S.transito];
+
+    const petRepo = dbManager().getRepository(Pet);
+    const pet = await petRepo.findOneBy({ id: petId });
+    if (!pet) return;
+    if (pet.statusId === S.medico) return; // ya está en tratamiento
+    if (!ORIGENES_VALIDOS.includes(pet.statusId)) return; // no regresar desde adopción/terminal
+
+    pet.statusId = S.medico;
+    await petRepo.save(pet);
+
+    await recordActivity({
+      type: "seguimiento",
+      title: `${pet.name ?? "Una mascota"} pasó a tratamiento médico`,
+      actorUserId: actorId,
+      refugioId: pet.refugioId ?? null,
+      refType: "pet",
+      refId: pet.id,
+      link: "/admin/mascotas",
+    });
+
+    if (pet.userId) {
+      await notify(pet.userId, {
+        type: "publication",
+        title: `🏥 ${pet.name ?? "Tu mascota"} está en tratamiento médico`,
+        body: "El refugio confirmó un seguimiento médico y la mascota pasó a tratamiento.",
+        link: `/mascotas-perdidas/${pet.id}`,
+      });
+    }
+  } catch (e) {
+    console.warn(
+      "[followup] no se pudo poner la mascota en tratamiento médico:",
+      (e as Error).message,
+    );
+  }
 }
 
 export async function createFollowup(req: Request, res: Response) {
@@ -42,6 +142,20 @@ export async function createFollowup(req: Request, res: Response) {
     refId: saved.id,
     link: "/admin/seguimientos",
   });
+  // Avisar al adoptante que le agendaron un seguimiento.
+  await notify(values.userId, {
+    type: "adoption_status",
+    title: "Se agendó un seguimiento post-adopción",
+    body: "Un administrador programó un nuevo seguimiento para tu adopción.",
+    link: "/account",
+  });
+
+  // Si el seguimiento es para HOY, avisar a los admins del refugio (incluido quien
+  // lo agenda) con un recordatorio de agenda del día. `recordActivity` ya notifica
+  // a los OTROS admins del alta, pero excluye al actor: este aviso "de hoy" sí le
+  // llega al que lo creó, porque es un recordatorio de su agenda inmediata.
+  await notifyTodayReminder(saved, req.authUser?.refugioId ?? null);
+
   const catalogValuesById = await getCatalogValuesById();
   res.status(201).json({ ...saved, type: catalogValuesById.get(saved.typeId) ?? null, status: catalogValuesById.get(saved.statusId) ?? null });
 }
@@ -83,6 +197,13 @@ export async function confirmFollowup(req: Request, res: Response) {
   }
   item.statusId = CatalogIds.followupStatus.confirmado;
   await repo().save(item);
+
+  // Regla de negocio: al APROBAR (confirmar) un seguimiento MÉDICO, la mascota
+  // pasa a "En tratamiento médico" si está en una etapa previa a la adopción.
+  if (item.typeId === CatalogIds.followupType.medico) {
+    await promotePetToMedico(item.petId, req.authUser?.id ?? null);
+  }
+
   res.json(item);
 }
 
