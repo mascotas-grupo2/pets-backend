@@ -844,18 +844,14 @@ export async function createMascota(req: Request, res: Response) {
     isOwner: _isOwner,
     ...petData
   } = data;
-  // Si el usuario está autenticado, es el dueño publicando su propia mascota.
-  // Si es anónimo, isOwner = false y quedará pendiente de verificación.
-  const isOwner = req.authUser != null;
-
-  // Si el usuario es admin, NO se marca como dueño automáticamente
-  const isAdmin = req.authUser?.role === "admin";
-  const finalIsOwner = isOwner && !isAdmin;
-
+  // `isOwner` ("con dueño") lo decide quien publica: se persiste tal cual vino del
+  // formulario (default false). Ya NO se fuerza a true por estar logueado. El
+  // publicador queda registrado en `userId` para permisos de edición; un reclamo
+  // aprobado (approveClaim) también puede activarlo después.
   const userId = req.authUser?.id ?? null;
   const mascota = repo().create({
     ...petData,
-    isOwner: finalIsOwner,
+    isOwner: _isOwner === true,
     animalTypeId: catalogIds.animalTypeId,
     ...(catalogIds.sexId !== undefined ? { sexId: catalogIds.sexId } : {}),
     ...(catalogIds.statusId !== undefined && catalogIds.statusId !== null
@@ -983,7 +979,7 @@ export async function createMascota(req: Request, res: Response) {
     refugioId: reloaded.refugioId ?? null,
     refType: "pet",
     refId: reloaded.id,
-    link: "/admin/publicacion",
+    link: `/admin/publicacion?pet=${reloaded.id}`,
   });
 
   const catalogValuesById = await getCatalogValuesById();
@@ -1116,7 +1112,20 @@ export async function updateMascota(req: Request, res: Response) {
     // institucionales del refugio (userId == null) y las de otro admin se editan
     // por completo —imprescindible para cargar vacunas/tratamiento mientras se
     // preparan para la adopción—.
-    if (!existing.isOwner && existing.userId != null && !ownerIsAdmin) {
+    // ...salvo que la mascota ya esté en custodia del refugio ("En refugio" o el
+    // pipeline de adopción): ahí el refugio la gestiona y puede editar contenido
+    // (cargar vacunas, tratamiento, corregir datos), aunque la haya publicado un
+    // usuario común.
+    const enCustodiaRefugio =
+      existing.statusId != null &&
+      (existing.statusId === CatalogIds.petStatus.encontrado ||
+        REFUGIO_MANAGED.has(existing.statusId));
+    if (
+      !existing.isOwner &&
+      existing.userId != null &&
+      !ownerIsAdmin &&
+      !enCustodiaRefugio
+    ) {
       adminManageOnly = true;
     }
   }

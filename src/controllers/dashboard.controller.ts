@@ -153,7 +153,7 @@ export async function getDashboardActivity(req: Request, res: Response) {
       type: "publicacion",
       title: `Nueva publicación: ${p.name ?? "mascota"}`,
       detail: p.location ?? "",
-      link: `/admin/publicacion`,
+      link: `/admin/publicacion?pet=${p.id}`,
       at: p.createdAt,
     });
   }
