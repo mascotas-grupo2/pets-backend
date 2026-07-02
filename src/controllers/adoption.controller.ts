@@ -37,6 +37,7 @@ import {
 import { serializeAdoption } from "../lib/serializers.js";
 import { calculateCompatibility } from "../lib/matching.js";
 import { notify } from "../lib/notify.js";
+import { recordActivity } from "../lib/activity.js";
 
 // Etiquetas amigables por código de estado (para las notificaciones).
 const ADOPTION_STATUS_LABELS: Record<string, string> = {
@@ -90,7 +91,10 @@ function requiredChecksFor(statusId: number): string[] {
   return [];
 }
 
-function createFollowupsForAdoption(adoption: Adoption) {
+async function createFollowupsForAdoption(
+  adoption: Adoption,
+  actorUserId: number | null = null,
+) {
   const petId = adoption.petId;
   const userId = adoption.userId;
   if (!petId || typeof userId !== "number" || !Number.isInteger(userId)) return;
@@ -111,7 +115,28 @@ function createFollowupsForAdoption(adoption: Adoption) {
     return followup;
   });
 
-  return followupRepo().save(followups);
+  const saved = await followupRepo().save(followups);
+
+  // Registrar actividad (métricas + aviso a admins), igual que el alta manual.
+  await recordActivity({
+    type: "seguimiento",
+    title: "Seguimientos post-adopción agendados",
+    actorUserId,
+    refugioId: adoption.refugioId ?? null,
+    refType: "followup",
+    refId: saved[0]?.id ?? null,
+    link: "/admin/seguimientos",
+  });
+
+  // Avisar al adoptante que quedaron programados sus seguimientos.
+  await notify(userId, {
+    type: "adoption_status",
+    title: "Se programaron tus seguimientos post-adopción",
+    body: `Agendamos ${saved.length} seguimientos (a los ${offsets.join(", ")} días).`,
+    link: "/account",
+  });
+
+  return saved;
 }
 
 async function serializeAdoptionDetail(adoption: Adoption) {
@@ -746,7 +771,7 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
   }
 
   if (statusId === A.aceptadaConSeguimiento && previousStatusId !== statusId) {
-    await createFollowupsForAdoption(saved);
+    await createFollowupsForAdoption(saved, req.authUser?.id ?? null);
   }
 
   // Al descartar, si el admin dejó un motivo, lo guardamos como nota "Rechazo:"
