@@ -779,6 +779,25 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
     await createFollowupsForAdoption(saved, req.authUser?.id ?? null);
   }
 
+  // Si el admin DESCARTA una solicitud que ya estaba "Aceptada con seguimiento"
+  // (decide que la mascota no es para ese adoptante), los seguimientos post-adopción
+  // que se habían agendado ya no corresponden: se cancelan (borran los pendientes).
+  // La mascota ya volvió a publicarse arriba (reportStatus → activo), es decir,
+  // vuelve a estar disponible en adopción.
+  if (
+    statusId === A.descartada &&
+    previousStatusId === A.aceptadaConSeguimiento &&
+    adoption.petId &&
+    typeof adoption.userId === "number"
+  ) {
+    await followupRepo().delete({
+      petId: adoption.petId,
+      adopterUserId: adoption.userId,
+      typeId: CatalogIds.followupType.postAdopcion,
+      statusId: CatalogIds.followupStatus.pendiente,
+    });
+  }
+
   // Al descartar, si el admin dejó un motivo, lo guardamos como nota "Rechazo:"
   // para mostrárselo al solicitante en "Mis Solicitudes".
   const reason = typeof values.reason === "string" ? values.reason.trim() : "";
