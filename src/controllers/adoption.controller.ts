@@ -96,8 +96,12 @@ async function createFollowupsForAdoption(
   actorUserId: number | null = null,
 ) {
   const petId = adoption.petId;
-  const userId = adoption.userId;
+  const userId = adoption.userId; // adoptante (persona interesada)
   if (!petId || typeof userId !== "number" || !Number.isInteger(userId)) return;
+
+  // Responsable = el admin/refugio que aprueba la adopción (no el adoptante).
+  // Si por algún motivo no hay actor (flujo sin sesión), cae al adoptante.
+  const responsableId = actorUserId ?? userId;
 
   const baseDate = new Date();
   const offsets = [7, 30, 90];
@@ -107,8 +111,9 @@ async function createFollowupsForAdoption(
 
     const followup = new Followup();
     followup.petId = petId;
-    followup.userId = userId;
-    followup.typeId = CatalogIds.followupType.programado;
+    followup.userId = responsableId; // responsable (admin)
+    followup.adopterUserId = userId; // adoptante (usuario)
+    followup.typeId = CatalogIds.followupType.postAdopcion;
     followup.statusId = CatalogIds.followupStatus.pendiente;
     followup.appointmentAt = appointmentAt;
     followup.refugioId = adoption.refugioId ?? null;
