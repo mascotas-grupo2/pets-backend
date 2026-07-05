@@ -9,7 +9,12 @@ import { User } from "../entity/User.js";
 import { Message } from "../entity/Message.js";
 import { AdoptionCheck } from "../entity/AdoptionCheck.js";
 import { AdoptionNote } from "../entity/AdoptionNote.js";
-import { adoptionSchema, AdoptionInput, adoptionStatusUpdateSchema, AdoptionStatusUpdateInput } from "../schemas/adoption.schema.js";
+import {
+  adoptionSchema,
+  AdoptionInput,
+  adoptionStatusUpdateSchema,
+  AdoptionStatusUpdateInput,
+} from "../schemas/adoption.schema.js";
 import {
   CatalogValidationError,
   getCatalogValuesById,
@@ -192,8 +197,12 @@ async function createFollowupsForAdoption(
 async function serializeAdoptionDetail(adoption: Adoption) {
   const catalogValuesById = await getCatalogValuesById();
   const adopted = serializeAdoption(adoption, catalogValuesById);
-  const user = adoption.userId ? await userRepo().findOneBy({ id: adoption.userId }) : null;
-  const pet = adoption.petId ? await petRepo().findOneBy({ id: adoption.petId }) : null;
+  const user = adoption.userId
+    ? await userRepo().findOneBy({ id: adoption.userId })
+    : null;
+  const pet = adoption.petId
+    ? await petRepo().findOneBy({ id: adoption.petId })
+    : null;
 
   let compatibilityFactors: { label: string; isPositive: boolean }[] = [];
   if (pet) {
@@ -328,7 +337,8 @@ function applySort(qb: SelectQueryBuilder<any>, orders: SortOrder[]) {
 
 function buildAdoptionFilters(req: Request) {
   const userId = parseOptionalInt(req.query.userId);
-  const petId = typeof req.query.petId === "string" ? req.query.petId.trim() : "";
+  const petId =
+    typeof req.query.petId === "string" ? req.query.petId.trim() : "";
   const statusId = parseStatusId(req.query.status, req.query.statusId);
   const compatibilityMin = parseOptionalNumber(req.query.compatibilityMin);
   const compatibilityMax = parseOptionalNumber(req.query.compatibilityMax);
@@ -345,10 +355,24 @@ function buildAdoptionFilters(req: Request) {
 async function mapAdoptionSummaries(items: Adoption[]) {
   if (items.length === 0) return [];
 
-  const userIds = [...new Set(items.map((i) => i.userId).filter((id): id is number => Number.isInteger(id)))];
-  const petIds = [...new Set(items.map((i) => i.petId).filter((id): id is string => typeof id === "string"))];
+  const userIds = [
+    ...new Set(
+      items
+        .map((i) => i.userId)
+        .filter((id): id is number => Number.isInteger(id)),
+    ),
+  ];
+  const petIds = [
+    ...new Set(
+      items
+        .map((i) => i.petId)
+        .filter((id): id is string => typeof id === "string"),
+    ),
+  ];
 
-  const users = userIds.length ? await userRepo().findBy({ id: In(userIds) }) : [];
+  const users = userIds.length
+    ? await userRepo().findBy({ id: In(userIds) })
+    : [];
   const pets = petIds.length ? await petRepo().findBy({ id: In(petIds) }) : [];
   const usersById = new Map(users.map((u) => [u.id, u]));
   const petsById = new Map(pets.map((p) => [p.id, p]));
@@ -429,7 +453,12 @@ async function resolveAdoptionCatalogIds(values: AdoptionInput) {
       values.preferredAnimal,
       false,
     ),
-    hasGardenId: await resolveCatalogId(Catalog.YES_NO, values.hasGardenId, values.hasGarden, true),
+    hasGardenId: await resolveCatalogId(
+      Catalog.YES_NO,
+      values.hasGardenId,
+      values.hasGarden,
+      true,
+    ),
     livingSituationId: await resolveCatalogId(
       Catalog.LIVING_SITUATION,
       values.livingSituationId,
@@ -460,15 +489,31 @@ async function resolveAdoptionCatalogIds(values: AdoptionInput) {
       values.hasFlatmates,
       true,
     ),
-    otherAnimalsId: await resolveCatalogId(Catalog.YES_NO, values.otherAnimalsId, values.otherAnimals, true),
-    neuteredId: await resolveCatalogId(Catalog.YES_NO_NA, normalizeYesNoNAId(values.neuteredId), values.neutered, true),
-    vaccinatedId: await resolveCatalogId(Catalog.YES_NO_NA, normalizeYesNoNAId(values.vaccinatedId), values.vaccinated, true),
+    otherAnimalsId: await resolveCatalogId(
+      Catalog.YES_NO,
+      values.otherAnimalsId,
+      values.otherAnimals,
+      true,
+    ),
+    neuteredId: await resolveCatalogId(
+      Catalog.YES_NO_NA,
+      normalizeYesNoNAId(values.neuteredId),
+      values.neutered,
+      true,
+    ),
+    vaccinatedId: await resolveCatalogId(
+      Catalog.YES_NO_NA,
+      normalizeYesNoNAId(values.vaccinatedId),
+      values.vaccinated,
+      true,
+    ),
   };
 }
 
 export async function createAdoption(req: Request, res: Response) {
   const parsed = adoptionSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!parsed.success)
+    return res.status(400).json({ error: parsed.error.flatten() });
 
   const values: AdoptionInput = parsed.data;
   let catalogIds: Awaited<ReturnType<typeof resolveAdoptionCatalogIds>>;
@@ -514,6 +559,16 @@ export async function createAdoption(req: Request, res: Response) {
 
   const saved = await adoptionRepo().save(adoption);
 
+  await recordActivity({
+    type: "solicitud",
+    title: `Nueva solicitud de adopción: ${pet?.name ?? "mascota"}`,
+    actorUserId: saved.userId ?? null,
+    refugioId: saved.refugioId ?? null,
+    refType: "adoption",
+    refId: saved.id,
+    link: `/admin/solicitudes?requestId=${saved.id}`,
+  });
+
   // Se habilita el chat adoptante ↔ refugio (no bloquea la respuesta si falla).
   try {
     await seedAdoptionChat(saved, pet);
@@ -543,7 +598,13 @@ export async function listMyAdoptions(req: Request, res: Response) {
   const catalogValuesById = await getCatalogValuesById();
 
   // Enriquecer con info de la mascota
-  const petIds = [...new Set(adoptions.map((a) => a.petId).filter((id): id is string => typeof id === "string"))];
+  const petIds = [
+    ...new Set(
+      adoptions
+        .map((a) => a.petId)
+        .filter((id): id is string => typeof id === "string"),
+    ),
+  ];
   const pets = petIds.length ? await petRepo().findBy({ id: In(petIds) }) : [];
   const petsById = new Map(pets.map((p) => [p.id, p]));
 
@@ -569,11 +630,14 @@ export async function listAdoptions(req: Request, res: Response) {
       order: { createdAt: "DESC" },
     });
     const catalogValuesById = await getCatalogValuesById();
-    return res.json(all.map((item) => serializeAdoption(item, catalogValuesById)));
+    return res.json(
+      all.map((item) => serializeAdoption(item, catalogValuesById)),
+    );
   }
 
   const userId = req.authUser?.id;
-  if (!Number.isInteger(userId)) return res.status(401).json({ error: "Usuario no autenticado" });
+  if (!Number.isInteger(userId))
+    return res.status(401).json({ error: "Usuario no autenticado" });
   // Solo solicitudes reales (con mascota); el row sin petId es el "perfil de
   // adoptante", no una solicitud. Devolvemos el summary enriquecido (nombre/foto
   // de la mascota + fechas) para alimentar la vista "Mis Solicitudes".
@@ -595,9 +659,14 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   // aparecer como solicitudes en el panel.
   qb.andWhere("adoption.petId IS NOT NULL");
   applyTenantScope(qb, "adoption", req.authUser);
-  if (filters.userId) qb.andWhere("adoption.userId = :userId", { userId: filters.userId });
-  if (filters.petId) qb.andWhere("adoption.petId = :petId", { petId: filters.petId });
-  if (filters.statusId) qb.andWhere("adoption.statusId = :statusId", { statusId: filters.statusId });
+  if (filters.userId)
+    qb.andWhere("adoption.userId = :userId", { userId: filters.userId });
+  if (filters.petId)
+    qb.andWhere("adoption.petId = :petId", { petId: filters.petId });
+  if (filters.statusId)
+    qb.andWhere("adoption.statusId = :statusId", {
+      statusId: filters.statusId,
+    });
   if (filters.compatibilityMin !== undefined) {
     qb.andWhere("adoption.compatibilityScore >= :compatibilityMin", {
       compatibilityMin: filters.compatibilityMin,
@@ -621,7 +690,10 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
   }
 
   const ordered = applySort(qb, sortOrders);
-  const [items, total] = await ordered.skip(skip).take(pageSize).getManyAndCount();
+  const [items, total] = await ordered
+    .skip(skip)
+    .take(pageSize)
+    .getManyAndCount();
 
   // Los cards deben mostrar los totales por estado del conjunto completo,
   // mientras que la lista paginada aplica los filtros del query.
@@ -633,10 +705,13 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
     .groupBy("adoption.statusId")
     .getRawMany<{ statusId: string; count: string }>();
 
-  const statusTotals = adoptionStatusEntries.reduce<Record<string, number>>((acc, entry) => {
-    acc[entry.code] = 0;
-    return acc;
-  }, {});
+  const statusTotals = adoptionStatusEntries.reduce<Record<string, number>>(
+    (acc, entry) => {
+      acc[entry.code] = 0;
+      return acc;
+    },
+    {},
+  );
   for (const row of rawSummary) {
     const statusId = Number(row.statusId);
     const statusCode = getAdoptionStatusCode(statusId);
@@ -654,10 +729,12 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
 
 export async function getAdoptionById(req: Request, res: Response) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "Id invalido" });
 
   const adoption = await adoptionRepo().findOneBy({ id });
-  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (!adoption)
+    return res.status(404).json({ error: "Solicitud no encontrada" });
 
   const isAdmin = req.authUser?.role === "admin";
   if (!isAdmin) {
@@ -676,7 +753,8 @@ export async function getMyPetCompatibility(req: Request, res: Response) {
     return res.status(401).json({ error: "No autenticado" });
   }
 
-  const petId = typeof req.params.petId === "string" ? req.params.petId.trim() : "";
+  const petId =
+    typeof req.params.petId === "string" ? req.params.petId.trim() : "";
   if (!petId) return res.status(400).json({ error: "Mascota inválida" });
 
   const pet = await petRepo().findOneBy({ id: petId });
@@ -723,10 +801,12 @@ export async function getMyPetCompatibility(req: Request, res: Response) {
 
 export async function updateAdoptionStatus(req: Request, res: Response) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "Id invalido" });
 
   const parsed = adoptionStatusUpdateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!parsed.success)
+    return res.status(400).json({ error: parsed.error.flatten() });
 
   const values: AdoptionStatusUpdateInput = parsed.data;
   const statusCode = values.status.trim().toUpperCase() as AdoptionStatusCode;
@@ -734,7 +814,8 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
   if (!statusId) return res.status(400).json({ error: "Estado invalido" });
 
   const adoption = await adoptionRepo().findOneBy({ id });
-  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (!adoption)
+    return res.status(404).json({ error: "Solicitud no encontrada" });
 
   // Validación de transición incremental (espejo de la regla del front): solo se
   // admite avanzar al estado siguiente de la cadena o pasar a DESCARTADA.
@@ -895,20 +976,26 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
  */
 export async function cancelMyAdoption(req: Request, res: Response) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "Id invalido" });
 
   const userId = req.authUser?.id;
-  if (!Number.isInteger(userId)) return res.status(401).json({ error: "Usuario no autenticado" });
+  if (!Number.isInteger(userId))
+    return res.status(401).json({ error: "Usuario no autenticado" });
 
   const adoption = await adoptionRepo().findOneBy({ id });
-  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
-  if (adoption.userId !== userId) return res.status(403).json({ error: "No autorizado" });
+  if (!adoption)
+    return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (adoption.userId !== userId)
+    return res.status(403).json({ error: "No autorizado" });
 
   const code = getAdoptionStatusCode(adoption.statusId);
   if (code === "ACEPTADA" || code === "DESCARTADA") {
     return res
       .status(409)
-      .json({ error: "La solicitud ya está finalizada y no se puede cancelar." });
+      .json({
+        error: "La solicitud ya está finalizada y no se puede cancelar.",
+      });
   }
 
   const A = CatalogIds.adoptionStatus;
@@ -937,10 +1024,12 @@ export async function cancelMyAdoption(req: Request, res: Response) {
 
 export async function deleteAdoption(req: Request, res: Response) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "Id invalido" });
 
   const result = await adoptionRepo().delete({ id });
-  if (result.affected === 0) return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (result.affected === 0)
+    return res.status(404).json({ error: "Solicitud no encontrada" });
 
   res.status(204).send();
 }
@@ -950,10 +1039,12 @@ export async function deleteAdoption(req: Request, res: Response) {
 /** Devuelve el checklist (definición + ítems marcados) y las impresiones. */
 export async function getAdoptionEvaluation(req: Request, res: Response) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "Id invalido" });
 
   const adoption = await adoptionRepo().findOneBy({ id });
-  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (!adoption)
+    return res.status(404).json({ error: "Solicitud no encontrada" });
 
   const [checks, notes] = await Promise.all([
     checkRepo().findBy({ adoptionId: id }),
@@ -978,7 +1069,8 @@ export async function getAdoptionEvaluation(req: Request, res: Response) {
 /** Marca o desmarca un ítem del checklist. Body: { item, done }. */
 export async function toggleAdoptionCheck(req: Request, res: Response) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "Id invalido" });
 
   const item = typeof req.body?.item === "string" ? req.body.item.trim() : "";
   const done = req.body?.done !== false; // por defecto marca
@@ -987,7 +1079,8 @@ export async function toggleAdoptionCheck(req: Request, res: Response) {
   }
 
   const adoption = await adoptionRepo().findOneBy({ id });
-  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (!adoption)
+    return res.status(404).json({ error: "Solicitud no encontrada" });
 
   const existing = await checkRepo().findOneBy({ adoptionId: id, item });
   if (done && !existing) {
@@ -1009,13 +1102,16 @@ export async function toggleAdoptionCheck(req: Request, res: Response) {
 /** Agrega una impresión / nota libre a la evaluación. Body: { text }. */
 export async function addAdoptionNote(req: Request, res: Response) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "Id invalido" });
 
   const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-  if (!text) return res.status(400).json({ error: "La nota no puede estar vacía" });
+  if (!text)
+    return res.status(400).json({ error: "La nota no puede estar vacía" });
 
   const adoption = await adoptionRepo().findOneBy({ id });
-  if (!adoption) return res.status(404).json({ error: "Solicitud no encontrada" });
+  if (!adoption)
+    return res.status(404).json({ error: "Solicitud no encontrada" });
 
   const authorId = req.authUser?.id ?? null;
   let authorName: string | null = null;
