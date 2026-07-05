@@ -982,41 +982,31 @@ async function seed() {
   // Create ~10 adoption requests
   const repoAdopt = repoAdoption; // already defined above
   const adoptionSamples = [] as Adoption[];
-  const firstNames = [
-    "Juan",
-    "Maria",
-    "Carlos",
-    "Ana",
-    "Laura",
-    "Ricardo",
-    "Pedro",
-    "Lucia",
-    "Sofia",
-    "Diego",
-  ];
-  const lastNames = [
-    "Perez",
-    "Gomez",
-    "Ruiz",
-    "Lopez",
-    "Martinez",
-    "Silva",
-    "Gonzalez",
-    "Rodriguez",
-    "Fernandez",
-    "Diaz",
-  ];
+
+  // Deriva nombre/apellido/email del usuario REAL que hace la solicitud. Es
+  // importante para la coherencia: getUserDetails toma firstName/lastName/email
+  // de la última adopción del usuario; si acá se hardcodean nombres al azar, el
+  // perfil de "Ana López" terminaría mostrando "Juan Pérez" / otro mail.
+  const adopterIdentity = (u?: { name?: string | null; email?: string | null }) => {
+    const parts = (u?.name ?? "").trim().split(/\s+/).filter(Boolean);
+    return {
+      firstName: parts[0] || "Adoptante",
+      lastName: parts.slice(1).join(" ") || "",
+      email: u?.email ?? "",
+    };
+  };
 
   for (let i = 1; i <= 10; i++) {
     const user = allUsers[i % allUsers.length];
     const pet = allPets[i % allPets.length];
+    const ident = adopterIdentity(user);
     const a = repoAdopt.create({
       userId: user?.id ?? null,
       petId: pet?.id ?? null,
       preferredAnimalTypeId: pet?.animalTypeId ?? null,
-      firstName: firstNames[i % firstNames.length],
-      lastName: lastNames[i % lastNames.length],
-      email: `${firstNames[i % firstNames.length].toLowerCase()}.${lastNames[i % lastNames.length].toLowerCase()}@example.com`,
+      firstName: ident.firstName,
+      lastName: ident.lastName,
+      email: ident.email,
       phone: `11600000${i}`,
       addressLine1: `Calle ${i * 10} #${i * 100}`,
       addressLine2: null,
@@ -1237,8 +1227,6 @@ async function seed() {
   const regularUsers = (await repoUsers.find()).filter(
     (u) => u.roleId === CatalogIds.userRole.user,
   );
-  const histFirst = ["Juan", "Maria", "Carlos", "Ana", "Laura", "Ricardo", "Pedro", "Lucia", "Sofia", "Diego", "Martin", "Paula"];
-  const histLast = ["Perez", "Gomez", "Ruiz", "Lopez", "Martinez", "Silva", "Gonzalez", "Rodriguez", "Fernandez", "Diaz", "Acosta", "Vega"];
   const adopterIds = new Set<number>();
   const histAdoptions: { id: string; date: Date }[] = [];
   for (let i = 0; i < histPets.length; i++) {
@@ -1250,13 +1238,14 @@ async function seed() {
       i >= histPets.length - 2
         ? CatalogIds.adoptionStatus.descartada
         : CatalogIds.adoptionStatus.aceptada;
+    const histIdent = adopterIdentity(adopter);
     const a = repoAdopt.create({
       userId: adopter?.id ?? null,
       petId: hp.id,
       preferredAnimalTypeId: hp.animalTypeId,
-      firstName: histFirst[i % histFirst.length],
-      lastName: histLast[i % histLast.length],
-      email: `${histFirst[i % histFirst.length].toLowerCase()}.${histLast[i % histLast.length].toLowerCase()}.h${i}@example.com`,
+      firstName: histIdent.firstName,
+      lastName: histIdent.lastName,
+      email: histIdent.email,
       phone: `11650000${i}`,
       addressLine1: `Av. Siempreviva ${100 + i}`,
       addressLine2: null,

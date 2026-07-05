@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { In } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { dbManager } from "../lib/db-context.js";
 import { Followup } from "../entity/Followup.js";
@@ -192,6 +193,44 @@ export async function listFollowups(req: Request, res: Response) {
   const [items, total] = await qb.orderBy(orderByField, orderDirection).skip(skip).take(pageSize).getManyAndCount();
   const catalogValuesById = await getCatalogValuesById();
   res.json({ page, pageSize, total, items: items.map((i) => ({ ...i, type: catalogValuesById.get(i.typeId) ?? null, status: catalogValuesById.get(i.statusId) ?? null })) });
+}
+
+/**
+ * Seguimientos post-adopción del usuario autenticado COMO ADOPTANTE.
+ * A diferencia de listFollowups (solo admin, por responsable), esto filtra por
+ * `adopterUserId` para que el adoptante vea sus propias visitas de control
+ * (7/30/90 días) con la mascota asociada. Solo lectura.
+ */
+export async function listMyFollowups(req: Request, res: Response) {
+  const userId = req.authUser?.id;
+  if (!userId) return res.status(401).json({ error: "No autenticado" });
+
+  const items = await repo().find({
+    where: { adopterUserId: userId },
+    order: { appointmentAt: "ASC" },
+  });
+
+  const catalogValuesById = await getCatalogValuesById();
+
+  // Enriquecer con datos de la mascota (nombre + foto) en un solo query.
+  const petIds = [...new Set(items.map((i) => i.petId))];
+  const pets = petIds.length
+    ? await dbManager().getRepository(Pet).findBy({ id: In(petIds) })
+    : [];
+  const petById = new Map(pets.map((p) => [p.id, p]));
+
+  res.json({
+    items: items.map((i) => {
+      const pet = petById.get(i.petId);
+      return {
+        ...i,
+        type: catalogValuesById.get(i.typeId) ?? null,
+        status: catalogValuesById.get(i.statusId) ?? null,
+        petName: pet?.name ?? null,
+        petPhoto: pet?.photo ?? pet?.photos?.[0] ?? null,
+      };
+    }),
+  });
 }
 
 export async function confirmFollowup(req: Request, res: Response) {

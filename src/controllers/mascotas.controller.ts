@@ -2332,13 +2332,19 @@ export async function confirmReturn(req: Request, res: Response) {
     existing.expiresAt = null; // publicación cerrada: ya no vence
     await petRepo.save(existing);
 
-    // Cancelar adopciones activas
+    // Cancelar TODAS las adopciones abiertas (no terminales): nueva, en evaluación,
+    // entrevista pendiente (reservaba la mascota) y aceptada con seguimiento.
+    // La mascota ya quedó como devueltaAlDueno arriba, así que no se re-publica.
     await adoptionRepo.update(
-      { petId: id, statusId: CatalogIds.adoptionStatus.nueva },
-      { statusId: CatalogIds.adoptionStatus.descartada },
-    );
-    await adoptionRepo.update(
-      { petId: id, statusId: CatalogIds.adoptionStatus.enEvaluacion },
+      {
+        petId: id,
+        statusId: In([
+          CatalogIds.adoptionStatus.nueva,
+          CatalogIds.adoptionStatus.enEvaluacion,
+          CatalogIds.adoptionStatus.entrevistaPendiente,
+          CatalogIds.adoptionStatus.aceptadaConSeguimiento,
+        ]),
+      },
       { statusId: CatalogIds.adoptionStatus.descartada },
     );
 

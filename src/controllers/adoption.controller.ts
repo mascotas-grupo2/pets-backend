@@ -6,6 +6,7 @@ import { Adoption } from "../entity/Adoption.js";
 import { Followup } from "../entity/Followup.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
+import { Message } from "../entity/Message.js";
 import { AdoptionCheck } from "../entity/AdoptionCheck.js";
 import { AdoptionNote } from "../entity/AdoptionNote.js";
 import { adoptionSchema, AdoptionInput, adoptionStatusUpdateSchema, AdoptionStatusUpdateInput } from "../schemas/adoption.schema.js";
@@ -71,6 +72,50 @@ function checkRepo() {
 
 function adoptionNoteRepo() {
   return dbManager().getRepository(AdoptionNote);
+}
+
+function messageRepo() {
+  return dbManager().getRepository(Message);
+}
+
+/**
+ * Al crear una solicitud, el usuario pasa a Adoptante y se HABILITA el chat con
+ * el refugio: sembramos un primer mensaje automático del admin del refugio hacia
+ * el adoptante para que la conversación quede abierta en ambas bandejas.
+ * (Entrega 3 — "Nueva: el usuario pasa a Adoptante y se habilita el chat".)
+ */
+async function seedAdoptionChat(adoption: Adoption, pet: Pet | null) {
+  // Solo si hay un usuario real detrás de la solicitud (no invitado/anónimo).
+  if (!adoption.userId) return;
+
+  // Admin del refugio dueño de la publicación; si no hay refugio, cualquier admin.
+  const admin = await userRepo().findOne({
+    where:
+      adoption.refugioId != null
+        ? { roleId: CatalogIds.userRole.admin, refugioId: adoption.refugioId }
+        : { roleId: CatalogIds.userRole.admin },
+  });
+  if (!admin || admin.id === adoption.userId) return;
+
+  const petName = pet?.name ? `"${pet.name}"` : "la mascota";
+  const nombre = adoption.firstName || "";
+  const msg = messageRepo().create({
+    senderId: admin.id,
+    receiverId: adoption.userId,
+    content:
+      `¡Hola${nombre ? ` ${nombre}` : ""}! Recibimos tu solicitud de adopción de ${petName}. ` +
+      `Este es el chat con el refugio: podés escribirnos por acá para coordinar la entrevista y cualquier duda del proceso.`,
+    photo: null,
+    read: false,
+  });
+  await messageRepo().save(msg);
+
+  await notify(adoption.userId, {
+    type: "message",
+    title: `Nuevo mensaje de ${admin.name}`,
+    body: `Se abrió el chat de tu solicitud de adopción de ${petName}.`,
+    link: `/account?tab=messages&user=${admin.id}`,
+  });
 }
 
 // Checklist de evaluación del adoptante (orden fijo).
@@ -458,8 +503,9 @@ export async function createAdoption(req: Request, res: Response) {
     kind: values.kind,
   });
 
+  let pet: Pet | null = null;
   if (adoption.petId) {
-    const pet = await petRepo().findOneBy({ id: adoption.petId });
+    pet = await petRepo().findOneBy({ id: adoption.petId });
     if (pet) {
       adoption.compatibilityScore = calculateCompatibility(adoption, pet).score;
       adoption.refugioId = pet.refugioId ?? null;
@@ -467,6 +513,14 @@ export async function createAdoption(req: Request, res: Response) {
   }
 
   const saved = await adoptionRepo().save(adoption);
+
+  // Se habilita el chat adoptante ↔ refugio (no bloquea la respuesta si falla).
+  try {
+    await seedAdoptionChat(saved, pet);
+  } catch (error) {
+    console.error("No se pudo abrir el chat de la adopción:", error);
+  }
+
   const catalogValuesById = await getCatalogValuesById();
   res.status(201).json(serializeAdoption(saved, catalogValuesById));
 }
