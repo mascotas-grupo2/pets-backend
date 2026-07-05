@@ -126,7 +126,13 @@ function serializePetNote(note: PetNote, catalogValuesById: CatalogValueMap) {
  * para el dueño o un admin. Evita IDOR en los endpoints sin filtro de estado.
  */
 function canViewPet(mascota: Pet, authUser?: { id: number; role?: string }) {
-  if (mascota.reportStatusId === CatalogIds.petReportStatus.activo) return true;
+  // Público: solo reportes activos de mascotas perdidas o en adopción. Los
+  // demás estados del flujo del refugio son internos (dashboard del refugio).
+  const publiclyVisible =
+    mascota.reportStatusId === CatalogIds.petReportStatus.activo &&
+    (mascota.statusId === CatalogIds.petStatus.perdido ||
+      mascota.statusId === CatalogIds.petStatus.adopcion);
+  if (publiclyVisible) return true;
   if (!authUser) return false;
   if (authUser.role === "admin") return true;
   return mascota.userId === authUser.id;
@@ -179,10 +185,21 @@ export async function listMascotas(req: Request, res: Response) {
     ...(refugioId ? { refugioId } : {}),
     ...(zonaFilter ? { location: zonaFilter } : {}),
   };
+  // El público solo ve reportes de mascotas perdidas y mascotas en adopción.
+  // El resto de los estados del flujo del refugio (tránsito, tratamiento
+  // médico, adoptado, etc.) son internos y solo se ven en el dashboard.
+  const publicStatus = In([
+    CatalogIds.petStatus.perdido,
+    CatalogIds.petStatus.adopcion,
+  ]);
   const mascotas = await repo().find({
     where: userId
       ? [
-          { reportStatusId: CatalogIds.petReportStatus.activo, ...extra },
+          {
+            reportStatusId: CatalogIds.petReportStatus.activo,
+            statusId: publicStatus,
+            ...extra,
+          },
           {
             userId,
             reportStatusId: In([
@@ -192,7 +209,11 @@ export async function listMascotas(req: Request, res: Response) {
             ...extra,
           },
         ]
-      : { reportStatusId: CatalogIds.petReportStatus.activo, ...extra },
+      : {
+          reportStatusId: CatalogIds.petReportStatus.activo,
+          statusId: publicStatus,
+          ...extra,
+        },
     order: { id: "DESC" },
   });
   // Ocultar del público las publicaciones vencidas hace más que la gracia
@@ -459,7 +480,6 @@ export async function adminListMascotasPaged(req: Request, res: Response) {
 const PET_STATUS_CATEGORY: Record<string, number[]> = {
   perdido: [CatalogIds.petStatus.perdido],
   refugio: [
-    CatalogIds.petStatus.encontrado,
     CatalogIds.petStatus.transito,
     CatalogIds.petStatus.medico,
   ],
@@ -1209,15 +1229,18 @@ export async function updateMascota(req: Request, res: Response) {
     });
   }
 
-  // Si la mascota tiene dueño verificado, no puede pasar a "en adopción"
+  // Una mascota reportada por su dueño (dueño verificado) no entra al flujo del
+  // refugio: solo puede terminar en "devuelta al dueño" cuando aparece.
   if (
     existing.isOwner &&
     catalogIds.statusId != null &&
-    catalogIds.statusId === CatalogIds.petStatus.adopcion
+    (catalogIds.statusId === CatalogIds.petStatus.transito ||
+      catalogIds.statusId === CatalogIds.petStatus.medico ||
+      catalogIds.statusId === CatalogIds.petStatus.adopcion)
   ) {
     return res.status(409).json({
       error:
-        "Esta mascota tiene dueño verificado; no se puede poner en adopción. Usá 'Confirmar devolución' cuando aparezca.",
+        "Esta mascota tiene dueño verificado; no entra al flujo del refugio (tránsito, tratamiento o adopción). Usá 'Confirmar devolución' cuando aparezca.",
     });
   }
 
@@ -1228,8 +1251,11 @@ export async function updateMascota(req: Request, res: Response) {
   ) {
     const S = CatalogIds.petStatus;
     const PET_STATUS_NEXT: Record<number, number[]> = {
-      [S.perdido]: [S.encontrado, S.devueltaAlDueno],
-      [S.encontrado]: [S.transito, S.medico, S.adopcion, S.devueltaAlDueno],
+      // Perdida reportada por su dueño: solo puede devolverse. Perdida sin dueño
+      // (avistaje/callejero): puede entrar al flujo del refugio o devolverse.
+      [S.perdido]: existing.isOwner
+        ? [S.devueltaAlDueno]
+        : [S.transito, S.medico, S.adopcion, S.devueltaAlDueno],
       [S.transito]: [S.medico, S.adopcion, S.devueltaAlDueno],
       [S.medico]: [S.transito, S.adopcion, S.devueltaAlDueno],
       [S.adopcion]: [S.adoptado, S.devueltaAlDueno],
@@ -1525,10 +1551,11 @@ export async function approveMascota(req: Request, res: Response) {
 }
 
 /**
- * Cierre "reunido/encontrado": el dueño (o un admin) marca que una mascota
- * perdida apareció. No todo termina en adopción; este es el cierre del flujo de
- * pérdida. Deja la publicación finalizada y la mascota en estado "encontrado".
- * No aplica a publicaciones de adopción (esas se cierran por el flujo de adopción).
+ * Cierre "apareció": el dueño (o un admin) marca que una mascota perdida
+ * apareció. Deja la publicación finalizada (deja de estar visible); el estado
+ * de la mascota permanece "perdido". No aplica a publicaciones de adopción
+ * (esas se cierran por el flujo de adopción) ni reemplaza a "Confirmar
+ * devolución" (confirmReturn), que es el cierre formal con verificación.
  */
 export async function resolveMascota(req: Request, res: Response) {
   const id = req.params.id;
@@ -1557,7 +1584,6 @@ export async function resolveMascota(req: Request, res: Response) {
     return res.status(409).json({ error: "La publicación ya está cerrada." });
   }
 
-  existing.statusId = S.encontrado;
   existing.reportStatusId = CatalogIds.petReportStatus.finalizado;
   existing.expiresAt = null; // publicación cerrada: ya no vence
   const saved = await repo().save(existing);

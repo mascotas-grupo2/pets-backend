@@ -25,6 +25,14 @@ export class Refugio {
   @Column({ type: "varchar", length: 200, nullable: true })
   location!: string | null;
 
+  // Coordenadas del refugio (geocodificadas desde `location`). Se usan para
+  // ubicar en el mapa todas sus mascotas gestionadas en un único punto.
+  @Column({ type: "float", nullable: true })
+  latitud!: number | null;
+
+  @Column({ type: "float", nullable: true })
+  longitud!: number | null;
+
   @Column({ type: "boolean", default: true })
   active!: boolean;
 

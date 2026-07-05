@@ -60,12 +60,17 @@ async function seed() {
   if (!refugioMoron) refugioMoron = refugioRepo.create({ slug: "refugio-moron" });
   refugioMoron.name = "Refugio Morón";
   refugioMoron.location = MORON_LOCATION;
+  // Coordenadas aproximadas de la sede (hardcode: el seed no depende de red).
+  refugioMoron.latitud = -34.6534;
+  refugioMoron.longitud = -58.6198;
   refugioMoron.active = true;
   refugioMoron = await refugioRepo.save(refugioMoron);
   let refugioHurlingham = await refugioRepo.findOneBy({ slug: "refugio-hurlingham" });
   if (!refugioHurlingham) refugioHurlingham = refugioRepo.create({ slug: "refugio-hurlingham" });
   refugioHurlingham.name = "Refugio Hurlingham";
   refugioHurlingham.location = HURLINGHAM_LOCATION;
+  refugioHurlingham.latitud = -34.5936;
+  refugioHurlingham.longitud = -58.6377;
   refugioHurlingham.active = true;
   refugioHurlingham = await refugioRepo.save(refugioHurlingham);
   const refugioMoronId = refugioMoron.id;
@@ -168,11 +173,11 @@ async function seed() {
       seedImage: "coco.png",
     },
 
-    // ============= PERROS ENCONTRADOS =============
+    // ===== PERROS AVISTADOS POR LA COMUNIDAD (se reportan como perdidos) =====
     {
       name: "Bobi",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: catalogIdForCode("pet_status", "encontrado"),
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Perro mestizo tamaño mediano, marrón con patas blancas. Sin collar. Muy amigable, parece bien cuidado.",
       date: "2026-05-26",
@@ -194,7 +199,7 @@ async function seed() {
     {
       name: "Manchas",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Perro chico negro con manchas blancas en el pecho. Tenía collar rosa sin chapita.",
       date: "2026-05-28",
@@ -314,11 +319,11 @@ async function seed() {
       seedImage: "simba.png",
     },
 
-    // ============= GATOS ENCONTRADOS =============
+    // ===== GATOS AVISTADOS POR LA COMUNIDAD (se reportan como perdidos) =====
     {
       name: "Michi",
       animalTypeId: CatalogIds.animalType.gato,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Gata atigrada chiquita, parece joven. Maúlla mucho. La encontramos en el patio de un edificio.",
       date: "2026-05-27",
@@ -340,7 +345,7 @@ async function seed() {
     {
       name: "Salem",
       animalTypeId: CatalogIds.animalType.gato,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Gato negro adulto, ojos verdes muy expresivos. Vino solo a la puerta de mi casa. Está flaco pero parece sano.",
       date: "2026-05-29",
@@ -415,12 +420,9 @@ async function seed() {
   // por mascota, así que la galería nunca se veía. Acá sumamos imágenes extra
   // (de la misma especie) a unas pocas mascotas para que la galería sea visible
   // en la demo. Son solo assets de muestra, no fotos reales del mismo animal.
+  // Fotos extra SOLO cuando son de la misma mascota (galería real). No mezclar
+  // fotos de otras mascotas: cada publicación muestra únicamente su propia foto.
   const extraSeedImages: Record<string, string[]> = {
-    Max: ["bobi.png", "bruno.png"],
-    Rocco: ["balto.png", "thor.png"],
-    Toby: ["rambo.png"],
-    Luna: ["michi.png", "pelusa.png"],
-    Mishi: ["michi.png", "salem.png"],
     // simba_extra.png es una 2ª foto del MISMO Simba (galería), no otra mascota.
     Simba: ["simba_extra.png"],
   };
@@ -739,14 +741,15 @@ async function seed() {
     18, // Thor   - perro mediano
   ];
 
-  // Estados variados (perdido/encontrado/tránsito/adopción) para enriquecer el listado.
+  // Estados variados (perdido/tránsito/médico/adopción) para enriquecer el
+  // listado público (perdido/adopción) y el dashboard del refugio (tránsito/médico).
   const extraPetStatuses = [
     CatalogIds.petStatus.perdido,
-    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.transito,
     CatalogIds.petStatus.perdido,
     CatalogIds.petStatus.adopcion,
     CatalogIds.petStatus.transito,
-    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.medico,
     CatalogIds.petStatus.adopcion,
     CatalogIds.petStatus.perdido,
     CatalogIds.petStatus.adopcion,
@@ -1647,7 +1650,6 @@ async function seed() {
   // los refugios. Las mascotas en estados gestionados se reparten entre los dos
   // refugios; adopciones y seguimientos heredan el refugio de su mascota.
   const managedStatuses = [
-    CatalogIds.petStatus.encontrado,
     CatalogIds.petStatus.transito,
     CatalogIds.petStatus.medico,
     CatalogIds.petStatus.adopcion,

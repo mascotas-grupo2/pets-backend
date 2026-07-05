@@ -128,8 +128,10 @@ const listFoundPets: ToolDefinition = {
     },
   },
   handler: async (args) => {
+    // Los avistajes ("encontré un animal") se reportan como "perdido": son
+    // reportes de la comunidad sobre animales sin su dueño.
     const pets = await findPetsByStatus({
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: CatalogIds.petStatus.perdido,
       location: args?.location,
       animalType: args?.animalType,
       limit: args?.limit,
@@ -332,13 +334,13 @@ const createFoundPetReport: ToolDefinition = {
           hasCollar: args.hasCollar,
           microchipped: args.microchipped,
         },
-        { userId: userContext.userId, defaultStatus: "encontrado" },
+        { userId: userContext.userId, defaultStatus: "perdido" },
       );
       return {
         created: true,
         petId: pet.id,
-        status: "encontrado",
-        message: "Reporte de mascota encontrada creado. Gracias por ayudar. Las fotos se agregan desde la app web.",
+        status: "perdido",
+        message: "Reporte de animal avistado creado (figura como 'perdido' para que su dueño pueda encontrarlo). Gracias por ayudar. Las fotos se agregan desde la app web.",
       };
     } catch (err) {
       if (err instanceof CatalogValidationError) return { error: "validation_error", message: err.message };

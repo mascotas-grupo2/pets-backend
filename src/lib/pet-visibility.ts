@@ -7,7 +7,13 @@ export interface AuthUserContext {
 }
 
 export function canViewPet(mascota: Pet, authUser?: AuthUserContext) {
-  if (mascota.reportStatusId === CatalogIds.petReportStatus.activo) return true;
+  // Público: solo reportes activos de mascotas perdidas o en adopción. Los
+  // demás estados del flujo del refugio son internos (dashboard del refugio).
+  const publiclyVisible =
+    mascota.reportStatusId === CatalogIds.petReportStatus.activo &&
+    (mascota.statusId === CatalogIds.petStatus.perdido ||
+      mascota.statusId === CatalogIds.petStatus.adopcion);
+  if (publiclyVisible) return true;
   if (!authUser) return false;
   if (authUser.role === "admin") return true;
   return mascota.userId === authUser.id;

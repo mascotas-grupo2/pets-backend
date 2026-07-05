@@ -84,7 +84,7 @@ Manejo de resultados:
 - {error:"validation_error"}: comunicale qué dato hay que corregir.
 - {created:true}: confirmá el ID y avisá que las fotos se agregan desde la app web.
 
-Catálogo animalType: perro, gato, otro. Estados: perdido, encontrado, en adopción, en tránsito. No te inventes IDs.`;
+Catálogo animalType: perro, gato, otro. Estados: perdido, en adopción, en tránsito. Los avistajes de animales sin dueño se reportan como "perdido". No te inventes IDs.`;
 
 export const WELCOME_QUICK_REPLIES: QuickReply[] = [
   { label: "Perdí una mascota", value: "Perdí a mi mascota, ¿qué hago?" },
