@@ -11,8 +11,8 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 // Migración de datos por-mascota, según su naturaleza (discriminador: refugio_id):
 //   - sin refugio (refugio_id IS NULL)  = avistaje comunitario -> perdido (201)
 //   - con refugio (refugio_id NOT NULL) = ingreso de refugio   -> en tránsito (203)
-export class RemoveEncontradoStatus1750400000000 implements MigrationInterface {
-  name = "RemoveEncontradoStatus1750400000000";
+export class RemoveEncontradoStatus1750700000000 implements MigrationInterface {
+  name = "RemoveEncontradoStatus1750700000000";
 
   public async up(q: QueryRunner): Promise<void> {
     await q.query(

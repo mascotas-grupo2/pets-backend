@@ -1087,10 +1087,15 @@ async function seed() {
     const user = allUsers[i % allUsers.length];
     const pet = allPets[i % allPets.length];
     const appointment = new Date(Date.now() + (i + 1) * 24 * 60 * 60 * 1000); // i+1 days in future
+    const typeId = (i % 6) + 1301;
     const fu = repoF.create({
       petId: pet.id,
-      userId: user.id,
-      typeId: (i % 6) + 1301,
+      // Responsable = admin del refugio; el usuario solo figura como ADOPTANTE
+      // y únicamente en seguimientos post-adopción.
+      userId: adminSaved.id,
+      adopterUserId:
+        typeId === CatalogIds.followupType.postAdopcion ? user.id : null,
+      typeId,
       appointmentAt: appointment,
       statusId: CatalogIds.followupStatus.pendiente,
     });
@@ -1312,7 +1317,8 @@ async function seed() {
     const fu = await repoF.save(
       repoF.create({
         petId: hp.id,
-        userId: user.id,
+        userId: adminSaved.id, // responsable (admin del refugio)
+        adopterUserId: user.id, // adoptante (usuario)
         typeId: CatalogIds.followupType.postAdopcion,
         appointmentAt: appt,
         statusId:
@@ -1336,7 +1342,7 @@ async function seed() {
     await repoF.save(
       repoF.create({
         petId: lostPetsNow[i].id,
-        userId: user.id,
+        userId: adminSaved.id, // responsable (admin); una visita no tiene adoptante
         typeId: CatalogIds.followupType.visita,
         appointmentAt: hoy,
         statusId: CatalogIds.followupStatus.pendiente,

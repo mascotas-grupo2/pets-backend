@@ -58,8 +58,11 @@ import { AddPetExpiryWarnedAt1750000004000 } from "./migration/1750000004000-Add
 import { AddRefugio1750100000000 } from "./migration/1750100000000-AddRefugio.js";
 import { AddRowLevelSecurity1750200000000 } from "./migration/1750200000000-AddRowLevelSecurity.js";
 import { FixSuperadminRls1750300000000 } from "./migration/1750300000000-FixSuperadminRls.js";
-import { RemoveEncontradoStatus1750400000000 } from "./migration/1750400000000-RemoveEncontradoStatus.js";
-import { AddRefugioCoordinates1750500000000 } from "./migration/1750500000000-AddRefugioCoordinates.js";
+import { AddSightingAccepted1750400000000 } from "./migration/1750400000000-AddSightingAccepted.js";
+import { AddSightingRejectedAndCoords1750500000000 } from "./migration/1750500000000-AddSightingRejectedAndCoords.js";
+import { AddAdopterToFollowup1750600000000 } from "./migration/1750600000000-AddAdopterToFollowup.js";
+import { RemoveEncontradoStatus1750700000000 } from "./migration/1750700000000-RemoveEncontradoStatus.js";
+import { AddRefugioCoordinates1750800000000 } from "./migration/1750800000000-AddRefugioCoordinates.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -125,8 +128,11 @@ export const AppDataSource = new DataSource({
     AddRefugio1750100000000,
     AddRowLevelSecurity1750200000000,
     FixSuperadminRls1750300000000,
-    RemoveEncontradoStatus1750400000000,
-    AddRefugioCoordinates1750500000000,
+    AddSightingAccepted1750400000000,
+    AddSightingRejectedAndCoords1750500000000,
+    AddAdopterToFollowup1750600000000,
+    RemoveEncontradoStatus1750700000000,
+    AddRefugioCoordinates1750800000000,
   ],
   synchronize: false,
 });

@@ -37,6 +37,7 @@ import {
 import { serializeAdoption } from "../lib/serializers.js";
 import { calculateCompatibility } from "../lib/matching.js";
 import { notify } from "../lib/notify.js";
+import { recordActivity } from "../lib/activity.js";
 
 // Etiquetas amigables por código de estado (para las notificaciones).
 const ADOPTION_STATUS_LABELS: Record<string, string> = {
@@ -90,10 +91,17 @@ function requiredChecksFor(statusId: number): string[] {
   return [];
 }
 
-function createFollowupsForAdoption(adoption: Adoption) {
+async function createFollowupsForAdoption(
+  adoption: Adoption,
+  actorUserId: number | null = null,
+) {
   const petId = adoption.petId;
-  const userId = adoption.userId;
+  const userId = adoption.userId; // adoptante (persona interesada)
   if (!petId || typeof userId !== "number" || !Number.isInteger(userId)) return;
+
+  // Responsable = el admin/refugio que aprueba la adopción (no el adoptante).
+  // Si por algún motivo no hay actor (flujo sin sesión), cae al adoptante.
+  const responsableId = actorUserId ?? userId;
 
   const baseDate = new Date();
   const offsets = [7, 30, 90];
@@ -103,15 +111,37 @@ function createFollowupsForAdoption(adoption: Adoption) {
 
     const followup = new Followup();
     followup.petId = petId;
-    followup.userId = userId;
-    followup.typeId = CatalogIds.followupType.programado;
+    followup.userId = responsableId; // responsable (admin)
+    followup.adopterUserId = userId; // adoptante (usuario)
+    followup.typeId = CatalogIds.followupType.postAdopcion;
     followup.statusId = CatalogIds.followupStatus.pendiente;
     followup.appointmentAt = appointmentAt;
     followup.refugioId = adoption.refugioId ?? null;
     return followup;
   });
 
-  return followupRepo().save(followups);
+  const saved = await followupRepo().save(followups);
+
+  // Registrar actividad (métricas + aviso a admins), igual que el alta manual.
+  await recordActivity({
+    type: "seguimiento",
+    title: "Seguimientos post-adopción agendados",
+    actorUserId,
+    refugioId: adoption.refugioId ?? null,
+    refType: "followup",
+    refId: saved[0]?.id ?? null,
+    link: "/admin/seguimientos",
+  });
+
+  // Avisar al adoptante que quedaron programados sus seguimientos.
+  await notify(userId, {
+    type: "adoption_status",
+    title: "Se programaron tus seguimientos post-adopción",
+    body: `Agendamos ${saved.length} seguimientos (a los ${offsets.join(", ")} días).`,
+    link: "/account",
+  });
+
+  return saved;
 }
 
 async function serializeAdoptionDetail(adoption: Adoption) {
@@ -746,7 +776,26 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
   }
 
   if (statusId === A.aceptadaConSeguimiento && previousStatusId !== statusId) {
-    await createFollowupsForAdoption(saved);
+    await createFollowupsForAdoption(saved, req.authUser?.id ?? null);
+  }
+
+  // Si el admin DESCARTA una solicitud que ya estaba "Aceptada con seguimiento"
+  // (decide que la mascota no es para ese adoptante), los seguimientos post-adopción
+  // que se habían agendado ya no corresponden: se cancelan (borran los pendientes).
+  // La mascota ya volvió a publicarse arriba (reportStatus → activo), es decir,
+  // vuelve a estar disponible en adopción.
+  if (
+    statusId === A.descartada &&
+    previousStatusId === A.aceptadaConSeguimiento &&
+    adoption.petId &&
+    typeof adoption.userId === "number"
+  ) {
+    await followupRepo().delete({
+      petId: adoption.petId,
+      adopterUserId: adoption.userId,
+      typeId: CatalogIds.followupType.postAdopcion,
+      statusId: CatalogIds.followupStatus.pendiente,
+    });
   }
 
   // Al descartar, si el admin dejó un motivo, lo guardamos como nota "Rechazo:"

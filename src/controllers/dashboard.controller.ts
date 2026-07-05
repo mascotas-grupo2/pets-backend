@@ -84,6 +84,7 @@ export async function getDashboardActivity(req: Request, res: Response) {
   const userRepo = dbManager().getRepository(User);
   const messageRepo = dbManager().getRepository(Message);
   const commentRepo = dbManager().getRepository(PetComment);
+  const followupRepo = dbManager().getRepository(Followup);
 
   // Mensajes: solo los recibidos por este admin (su bandeja), no los de todos los
   // refugios. El superadmin sí ve la actividad global de mensajes.
@@ -94,22 +95,30 @@ export async function getDashboardActivity(req: Request, res: Response) {
   // Usuarios del refugio (staff + adoptantes); null = superadmin sin scope (todos).
   const userIds = await scopedUserIds(req.authUser);
 
-  const [adoptions, messages, pets, users, comments] = await Promise.all([
+  const [adoptions, messages, pets, users, comments, followups] = await Promise.all([
     adoptionRepo.find({ where: { petId: Not(IsNull()), ...tenantWhere(req.authUser) }, order: { createdAt: "DESC" }, take }),
     messageRepo.find({ where: messageWhere, order: { createdAt: "DESC" }, take }),
     petRepo.find({ where: petVisibilityWhere({}, req.authUser), order: { createdAt: "DESC" }, take }),
     userRepo.find({ where: userIds ? { id: In(userIds) } : {}, order: { createdAt: "DESC" }, take }),
     commentRepo.find({ order: { createdAt: "DESC" }, take }),
+    followupRepo.find({ where: { ...tenantWhere(req.authUser) }, order: { createdAt: "DESC" }, take }),
   ]);
 
-  // Resolver nombres en lote (mascotas para solicitudes/comentarios, usuarios para mensajes).
+  // Resolver nombres en lote (mascotas para solicitudes/comentarios/seguimientos,
+  // usuarios para mensajes y responsables de seguimiento).
   const petIds = [
     ...new Set([
       ...adoptions.map((a) => a.petId).filter((x): x is string => !!x),
       ...comments.map((c) => c.petId),
+      ...followups.map((f) => f.petId),
     ]),
   ];
-  const senderIds = [...new Set(messages.map((m) => m.senderId))];
+  const senderIds = [
+    ...new Set([
+      ...messages.map((m) => m.senderId),
+      ...followups.map((f) => f.userId),
+    ]),
+  ];
   const [petRows, senderRows] = await Promise.all([
     petIds.length ? petRepo.findBy({ id: In(petIds) }) : Promise.resolve([]),
     senderIds.length ? userRepo.findBy({ id: In(senderIds) }) : Promise.resolve([]),
@@ -119,7 +128,7 @@ export async function getDashboardActivity(req: Request, res: Response) {
 
   type Item = {
     id: string;
-    type: "solicitud" | "mensaje" | "publicacion" | "usuario" | "comentario";
+    type: "solicitud" | "mensaje" | "publicacion" | "usuario" | "comentario" | "seguimiento";
     title: string;
     detail: string;
     link: string;
@@ -153,7 +162,7 @@ export async function getDashboardActivity(req: Request, res: Response) {
       type: "publicacion",
       title: `Nueva publicación: ${p.name ?? "mascota"}`,
       detail: p.location ?? "",
-      link: `/admin/publicacion`,
+      link: `/admin/publicacion?pet=${p.id}`,
       at: p.createdAt,
     });
   }
@@ -175,6 +184,16 @@ export async function getDashboardActivity(req: Request, res: Response) {
       detail: c.authorName,
       link: `/mascotas-perdidas/${c.petId}`,
       at: c.createdAt,
+    });
+  }
+  for (const f of followups) {
+    items.push({
+      id: `seg-${f.id}`,
+      type: "seguimiento",
+      title: `Seguimiento agendado: ${petName.get(f.petId) ?? "una mascota"}`,
+      detail: senderName.get(f.userId) ?? "",
+      link: `/admin/seguimientos`,
+      at: f.createdAt,
     });
   }
 

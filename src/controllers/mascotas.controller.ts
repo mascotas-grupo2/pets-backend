@@ -216,15 +216,31 @@ export async function listMascotas(req: Request, res: Response) {
         },
     order: { id: "DESC" },
   });
+  // Pipeline de refugio: una mascota recuperada que está siendo tratada
+  // ("En refugio" / "En tránsito" / "En tratamiento médico") queda EN PAUSA,
+  // fuera del listado público, hasta que se republica en "En adopción".
+  // El dueño la sigue viendo (para no perderla de vista); admins la ven en su
+  // panel. Reaparece sola al pasar a "En adopción" (que no está en pausa).
+  const PAUSED_STATUS = new Set<number>([
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+  ]);
+  const esPropia = (m: Pet) =>
+    userId != null && (m.userId === userId || m.ownerUserId === userId);
+
   // Ocultar del público las publicaciones vencidas hace más que la gracia
   // (siguen en la DB y en "Mis reportes"; reaparecen si el dueño renueva).
   const graceMs = EXPIRY_GRACE_DAYS * DAY_MS;
   const visibles = mascotas.filter((m) => {
+    // En pausa (pipeline de refugio): fuera del público, salvo al dueño.
+    if (m.statusId != null && PAUSED_STATUS.has(m.statusId) && !esPropia(m)) {
+      return false;
+    }
     if (!m.expiresAt) return true;
     const overdueMs = Date.now() - new Date(m.expiresAt).getTime();
     if (overdueMs <= graceMs) return true;
     // Las propias del usuario sí se le muestran (para que pueda renovarlas).
-    return userId != null && (m.userId === userId || m.ownerUserId === userId);
+    return esPropia(m);
   });
   const catalogValuesById = await getCatalogValuesById();
   const refugioIds = [
@@ -847,18 +863,14 @@ export async function createMascota(req: Request, res: Response) {
     isOwner: _isOwner,
     ...petData
   } = data;
-  // Si el usuario está autenticado, es el dueño publicando su propia mascota.
-  // Si es anónimo, isOwner = false y quedará pendiente de verificación.
-  const isOwner = req.authUser != null;
-
-  // Si el usuario es admin, NO se marca como dueño automáticamente
-  const isAdmin = req.authUser?.role === "admin";
-  const finalIsOwner = isOwner && !isAdmin;
-
+  // `isOwner` ("con dueño") lo decide quien publica: se persiste tal cual vino del
+  // formulario (default false). Ya NO se fuerza a true por estar logueado. El
+  // publicador queda registrado en `userId` para permisos de edición; un reclamo
+  // aprobado (approveClaim) también puede activarlo después.
   const userId = req.authUser?.id ?? null;
   const mascota = repo().create({
     ...petData,
-    isOwner: finalIsOwner,
+    isOwner: _isOwner === true,
     animalTypeId: catalogIds.animalTypeId,
     ...(catalogIds.sexId !== undefined ? { sexId: catalogIds.sexId } : {}),
     ...(catalogIds.statusId !== undefined && catalogIds.statusId !== null
@@ -986,7 +998,7 @@ export async function createMascota(req: Request, res: Response) {
     refugioId: reloaded.refugioId ?? null,
     refType: "pet",
     refId: reloaded.id,
-    link: "/admin/publicacion",
+    link: `/admin/publicacion?pet=${reloaded.id}`,
   });
 
   const catalogValuesById = await getCatalogValuesById();
@@ -1119,7 +1131,18 @@ export async function updateMascota(req: Request, res: Response) {
     // institucionales del refugio (userId == null) y las de otro admin se editan
     // por completo —imprescindible para cargar vacunas/tratamiento mientras se
     // preparan para la adopción—.
-    if (!existing.isOwner && existing.userId != null && !ownerIsAdmin) {
+    // ...salvo que la mascota ya esté en custodia del refugio ("En refugio" o el
+    // pipeline de adopción): ahí el refugio la gestiona y puede editar contenido
+    // (cargar vacunas, tratamiento, corregir datos), aunque la haya publicado un
+    // usuario común.
+    const enCustodiaRefugio =
+      existing.statusId != null && REFUGIO_MANAGED.has(existing.statusId);
+    if (
+      !existing.isOwner &&
+      existing.userId != null &&
+      !ownerIsAdmin &&
+      !enCustodiaRefugio
+    ) {
       adminManageOnly = true;
     }
   }
