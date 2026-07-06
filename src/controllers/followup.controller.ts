@@ -83,7 +83,7 @@ async function notifyTodayReminder(followup: Followup, refugioId: number | null)
 async function promotePetToMedico(petId: string, actorId: number | null) {
   try {
     const S = CatalogIds.petStatus;
-    const ORIGENES_VALIDOS: number[] = [S.perdido, S.encontrado, S.transito];
+    const ORIGENES_VALIDOS: number[] = [S.perdido, S.transito];
 
     const petRepo = dbManager().getRepository(Pet);
     const pet = await petRepo.findOneBy({ id: petId });

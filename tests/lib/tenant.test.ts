@@ -172,13 +172,13 @@ describe("applyTenantScope (QueryBuilder)", () => {
 
 describe("stampRefugioIfManaged", () => {
   it("estampa el refugio del admin en una mascota gestionada sin refugio", () => {
-    const pet = { refugioId: null, statusId: CatalogIds.petStatus.encontrado };
+    const pet = { refugioId: null, statusId: CatalogIds.petStatus.transito };
     stampRefugioIfManaged(pet, refugioAdmin);
     expect(pet.refugioId).toBe(7);
   });
 
   it("no pisa un refugio ya asignado", () => {
-    const pet = { refugioId: 99, statusId: CatalogIds.petStatus.encontrado };
+    const pet = { refugioId: 99, statusId: CatalogIds.petStatus.transito };
     stampRefugioIfManaged(pet, refugioAdmin);
     expect(pet.refugioId).toBe(99);
   });
@@ -190,7 +190,7 @@ describe("stampRefugioIfManaged", () => {
   });
 
   it("no estampa si el admin no tiene refugio (p. ej. superadmin)", () => {
-    const pet = { refugioId: null, statusId: CatalogIds.petStatus.encontrado };
+    const pet = { refugioId: null, statusId: CatalogIds.petStatus.transito };
     stampRefugioIfManaged(pet, superadmin);
     expect(pet.refugioId).toBeNull();
   });
@@ -198,7 +198,7 @@ describe("stampRefugioIfManaged", () => {
 
 describe("MANAGED_PET_STATUS", () => {
   it("incluye los estados de refugio/adopción y excluye 'perdido'", () => {
-    expect(MANAGED_PET_STATUS).toContain(CatalogIds.petStatus.encontrado);
+    expect(MANAGED_PET_STATUS).toContain(CatalogIds.petStatus.transito);
     expect(MANAGED_PET_STATUS).toContain(CatalogIds.petStatus.adoptado);
     expect(MANAGED_PET_STATUS).not.toContain(CatalogIds.petStatus.perdido);
   });

@@ -195,36 +195,24 @@ function formatPet(pet: MinimalPet): string {
 async function buildListingsBypassMessage(
   animalType: "perro" | "gato" | "otro",
 ): Promise<string> {
-  const [lost, found] = await Promise.all([
-    findPetsByStatus({
-      statusId: CatalogIds.petStatus.perdido,
-      animalType,
-      limit: 5,
-    }),
-    findPetsByStatus({
-      statusId: CatalogIds.petStatus.encontrado,
-      animalType,
-      limit: 5,
-    }),
-  ]);
+  // Perdidos incluye tanto a las mascotas que busca su dueño como a los
+  // avistajes de animales sin dueño (ambos se reportan como "perdido").
+  const lost = await findPetsByStatus({
+    statusId: CatalogIds.petStatus.perdido,
+    animalType,
+    limit: 5,
+  });
 
   const labelPlural =
     animalType === "perro" ? "perros" : animalType === "gato" ? "gatos" : "otros animales";
 
   const parts: string[] = [];
-  if (lost.length === 0 && found.length === 0) {
+  if (lost.length === 0) {
     return `Por ahora no hay reportes activos de ${labelPlural}. ¿Querés probar con otro tipo de animal o filtrar por zona?`;
   }
 
-  if (found.length > 0) {
-    parts.push(`Reportes recientes de ${labelPlural} encontrados:`);
-    parts.push(found.map(formatPet).join("\n"));
-  }
-  if (lost.length > 0) {
-    if (parts.length > 0) parts.push("");
-    parts.push(`Reportes recientes de ${labelPlural} perdidos:`);
-    parts.push(lost.map(formatPet).join("\n"));
-  }
+  parts.push(`Reportes recientes de ${labelPlural} perdidos:`);
+  parts.push(lost.map(formatPet).join("\n"));
   parts.push("");
   parts.push("¿Alguna coincide con la que buscás? Si querés filtrar por barrio, decímelo.");
   return parts.join("\n");
