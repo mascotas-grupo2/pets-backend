@@ -216,7 +216,23 @@ export async function getUserDetails(req: Request, res: Response) {
   const user = await userRepo().findOneBy({ id });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  const reports = await petRepo().find({ where: { userId: id }, order: { createdAt: "DESC" } });
+  const allReports = await petRepo().find({ where: { userId: id }, order: { createdAt: "DESC" } });
+  // Una mascota que entra al circuito del refugio (en adopción / tránsito / médico /
+  // adoptado / devuelta) pasa a ser INSTITUCIONAL y la gestiona el refugio: deja de
+  // figurar en "Mis reportes" del usuario que la reportó —salvo que ese usuario sea
+  // su DUEÑO VERIFICADO, que la sigue viendo hasta que se cierre el caso—.
+  const REFUGIO_MANAGED = new Set<number>([
+    CatalogIds.petStatus.transito,
+    CatalogIds.petStatus.medico,
+    CatalogIds.petStatus.adopcion,
+    CatalogIds.petStatus.adoptado,
+    CatalogIds.petStatus.devueltaAlDueno,
+  ]);
+  const reports = allReports.filter(
+    (pet) =>
+      !(pet.statusId != null && REFUGIO_MANAGED.has(pet.statusId)) ||
+      pet.ownerUserId === id,
+  );
 
   const adoptionRepo = dbManager().getRepository(Adoption);
   const latest = await adoptionRepo.findOne({ where: { userId: id }, order: { createdAt: "DESC" } });

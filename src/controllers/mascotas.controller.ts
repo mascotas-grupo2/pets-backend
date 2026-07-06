@@ -229,18 +229,19 @@ export async function listMascotas(req: Request, res: Response) {
   const esPropia = (m: Pet) =>
     userId != null && (m.userId === userId || m.ownerUserId === userId);
 
-  // Ocultar del público las publicaciones vencidas hace más que la gracia
-  // (siguen en la DB y en "Mis reportes"; reaparecen si el dueño renueva).
-  const graceMs = EXPIRY_GRACE_DAYS * DAY_MS;
+  // Una publicación VENCIDA sale del listado público apenas vence: solo la ve su
+  // dueño (en "Mis reportes") para poder renovarla. Un usuario cualquiera no debe
+  // ver una publicación vencida —es un asunto del dueño—. Al renovar, vuelve a ser
+  // pública. (Los admins la ven en su panel aparte.)
   const visibles = mascotas.filter((m) => {
     // En pausa (pipeline de refugio): fuera del público, salvo al dueño.
     if (m.statusId != null && PAUSED_STATUS.has(m.statusId) && !esPropia(m)) {
       return false;
     }
     if (!m.expiresAt) return true;
-    const overdueMs = Date.now() - new Date(m.expiresAt).getTime();
-    if (overdueMs <= graceMs) return true;
-    // Las propias del usuario sí se le muestran (para que pueda renovarlas).
+    const vencida = Date.now() >= new Date(m.expiresAt).getTime();
+    if (!vencida) return true; // vigente → visible al público
+    // Vencida → solo el dueño la ve (para renovarla).
     return esPropia(m);
   });
   const catalogValuesById = await getCatalogValuesById();
@@ -649,10 +650,10 @@ export async function getMascota(req: Request, res: Response) {
   if (!canViewPet(mascota, req.authUser)) {
     return res.status(404).json({ error: "Pet no encontrada" });
   }
-  // Coherencia con el listado: si venció hace más que la gracia, también se oculta
+  // Coherencia con el listado: si la publicación está vencida, también se oculta
   // del DETALLE para el público (sino "oculta" se podía esquivar con el link directo).
   // El dueño, el dueño verificado y el admin la siguen viendo para poder renovarla.
-  if (isExpiredBeyondGrace(mascota.expiresAt)) {
+  if (expiryInfo(mascota.expiresAt).expired) {
     const u = req.authUser;
     const esDuenoOAdmin =
       u != null &&
