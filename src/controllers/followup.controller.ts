@@ -1,11 +1,13 @@
 import { Request, Response } from "express";
-import { In } from "typeorm";
+import { In, Not } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { dbManager } from "../lib/db-context.js";
 import { Followup } from "../entity/Followup.js";
 import { Pet } from "../entity/Pet.js";
 import { User } from "../entity/User.js";
+import { Adoption } from "../entity/Adoption.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
+import { applyAdoptionTransition } from "./adoption.controller.js";
 import { FollowupCreateInput, followupCreateSchema, followupListQuerySchema, FollowupUpdateInput, followupUpdateSchema } from "../schemas/followup.schema.js";
 import { getCatalogValuesById } from "../lib/catalog-values.js";
 import { recordActivity } from "../lib/activity.js";
@@ -257,6 +259,48 @@ export async function confirmFollowup(req: Request, res: Response) {
   res.json(item);
 }
 
+/**
+ * Auto-adopción: si `item` es el ÚLTIMO seguimiento post-adopción pendiente de una
+ * solicitud "aceptada con seguimiento", la solicitud pasa a ACEPTADA → la mascota
+ * queda adoptada y la publicación se cierra (vía applyAdoptionTransition).
+ * Best-effort: no rompe la operación de completar el seguimiento si algo falla.
+ */
+async function maybeFinalizarAdopcion(
+  item: Followup,
+  authUser: Parameters<typeof applyAdoptionTransition>[2],
+) {
+  if (
+    item.typeId !== CatalogIds.followupType.postAdopcion ||
+    item.adopterUserId == null
+  ) {
+    return;
+  }
+  const adoption = await dbManager().getRepository(Adoption).findOne({
+    where: {
+      petId: item.petId,
+      userId: item.adopterUserId,
+      statusId: CatalogIds.adoptionStatus.aceptadaConSeguimiento,
+    },
+  });
+  if (!adoption) return;
+  // ¿Quedan seguimientos post-adopción de esta solicitud sin completar?
+  const restantes = await repo().count({
+    where: {
+      petId: item.petId,
+      adopterUserId: item.adopterUserId,
+      typeId: CatalogIds.followupType.postAdopcion,
+      statusId: Not(CatalogIds.followupStatus.completado),
+    },
+  });
+  if (restantes === 0) {
+    await applyAdoptionTransition(
+      adoption,
+      CatalogIds.adoptionStatus.aceptada,
+      authUser,
+    );
+  }
+}
+
 export async function completeFollowup(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
@@ -269,6 +313,65 @@ export async function completeFollowup(req: Request, res: Response) {
   }
   item.statusId = CatalogIds.followupStatus.completado;
   await repo().save(item);
+
+  try {
+    await maybeFinalizarAdopcion(item, req.authUser ?? null);
+  } catch (e) {
+    console.warn("[followup] no se pudo finalizar la adopción:", (e as Error).message);
+  }
+
+  res.json(item);
+}
+
+/**
+ * Rechazar un seguimiento post-adopción: marca el seguimiento como RECHAZADO y
+ * DESCARTA la solicitud asociada (aceptada con seguimiento) → la publicación de la
+ * mascota vuelve a activarse (disponible para otro adoptante) y se cancelan los
+ * seguimientos pendientes.
+ */
+export async function rejectFollowup(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const item = await repo().findOneBy({ id });
+  if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
+
+  if (item.statusId === CatalogIds.followupStatus.rechazado) {
+    return res.status(409).json({ error: "El seguimiento ya está rechazado." });
+  }
+  item.statusId = CatalogIds.followupStatus.rechazado;
+  await repo().save(item);
+
+  if (
+    item.typeId === CatalogIds.followupType.postAdopcion &&
+    item.adopterUserId != null
+  ) {
+    const adoption = await dbManager().getRepository(Adoption).findOne({
+      where: {
+        petId: item.petId,
+        userId: item.adopterUserId,
+        statusId: CatalogIds.adoptionStatus.aceptadaConSeguimiento,
+      },
+    });
+    if (adoption) {
+      const reason =
+        typeof req.body?.reason === "string" ? req.body.reason : undefined;
+      try {
+        await applyAdoptionTransition(
+          adoption,
+          CatalogIds.adoptionStatus.descartada,
+          req.authUser ?? null,
+          reason,
+        );
+      } catch (e) {
+        console.warn(
+          "[followup] no se pudo descartar la adopción tras rechazar el seguimiento:",
+          (e as Error).message,
+        );
+      }
+    }
+  }
+
   res.json(item);
 }
 

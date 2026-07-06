@@ -7,6 +7,7 @@ import {
   getFollowupById,
   updateFollowup,
   completeFollowup,
+  rejectFollowup,
   deleteFollowup,
 } from "../controllers/followup.controller.js";
 import { requireRefugioAdmin, requireAuth } from "../lib/auth.js";
@@ -25,4 +26,5 @@ followupRouter.get("/:id", requireRefugioAdmin, getFollowupById);
 followupRouter.put("/:id", requireRefugioAdmin, updateFollowup);
 followupRouter.post("/:id/completar", requireRefugioAdmin, completeFollowup);
 followupRouter.post("/:id/confirmar", requireRefugioAdmin, confirmFollowup);
+followupRouter.post("/:id/rechazar", requireRefugioAdmin, rejectFollowup);
 followupRouter.delete("/:id", requireRefugioAdmin, deleteFollowup);

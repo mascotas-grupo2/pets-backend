@@ -115,6 +115,7 @@ export const CatalogIds = {
     pendiente: 1311,
     confirmado: 1312,
     completado: 1313,
+    rechazado: 1314,
   },
 } as const;
 
@@ -206,6 +207,7 @@ export const CatalogSeed: CatalogSeedItem[] = [
   { id: 1311, catalog: Catalog.FOLLOWUP_STATUS, code: "PENDIENTE", label: "Pendiente" },
   { id: 1312, catalog: Catalog.FOLLOWUP_STATUS, code: "CONFIRMADO", label: "Confirmado" },
   { id: 1313, catalog: Catalog.FOLLOWUP_STATUS, code: "COMPLETADO", label: "Completado" },
+  { id: 1314, catalog: Catalog.FOLLOWUP_STATUS, code: "RECHAZADO", label: "Rechazado" },
 ];
 
 const byId = new Map(CatalogSeed.map((item) => [item.id, item]));

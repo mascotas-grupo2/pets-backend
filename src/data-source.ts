@@ -63,6 +63,7 @@ import { AddSightingRejectedAndCoords1750500000000 } from "./migration/175050000
 import { AddAdopterToFollowup1750600000000 } from "./migration/1750600000000-AddAdopterToFollowup.js";
 import { RemoveEncontradoStatus1750700000000 } from "./migration/1750700000000-RemoveEncontradoStatus.js";
 import { AddRefugioCoordinates1750800000000 } from "./migration/1750800000000-AddRefugioCoordinates.js";
+import { AddFollowupRechazadoStatus1750900000000 } from "./migration/1750900000000-AddFollowupRechazadoStatus.js";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -133,6 +134,7 @@ export const AppDataSource = new DataSource({
     AddAdopterToFollowup1750600000000,
     RemoveEncontradoStatus1750700000000,
     AddRefugioCoordinates1750800000000,
+    AddFollowupRechazadoStatus1750900000000,
   ],
   synchronize: false,
 });

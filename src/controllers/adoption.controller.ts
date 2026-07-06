@@ -26,6 +26,7 @@ import {
   stampRefugioIfManaged,
   tenantWhere,
 } from "../lib/tenant.js";
+import type { AuthUser } from "../lib/auth.js";
 import {
   getAdoptionStatusCode,
   parseStatusId,
@@ -695,11 +696,16 @@ export async function adminListAdoptionsPaged(req: Request, res: Response) {
     .take(pageSize)
     .getManyAndCount();
 
-  // Los cards deben mostrar los totales por estado del conjunto completo,
-  // mientras que la lista paginada aplica los filtros del query.
-  const rawSummary = await adoptionRepo()
+  // Los cards muestran los totales por estado IGNORANDO el filtro de estado
+  // (para poder navegar entre tabs), pero SÍ respetando el alcance por refugio:
+  // cada admin de refugio ve solo los totales de SUS solicitudes (igual que la
+  // lista). Sin esto, un admin veía contadores de solicitudes de otro refugio
+  // que la lista —scoped— no mostraba.
+  const summaryQb = adoptionRepo()
     .createQueryBuilder("adoption")
-    .where("adoption.petId IS NOT NULL")
+    .where("adoption.petId IS NOT NULL");
+  applyTenantScope(summaryQb, "adoption", req.authUser);
+  const rawSummary = await summaryQb
     .select("adoption.statusId", "statusId")
     .addSelect("COUNT(*)", "count")
     .groupBy("adoption.statusId")
@@ -799,6 +805,131 @@ export async function getMyPetCompatibility(req: Request, res: Response) {
   });
 }
 
+/**
+ * Aplica los efectos colaterales de llevar una solicitud a `newStatusId`:
+ * cambia el estado/visibilidad de la publicación (mascota), crea o cancela los
+ * seguimientos post-adopción, guarda la nota de rechazo (si hay motivo) y notifica
+ * al adoptante. NO valida la transición ni el checklist: cada llamador es
+ * responsable de sus precondiciones. Reutilizado por:
+ *   - updateAdoptionStatus (admin cambia el estado a mano),
+ *   - completar los 3 seguimientos → ACEPTADA (mascota adoptada),
+ *   - rechazar un seguimiento → DESCARTADA (re-publica la mascota).
+ */
+export async function applyAdoptionTransition(
+  adoption: Adoption,
+  newStatusId: number,
+  authUser?: AuthUser | null,
+  reason?: string,
+): Promise<Adoption> {
+  const A = CatalogIds.adoptionStatus;
+  const R = CatalogIds.petReportStatus;
+  const previousStatusId = adoption.statusId;
+  const esTransito = adoption.kind === "transito";
+
+  const pet = adoption.petId
+    ? await petRepo().findOneBy({ id: adoption.petId })
+    : null;
+
+  if (adoption.refugioId == null) {
+    adoption.refugioId = authUser?.refugioId ?? null;
+  }
+  adoption.statusId = newStatusId;
+  const saved = await adoptionRepo().save(adoption);
+
+  // La solicitud manda y la publicación reacciona (nunca al revés).
+  if (pet && previousStatusId !== newStatusId) {
+    let petChanged = false;
+    if (newStatusId === A.entrevistaPendiente) {
+      // Entrevista programada → publicación reservada (oculta del público).
+      pet.reportStatusId = R.reservada;
+      petChanged = true;
+    } else if (newStatusId === A.aceptadaConSeguimiento) {
+      // Mientras corren los seguimientos, la publicación queda SUSPENDIDA (reservada).
+      if (pet.reportStatusId !== R.reservada) {
+        pet.reportStatusId = R.reservada;
+        petChanged = true;
+      }
+    } else if (newStatusId === A.descartada) {
+      // Si esta solicitud tenía reservada la mascota, se vuelve a publicar.
+      const eraReservadora =
+        previousStatusId === A.entrevistaPendiente ||
+        previousStatusId === A.aceptadaConSeguimiento;
+      if (eraReservadora && pet.reportStatusId === R.reservada) {
+        pet.reportStatusId = R.activo;
+        petChanged = true;
+      }
+    } else if (newStatusId === A.aceptada) {
+      // Concretada: tránsito → "en tránsito"; adopción → "adoptado". La publicación se cierra.
+      pet.statusId = esTransito
+        ? CatalogIds.petStatus.transito
+        : CatalogIds.petStatus.adoptado;
+      pet.reportStatusId = R.finalizado;
+      petChanged = true;
+    }
+    if (petChanged) {
+      stampRefugioIfManaged(pet, authUser);
+      await petRepo().save(pet);
+    }
+  }
+
+  if (
+    newStatusId === A.aceptadaConSeguimiento &&
+    previousStatusId !== newStatusId
+  ) {
+    await createFollowupsForAdoption(saved, authUser?.id ?? null);
+  }
+
+  // Descartar desde "aceptada con seguimiento": cancelar los seguimientos pendientes.
+  if (
+    newStatusId === A.descartada &&
+    previousStatusId === A.aceptadaConSeguimiento &&
+    adoption.petId &&
+    typeof adoption.userId === "number"
+  ) {
+    await followupRepo().delete({
+      petId: adoption.petId,
+      adopterUserId: adoption.userId,
+      typeId: CatalogIds.followupType.postAdopcion,
+      statusId: CatalogIds.followupStatus.pendiente,
+    });
+  }
+
+  // Nota de rechazo (motivo) visible para el solicitante en "Mis Solicitudes".
+  const motivo = typeof reason === "string" ? reason.trim() : "";
+  if (newStatusId === A.descartada && motivo) {
+    const authorId = authUser?.id ?? null;
+    let authorName: string | null = null;
+    if (authorId) {
+      const author = await userRepo().findOneBy({ id: authorId });
+      authorName = author?.name ?? author?.email ?? null;
+    }
+    await adoptionNoteRepo().save(
+      adoptionNoteRepo().create({
+        adoptionId: adoption.id,
+        text: `Rechazo: ${motivo}`,
+        authorId,
+        authorName,
+      }),
+    );
+  }
+
+  // Notificar al solicitante el cambio de estado.
+  if (previousStatusId !== newStatusId) {
+    const statusCode = getAdoptionStatusCode(newStatusId) ?? "";
+    await notify(saved.userId, {
+      type: "adoption_status",
+      title: "Tu solicitud de adopción cambió de estado",
+      body:
+        newStatusId === A.descartada && motivo
+          ? `Descartada. Motivo: ${motivo.slice(0, 100)}`
+          : `Ahora está: ${ADOPTION_STATUS_LABELS[statusCode] ?? statusCode}`,
+      link: "/account",
+    });
+  }
+
+  return saved;
+}
+
 export async function updateAdoptionStatus(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id))
@@ -873,98 +1004,14 @@ export async function updateAdoptionStatus(req: Request, res: Response) {
     }
   }
 
-  if (adoption.refugioId == null) {
-    adoption.refugioId = req.authUser?.refugioId ?? null;
-  }
-  adoption.statusId = statusId;
-  const saved = await adoptionRepo().save(adoption);
-
-  // La solicitud manda y la publicación reacciona (la publicación nunca toca la solicitud).
-  if (pet && previousStatusId !== statusId) {
-    let petChanged = false;
-    if (statusId === A.entrevistaPendiente) {
-      // Se programó la entrevista → la publicación queda reservada (oculta del público).
-      pet.reportStatusId = R.reservada;
-      petChanged = true;
-    } else if (statusId === A.descartada) {
-      // Si esta solicitud era la que tenía reservada la mascota, se vuelve a publicar.
-      const eraReservadora =
-        previousStatusId === A.entrevistaPendiente ||
-        previousStatusId === A.aceptadaConSeguimiento;
-      if (eraReservadora && pet.reportStatusId === R.reservada) {
-        pet.reportStatusId = R.activo;
-        petChanged = true;
-      }
-    } else if (statusId === A.aceptada) {
-      // Concretada: tránsito → la mascota queda "en tránsito"; adopción → "adoptado".
-      // En ambos casos la publicación se cierra (finalizado).
-      pet.statusId = esTransito
-        ? CatalogIds.petStatus.transito
-        : CatalogIds.petStatus.adoptado;
-      pet.reportStatusId = R.finalizado;
-      petChanged = true;
-    }
-    if (petChanged) {
-      stampRefugioIfManaged(pet, req.authUser);
-      await petRepo().save(pet);
-    }
-  }
-
-  if (statusId === A.aceptadaConSeguimiento && previousStatusId !== statusId) {
-    await createFollowupsForAdoption(saved, req.authUser?.id ?? null);
-  }
-
-  // Si el admin DESCARTA una solicitud que ya estaba "Aceptada con seguimiento"
-  // (decide que la mascota no es para ese adoptante), los seguimientos post-adopción
-  // que se habían agendado ya no corresponden: se cancelan (borran los pendientes).
-  // La mascota ya volvió a publicarse arriba (reportStatus → activo), es decir,
-  // vuelve a estar disponible en adopción.
-  if (
-    statusId === A.descartada &&
-    previousStatusId === A.aceptadaConSeguimiento &&
-    adoption.petId &&
-    typeof adoption.userId === "number"
-  ) {
-    await followupRepo().delete({
-      petId: adoption.petId,
-      adopterUserId: adoption.userId,
-      typeId: CatalogIds.followupType.postAdopcion,
-      statusId: CatalogIds.followupStatus.pendiente,
-    });
-  }
-
-  // Al descartar, si el admin dejó un motivo, lo guardamos como nota "Rechazo:"
-  // para mostrárselo al solicitante en "Mis Solicitudes".
-  const reason = typeof values.reason === "string" ? values.reason.trim() : "";
-  if (statusId === A.descartada && reason) {
-    const authorId = req.authUser?.id ?? null;
-    let authorName: string | null = null;
-    if (authorId) {
-      const author = await userRepo().findOneBy({ id: authorId });
-      authorName = author?.name ?? author?.email ?? null;
-    }
-    await adoptionNoteRepo().save(
-      adoptionNoteRepo().create({
-        adoptionId: id,
-        text: `Rechazo: ${reason}`,
-        authorId,
-        authorName,
-      }),
-    );
-  }
-
-  // Notificar al solicitante el cambio de estado de su solicitud.
-  if (previousStatusId !== statusId) {
-    await notify(saved.userId, {
-      type: "adoption_status",
-      title: "Tu solicitud de adopción cambió de estado",
-      body:
-        statusId === A.descartada && reason
-          ? `Descartada. Motivo: ${reason.slice(0, 100)}`
-          : `Ahora está: ${ADOPTION_STATUS_LABELS[statusCode] ?? statusCode}`,
-      link: "/account",
-    });
-  }
+  // Efectos colaterales centralizados (estado de la mascota/publicación,
+  // seguimientos, nota de rechazo y notificación) → applyAdoptionTransition.
+  const saved = await applyAdoptionTransition(
+    adoption,
+    statusId,
+    req.authUser ?? null,
+    values.reason,
+  );
 
   res.json(await serializeAdoptionDetail(saved));
 }
