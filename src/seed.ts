@@ -60,12 +60,17 @@ async function seed() {
   if (!refugioMoron) refugioMoron = refugioRepo.create({ slug: "refugio-moron" });
   refugioMoron.name = "Refugio Morón";
   refugioMoron.location = MORON_LOCATION;
+  // Coordenadas aproximadas de la sede (hardcode: el seed no depende de red).
+  refugioMoron.latitud = -34.6534;
+  refugioMoron.longitud = -58.6198;
   refugioMoron.active = true;
   refugioMoron = await refugioRepo.save(refugioMoron);
   let refugioHurlingham = await refugioRepo.findOneBy({ slug: "refugio-hurlingham" });
   if (!refugioHurlingham) refugioHurlingham = refugioRepo.create({ slug: "refugio-hurlingham" });
   refugioHurlingham.name = "Refugio Hurlingham";
   refugioHurlingham.location = HURLINGHAM_LOCATION;
+  refugioHurlingham.latitud = -34.5936;
+  refugioHurlingham.longitud = -58.6377;
   refugioHurlingham.active = true;
   refugioHurlingham = await refugioRepo.save(refugioHurlingham);
   const refugioMoronId = refugioMoron.id;
@@ -168,11 +173,11 @@ async function seed() {
       seedImage: "coco.png",
     },
 
-    // ============= PERROS ENCONTRADOS =============
+    // ===== PERROS AVISTADOS POR LA COMUNIDAD (se reportan como perdidos) =====
     {
       name: "Bobi",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: catalogIdForCode("pet_status", "encontrado"),
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Perro mestizo tamaño mediano, marrón con patas blancas. Sin collar. Muy amigable, parece bien cuidado.",
       date: "2026-05-26",
@@ -194,7 +199,7 @@ async function seed() {
     {
       name: "Manchas",
       animalTypeId: CatalogIds.animalType.perro,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Perro chico negro con manchas blancas en el pecho. Tenía collar rosa sin chapita.",
       date: "2026-05-28",
@@ -314,11 +319,11 @@ async function seed() {
       seedImage: "simba.png",
     },
 
-    // ============= GATOS ENCONTRADOS =============
+    // ===== GATOS AVISTADOS POR LA COMUNIDAD (se reportan como perdidos) =====
     {
       name: "Michi",
       animalTypeId: CatalogIds.animalType.gato,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Gata atigrada chiquita, parece joven. Maúlla mucho. La encontramos en el patio de un edificio.",
       date: "2026-05-27",
@@ -340,7 +345,7 @@ async function seed() {
     {
       name: "Salem",
       animalTypeId: CatalogIds.animalType.gato,
-      statusId: CatalogIds.petStatus.encontrado,
+      statusId: CatalogIds.petStatus.perdido,
       description:
         "Gato negro adulto, ojos verdes muy expresivos. Vino solo a la puerta de mi casa. Está flaco pero parece sano.",
       date: "2026-05-29",
@@ -415,12 +420,9 @@ async function seed() {
   // por mascota, así que la galería nunca se veía. Acá sumamos imágenes extra
   // (de la misma especie) a unas pocas mascotas para que la galería sea visible
   // en la demo. Son solo assets de muestra, no fotos reales del mismo animal.
+  // Fotos extra SOLO cuando son de la misma mascota (galería real). No mezclar
+  // fotos de otras mascotas: cada publicación muestra únicamente su propia foto.
   const extraSeedImages: Record<string, string[]> = {
-    Max: ["bobi.png", "bruno.png"],
-    Rocco: ["balto.png", "thor.png"],
-    Toby: ["rambo.png"],
-    Luna: ["michi.png", "pelusa.png"],
-    Mishi: ["michi.png", "salem.png"],
     // simba_extra.png es una 2ª foto del MISMO Simba (galería), no otra mascota.
     Simba: ["simba_extra.png"],
   };
@@ -739,14 +741,15 @@ async function seed() {
     18, // Thor   - perro mediano
   ];
 
-  // Estados variados (perdido/encontrado/tránsito/adopción) para enriquecer el listado.
+  // Estados variados (perdido/tránsito/médico/adopción) para enriquecer el
+  // listado público (perdido/adopción) y el dashboard del refugio (tránsito/médico).
   const extraPetStatuses = [
     CatalogIds.petStatus.perdido,
-    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.transito,
     CatalogIds.petStatus.perdido,
     CatalogIds.petStatus.adopcion,
     CatalogIds.petStatus.transito,
-    CatalogIds.petStatus.encontrado,
+    CatalogIds.petStatus.medico,
     CatalogIds.petStatus.adopcion,
     CatalogIds.petStatus.perdido,
     CatalogIds.petStatus.adopcion,
@@ -982,41 +985,31 @@ async function seed() {
   // Create ~10 adoption requests
   const repoAdopt = repoAdoption; // already defined above
   const adoptionSamples = [] as Adoption[];
-  const firstNames = [
-    "Juan",
-    "Maria",
-    "Carlos",
-    "Ana",
-    "Laura",
-    "Ricardo",
-    "Pedro",
-    "Lucia",
-    "Sofia",
-    "Diego",
-  ];
-  const lastNames = [
-    "Perez",
-    "Gomez",
-    "Ruiz",
-    "Lopez",
-    "Martinez",
-    "Silva",
-    "Gonzalez",
-    "Rodriguez",
-    "Fernandez",
-    "Diaz",
-  ];
+
+  // Deriva nombre/apellido/email del usuario REAL que hace la solicitud. Es
+  // importante para la coherencia: getUserDetails toma firstName/lastName/email
+  // de la última adopción del usuario; si acá se hardcodean nombres al azar, el
+  // perfil de "Ana López" terminaría mostrando "Juan Pérez" / otro mail.
+  const adopterIdentity = (u?: { name?: string | null; email?: string | null }) => {
+    const parts = (u?.name ?? "").trim().split(/\s+/).filter(Boolean);
+    return {
+      firstName: parts[0] || "Adoptante",
+      lastName: parts.slice(1).join(" ") || "",
+      email: u?.email ?? "",
+    };
+  };
 
   for (let i = 1; i <= 10; i++) {
     const user = allUsers[i % allUsers.length];
     const pet = allPets[i % allPets.length];
+    const ident = adopterIdentity(user);
     const a = repoAdopt.create({
       userId: user?.id ?? null,
       petId: pet?.id ?? null,
       preferredAnimalTypeId: pet?.animalTypeId ?? null,
-      firstName: firstNames[i % firstNames.length],
-      lastName: lastNames[i % lastNames.length],
-      email: `${firstNames[i % firstNames.length].toLowerCase()}.${lastNames[i % lastNames.length].toLowerCase()}@example.com`,
+      firstName: ident.firstName,
+      lastName: ident.lastName,
+      email: ident.email,
       phone: `11600000${i}`,
       addressLine1: `Calle ${i * 10} #${i * 100}`,
       addressLine2: null,
@@ -1063,6 +1056,61 @@ async function seed() {
     adoptionSamples.push(a as any);
   }
   await repoAdopt.save(adoptionSamples);
+
+  // Coherencia solicitud ↔ publicación ↔ seguimientos para las solicitudes de
+  // muestra. El round-robin de estados de arriba asigna estados "avanzados"
+  // (entrevista pendiente, aceptada con seguimiento, aceptada) SIN los efectos
+  // colaterales que en la app aplica applyAdoptionTransition. Sin esto quedaban
+  // estados contradictorios (p.ej. "Aceptada con seguimiento" con la mascota en
+  // "Perdido"/"Devuelta al dueño" y CERO seguimientos post-adopción). Acá los
+  // reconciliamos igual que la transición real.
+  const A = CatalogIds.adoptionStatus;
+  const petsById = new Map(allPets.map((p) => [p.id, p]));
+  const petsToFix = new Map<string, Pet>();
+  const sampleFollowups = [] as Followup[];
+  for (const a of adoptionSamples) {
+    if (!a.petId) continue;
+    const pet = petsById.get(a.petId);
+    if (!pet) continue;
+    if (
+      a.statusId === A.entrevistaPendiente ||
+      a.statusId === A.aceptadaConSeguimiento
+    ) {
+      // En el circuito de adopción y reservada mientras corre la evaluación /
+      // seguimiento (oculta del público). No puede seguir figurando "Perdido".
+      pet.statusId = CatalogIds.petStatus.adopcion;
+      pet.reportStatusId = CatalogIds.petReportStatus.reservada;
+      petsToFix.set(pet.id, pet);
+    } else if (a.statusId === A.aceptada) {
+      // Concretada → mascota adoptada y publicación cerrada (sin vencimiento).
+      pet.statusId = CatalogIds.petStatus.adoptado;
+      pet.reportStatusId = CatalogIds.petReportStatus.finalizado;
+      pet.expiresAt = null;
+      petsToFix.set(pet.id, pet);
+    }
+    // Aceptada con seguimiento → los 3 seguimientos post-adopción (7/30/90 días).
+    if (a.statusId === A.aceptadaConSeguimiento && a.userId) {
+      const base = Date.now();
+      for (const days of [7, 30, 90]) {
+        sampleFollowups.push(
+          repoFollowup.create({
+            petId: a.petId,
+            userId: adminSaved.id, // responsable = admin
+            adopterUserId: a.userId, // adoptante
+            typeId: CatalogIds.followupType.postAdopcion,
+            statusId: CatalogIds.followupStatus.pendiente,
+            appointmentAt: new Date(base + days * 24 * 60 * 60 * 1000),
+          }),
+        );
+      }
+    }
+  }
+  if (petsToFix.size > 0) await repoPets.save([...petsToFix.values()]);
+  if (sampleFollowups.length > 0) await repoFollowup.save(sampleFollowups);
+  console.log(
+    `Seed: reconciliadas ${petsToFix.size} publicaciones y ${sampleFollowups.length} seguimientos post-adopción de solicitudes de muestra.`,
+  );
+
   // created_at es @CreateDateColumn (TypeORM lo pisa con now() en el INSERT), así
   // que todas quedarían con la MISMA fecha. Las espaciamos a lo largo del último
   // AÑO (≈33 días entre sí) para que las métricas anuales y la columna "Fecha"
@@ -1084,10 +1132,15 @@ async function seed() {
     const user = allUsers[i % allUsers.length];
     const pet = allPets[i % allPets.length];
     const appointment = new Date(Date.now() + (i + 1) * 24 * 60 * 60 * 1000); // i+1 days in future
+    const typeId = (i % 6) + 1301;
     const fu = repoF.create({
       petId: pet.id,
-      userId: user.id,
-      typeId: (i % 6) + 1301,
+      // Responsable = admin del refugio; el usuario solo figura como ADOPTANTE
+      // y únicamente en seguimientos post-adopción.
+      userId: adminSaved.id,
+      adopterUserId:
+        typeId === CatalogIds.followupType.postAdopcion ? user.id : null,
+      typeId,
       appointmentAt: appointment,
       statusId: CatalogIds.followupStatus.pendiente,
     });
@@ -1232,8 +1285,6 @@ async function seed() {
   const regularUsers = (await repoUsers.find()).filter(
     (u) => u.roleId === CatalogIds.userRole.user,
   );
-  const histFirst = ["Juan", "Maria", "Carlos", "Ana", "Laura", "Ricardo", "Pedro", "Lucia", "Sofia", "Diego", "Martin", "Paula"];
-  const histLast = ["Perez", "Gomez", "Ruiz", "Lopez", "Martinez", "Silva", "Gonzalez", "Rodriguez", "Fernandez", "Diaz", "Acosta", "Vega"];
   const adopterIds = new Set<number>();
   const histAdoptions: { id: string; date: Date }[] = [];
   for (let i = 0; i < histPets.length; i++) {
@@ -1245,13 +1296,14 @@ async function seed() {
       i >= histPets.length - 2
         ? CatalogIds.adoptionStatus.descartada
         : CatalogIds.adoptionStatus.aceptada;
+    const histIdent = adopterIdentity(adopter);
     const a = repoAdopt.create({
       userId: adopter?.id ?? null,
       petId: hp.id,
       preferredAnimalTypeId: hp.animalTypeId,
-      firstName: histFirst[i % histFirst.length],
-      lastName: histLast[i % histLast.length],
-      email: `${histFirst[i % histFirst.length].toLowerCase()}.${histLast[i % histLast.length].toLowerCase()}.h${i}@example.com`,
+      firstName: histIdent.firstName,
+      lastName: histIdent.lastName,
+      email: histIdent.email,
       phone: `11650000${i}`,
       addressLine1: `Av. Siempreviva ${100 + i}`,
       addressLine2: null,
@@ -1309,7 +1361,8 @@ async function seed() {
     const fu = await repoF.save(
       repoF.create({
         petId: hp.id,
-        userId: user.id,
+        userId: adminSaved.id, // responsable (admin del refugio)
+        adopterUserId: user.id, // adoptante (usuario)
         typeId: CatalogIds.followupType.postAdopcion,
         appointmentAt: appt,
         statusId:
@@ -1333,7 +1386,7 @@ async function seed() {
     await repoF.save(
       repoF.create({
         petId: lostPetsNow[i].id,
-        userId: user.id,
+        userId: adminSaved.id, // responsable (admin); una visita no tiene adoptante
         typeId: CatalogIds.followupType.visita,
         appointmentAt: hoy,
         statusId: CatalogIds.followupStatus.pendiente,
@@ -1647,7 +1700,6 @@ async function seed() {
   // los refugios. Las mascotas en estados gestionados se reparten entre los dos
   // refugios; adopciones y seguimientos heredan el refugio de su mascota.
   const managedStatuses = [
-    CatalogIds.petStatus.encontrado,
     CatalogIds.petStatus.transito,
     CatalogIds.petStatus.medico,
     CatalogIds.petStatus.adopcion,

@@ -34,13 +34,7 @@ export function refugioIdOf(authUser?: AuthUser | null): number | null {
 export type TenantScope = { scoped: boolean; refugioId: number | null };
 
 export function tenantScope(authUser?: AuthUser | null): TenantScope {
-  if (isSuperadmin(authUser)) {
-    // Superadmin "mirando" un refugio puntual (picker) → se scopea a ese refugio;
-    // sin selección queda sin scope (ve el agregado de todos).
-    const view = authUser?.viewRefugioId ?? null;
-    if (view != null) return { scoped: true, refugioId: view };
-    return { scoped: false, refugioId: null };
-  }
+  if (isSuperadmin(authUser)) return { scoped: false, refugioId: null };
   return { scoped: true, refugioId: refugioIdOf(authUser) };
 }
 
@@ -65,7 +59,6 @@ export function applyTenantScope<T extends ObjectLiteral>(
 }
 
 export const MANAGED_PET_STATUS: number[] = [
-  CatalogIds.petStatus.encontrado,
   CatalogIds.petStatus.transito,
   CatalogIds.petStatus.medico,
   CatalogIds.petStatus.adopcion,
@@ -86,8 +79,8 @@ export function stampRefugioIfManaged(
 }
 
 // Visibilidad de mascotas para un admin: las que gestiona su refugio MÁS las que
-// no tienen dueño (refugio_id NULL), es decir los reportes públicos de
-// perdidos/encontrados, que son cross-refugio. El superadmin ve todo.
+// no tienen dueño (refugio_id NULL), es decir los reportes públicos de mascotas
+// perdidas, que son cross-refugio. El superadmin ve todo.
 export function petVisibilityWhere(
   base: FindOptionsWhere<Pet>,
   authUser?: AuthUser | null,

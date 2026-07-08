@@ -1,11 +1,17 @@
 import { Request, Response } from "express";
+import { In, Not } from "typeorm";
 import { AppDataSource } from "../data-source.js";
 import { dbManager } from "../lib/db-context.js";
 import { Followup } from "../entity/Followup.js";
+import { Pet } from "../entity/Pet.js";
+import { User } from "../entity/User.js";
+import { Adoption } from "../entity/Adoption.js";
 import { CatalogIds } from "../lib/catalog-constants.js";
+import { applyAdoptionTransition } from "./adoption.controller.js";
 import { FollowupCreateInput, followupCreateSchema, followupListQuerySchema, FollowupUpdateInput, followupUpdateSchema } from "../schemas/followup.schema.js";
 import { getCatalogValuesById } from "../lib/catalog-values.js";
 import { recordActivity } from "../lib/activity.js";
+import { notify } from "../lib/notify.js";
 import { parseOptionalInt } from "../controllers/_shared_parsers.js";
 import { applyTenantScope } from "../lib/tenant.js";
 
@@ -17,6 +23,103 @@ function parsePagination(req: Request) {
   const page = Math.max(1, Number(req.query.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
   return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+/** ¿La fecha cae en el día de hoy (hora local del server)? */
+function isToday(d: Date): boolean {
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+/**
+ * Si el seguimiento es para hoy, notifica a los admins del refugio (incluido el
+ * que lo agendó) con un recordatorio de agenda del día. Best-effort.
+ */
+async function notifyTodayReminder(followup: Followup, refugioId: number | null) {
+  try {
+    const when = new Date(followup.appointmentAt);
+    if (Number.isNaN(when.getTime()) || !isToday(when)) return;
+
+    const pet = await dbManager()
+      .getRepository(Pet)
+      .findOneBy({ id: followup.petId });
+    const petName = pet?.name ?? "una mascota";
+    const hora = when.toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
+    const admins = await dbManager().getRepository(User).find({
+      where:
+        refugioId != null
+          ? { roleId: CatalogIds.userRole.admin, refugioId }
+          : { roleId: CatalogIds.userRole.admin },
+    });
+    for (const admin of admins) {
+      await notify(admin.id, {
+        type: "adoption_status",
+        title: "📅 Seguimiento para hoy",
+        body: `Tenés un seguimiento agendado para hoy a las ${hora} (${petName}).`,
+        link: "/admin/seguimientos",
+      });
+    }
+  } catch (e) {
+    console.warn(
+      "[followup] no se pudo enviar recordatorio de hoy:",
+      (e as Error).message,
+    );
+  }
+}
+
+/**
+ * Pone la mascota "En tratamiento médico" (petStatus.medico) cuando se aprueba un
+ * seguimiento médico. Solo si viene de una etapa previa a la adopción (perdido /
+ * en refugio / en tránsito); si ya está en tratamiento o en una etapa posterior
+ * (adopción / adoptado / devuelta), no hace nada. Best-effort. Deja nota y avisa.
+ */
+async function promotePetToMedico(petId: string, actorId: number | null) {
+  try {
+    const S = CatalogIds.petStatus;
+    const ORIGENES_VALIDOS: number[] = [S.perdido, S.transito];
+
+    const petRepo = dbManager().getRepository(Pet);
+    const pet = await petRepo.findOneBy({ id: petId });
+    if (!pet) return;
+    if (pet.statusId === S.medico) return; // ya está en tratamiento
+    if (!ORIGENES_VALIDOS.includes(pet.statusId)) return; // no regresar desde adopción/terminal
+
+    pet.statusId = S.medico;
+    await petRepo.save(pet);
+
+    await recordActivity({
+      type: "seguimiento",
+      title: `${pet.name ?? "Una mascota"} pasó a tratamiento médico`,
+      actorUserId: actorId,
+      refugioId: pet.refugioId ?? null,
+      refType: "pet",
+      refId: pet.id,
+      link: "/admin/mascotas",
+    });
+
+    if (pet.userId) {
+      await notify(pet.userId, {
+        type: "publication",
+        title: `🏥 ${pet.name ?? "Tu mascota"} está en tratamiento médico`,
+        body: "El refugio confirmó un seguimiento médico y la mascota pasó a tratamiento.",
+        link: `/mascotas-perdidas/${pet.id}`,
+      });
+    }
+  } catch (e) {
+    console.warn(
+      "[followup] no se pudo poner la mascota en tratamiento médico:",
+      (e as Error).message,
+    );
+  }
 }
 
 export async function createFollowup(req: Request, res: Response) {
@@ -33,6 +136,9 @@ export async function createFollowup(req: Request, res: Response) {
     refugioId: req.authUser?.refugioId ?? null,
   });
   const saved = await repo().save(followup);
+  const catalogValuesById = await getCatalogValuesById();
+  const tipoLabel = catalogValuesById.get(saved.typeId)?.label ?? "Seguimiento";
+
   await recordActivity({
     type: "seguimiento",
     title: "Nuevo seguimiento agendado",
@@ -42,7 +148,29 @@ export async function createFollowup(req: Request, res: Response) {
     refId: saved.id,
     link: "/admin/seguimientos",
   });
-  const catalogValuesById = await getCatalogValuesById();
+
+  // Avisar al RESPONSABLE del seguimiento. OJO: `values.userId` es el responsable
+  // elegido en el alta (staff / veterinario / adoptante, según el caso), NO
+  // necesariamente el adoptante. Por eso el texto es contextual al TIPO y no
+  // asume "post-adopción". El seguimiento post-adopción es solo uno de los tipos.
+  const esPostAdopcion = saved.typeId === CatalogIds.followupType.postAdopcion;
+  await notify(values.userId, {
+    type: "adoption_status",
+    title: esPostAdopcion
+      ? "Se agendó un seguimiento post-adopción"
+      : `Se te asignó un seguimiento: ${tipoLabel}`,
+    body: esPostAdopcion
+      ? "Un administrador programó un seguimiento para tu adopción."
+      : `Un administrador te asignó como responsable de un seguimiento (${tipoLabel}).`,
+    link: "/account",
+  });
+
+  // Si el seguimiento es para HOY, avisar a los admins del refugio (incluido quien
+  // lo agenda) con un recordatorio de agenda del día. `recordActivity` ya notifica
+  // a los OTROS admins del alta, pero excluye al actor: este aviso "de hoy" sí le
+  // llega al que lo creó, porque es un recordatorio de su agenda inmediata.
+  await notifyTodayReminder(saved, req.authUser?.refugioId ?? null);
+
   res.status(201).json({ ...saved, type: catalogValuesById.get(saved.typeId) ?? null, status: catalogValuesById.get(saved.statusId) ?? null });
 }
 
@@ -69,6 +197,44 @@ export async function listFollowups(req: Request, res: Response) {
   res.json({ page, pageSize, total, items: items.map((i) => ({ ...i, type: catalogValuesById.get(i.typeId) ?? null, status: catalogValuesById.get(i.statusId) ?? null })) });
 }
 
+/**
+ * Seguimientos post-adopción del usuario autenticado COMO ADOPTANTE.
+ * A diferencia de listFollowups (solo admin, por responsable), esto filtra por
+ * `adopterUserId` para que el adoptante vea sus propias visitas de control
+ * (7/30/90 días) con la mascota asociada. Solo lectura.
+ */
+export async function listMyFollowups(req: Request, res: Response) {
+  const userId = req.authUser?.id;
+  if (!userId) return res.status(401).json({ error: "No autenticado" });
+
+  const items = await repo().find({
+    where: { adopterUserId: userId },
+    order: { appointmentAt: "ASC" },
+  });
+
+  const catalogValuesById = await getCatalogValuesById();
+
+  // Enriquecer con datos de la mascota (nombre + foto) en un solo query.
+  const petIds = [...new Set(items.map((i) => i.petId))];
+  const pets = petIds.length
+    ? await dbManager().getRepository(Pet).findBy({ id: In(petIds) })
+    : [];
+  const petById = new Map(pets.map((p) => [p.id, p]));
+
+  res.json({
+    items: items.map((i) => {
+      const pet = petById.get(i.petId);
+      return {
+        ...i,
+        type: catalogValuesById.get(i.typeId) ?? null,
+        status: catalogValuesById.get(i.statusId) ?? null,
+        petName: pet?.name ?? null,
+        petPhoto: pet?.photo ?? pet?.photos?.[0] ?? null,
+      };
+    }),
+  });
+}
+
 export async function confirmFollowup(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
@@ -83,7 +249,56 @@ export async function confirmFollowup(req: Request, res: Response) {
   }
   item.statusId = CatalogIds.followupStatus.confirmado;
   await repo().save(item);
+
+  // Regla de negocio: al APROBAR (confirmar) un seguimiento MÉDICO, la mascota
+  // pasa a "En tratamiento médico" si está en una etapa previa a la adopción.
+  if (item.typeId === CatalogIds.followupType.medico) {
+    await promotePetToMedico(item.petId, req.authUser?.id ?? null);
+  }
+
   res.json(item);
+}
+
+/**
+ * Auto-adopción: si `item` es el ÚLTIMO seguimiento post-adopción pendiente de una
+ * solicitud "aceptada con seguimiento", la solicitud pasa a ACEPTADA → la mascota
+ * queda adoptada y la publicación se cierra (vía applyAdoptionTransition).
+ * Best-effort: no rompe la operación de completar el seguimiento si algo falla.
+ */
+async function maybeFinalizarAdopcion(
+  item: Followup,
+  authUser: Parameters<typeof applyAdoptionTransition>[2],
+) {
+  if (
+    item.typeId !== CatalogIds.followupType.postAdopcion ||
+    item.adopterUserId == null
+  ) {
+    return;
+  }
+  const adoption = await dbManager().getRepository(Adoption).findOne({
+    where: {
+      petId: item.petId,
+      userId: item.adopterUserId,
+      statusId: CatalogIds.adoptionStatus.aceptadaConSeguimiento,
+    },
+  });
+  if (!adoption) return;
+  // ¿Quedan seguimientos post-adopción de esta solicitud sin completar?
+  const restantes = await repo().count({
+    where: {
+      petId: item.petId,
+      adopterUserId: item.adopterUserId,
+      typeId: CatalogIds.followupType.postAdopcion,
+      statusId: Not(CatalogIds.followupStatus.completado),
+    },
+  });
+  if (restantes === 0) {
+    await applyAdoptionTransition(
+      adoption,
+      CatalogIds.adoptionStatus.aceptada,
+      authUser,
+    );
+  }
 }
 
 export async function completeFollowup(req: Request, res: Response) {
@@ -98,6 +313,65 @@ export async function completeFollowup(req: Request, res: Response) {
   }
   item.statusId = CatalogIds.followupStatus.completado;
   await repo().save(item);
+
+  try {
+    await maybeFinalizarAdopcion(item, req.authUser ?? null);
+  } catch (e) {
+    console.warn("[followup] no se pudo finalizar la adopción:", (e as Error).message);
+  }
+
+  res.json(item);
+}
+
+/**
+ * Rechazar un seguimiento post-adopción: marca el seguimiento como RECHAZADO y
+ * DESCARTA la solicitud asociada (aceptada con seguimiento) → la publicación de la
+ * mascota vuelve a activarse (disponible para otro adoptante) y se cancelan los
+ * seguimientos pendientes.
+ */
+export async function rejectFollowup(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Id invalido" });
+
+  const item = await repo().findOneBy({ id });
+  if (!item) return res.status(404).json({ error: "Seguimiento no encontrado" });
+
+  if (item.statusId === CatalogIds.followupStatus.rechazado) {
+    return res.status(409).json({ error: "El seguimiento ya está rechazado." });
+  }
+  item.statusId = CatalogIds.followupStatus.rechazado;
+  await repo().save(item);
+
+  if (
+    item.typeId === CatalogIds.followupType.postAdopcion &&
+    item.adopterUserId != null
+  ) {
+    const adoption = await dbManager().getRepository(Adoption).findOne({
+      where: {
+        petId: item.petId,
+        userId: item.adopterUserId,
+        statusId: CatalogIds.adoptionStatus.aceptadaConSeguimiento,
+      },
+    });
+    if (adoption) {
+      const reason =
+        typeof req.body?.reason === "string" ? req.body.reason : undefined;
+      try {
+        await applyAdoptionTransition(
+          adoption,
+          CatalogIds.adoptionStatus.descartada,
+          req.authUser ?? null,
+          reason,
+        );
+      } catch (e) {
+        console.warn(
+          "[followup] no se pudo descartar la adopción tras rechazar el seguimiento:",
+          (e as Error).message,
+        );
+      }
+    }
+  }
+
   res.json(item);
 }
 

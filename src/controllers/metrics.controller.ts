@@ -10,7 +10,12 @@ import { User } from "../entity/User";
 
 import { In } from "typeorm";
 import { CatalogIds } from "../lib/catalog-constants"; // Importa CatalogIds
-import { applyTenantScope, scopedUserIds, tenantWhere } from "../lib/tenant";
+import {
+  applyPetVisibility,
+  applyTenantScope,
+  scopedUserIds,
+  tenantWhere,
+} from "../lib/tenant";
 
 // Define el tipo MetricasFilter para consistencia con el frontend
 type MetricasFilter = "7d" | "30d" | "90d" | "1y";
@@ -278,26 +283,38 @@ export async function getMapaReportes(req: Request, res: Response) {
         // Postgres pasa a minúscula los alias sin comillas; los entrecomillamos.
         'p.statusId as "statusId"',
         'p.animalTypeId as "animalTypeId"',
+        'p.refugio_id as "refugioId"',
         "p.photo as photo",
         "p.photos as photos",
       ])
       .where("p.latitud IS NOT NULL")
       .andWhere("p.longitud IS NOT NULL");
 
+    // Scoping por refugio: el admin ve solo su refugio + reportes públicos
+    // (refugio_id NULL). El superadmin ve todo.
+    applyPetVisibility(qb, "p", req.authUser);
+
     const raw = await qb.getRawMany();
 
-    let ubicaciones = raw.map((item) => ({
-      id: item.id,
-      nombre: item.nombre,
-      lat: Number(item.lat),
-      lng: Number(item.lng),
-      estado: getPetStatusLabel(Number(item.statusId)),
-      especie: getAnimalTypeLabel(Number(item.animalTypeId)),
-      // Imagen para el popup: foto principal o la primera del array.
-      foto:
-        item.photo ??
-        (Array.isArray(item.photos) && item.photos.length ? item.photos[0] : null),
-    }));
+    let ubicaciones = raw.map((item) => {
+      const photos = Array.isArray(item.photos)
+        ? item.photos
+        : item.photo
+          ? [item.photo]
+          : [];
+      return {
+        id: item.id,
+        nombre: item.nombre,
+        lat: Number(item.lat),
+        lng: Number(item.lng),
+        estado: getPetStatusLabel(Number(item.statusId)),
+        especie: getAnimalTypeLabel(Number(item.animalTypeId)),
+        refugioId: item.refugioId ?? null,
+        photos,
+        // Imagen para el popup: foto principal o la primera del array.
+        foto: item.photo ?? photos[0] ?? null,
+      };
+    });
 
     // Filtros opcionales (case-insensitive, por substring).
     const estado = typeof req.query.estado === "string" ? req.query.estado.toLowerCase() : null;
@@ -335,9 +352,6 @@ function getPetStatusLabel(id: number) {
   switch (id) {
     case CatalogIds.petStatus.perdido:
       return "perdido";
-
-    case CatalogIds.petStatus.encontrado:
-      return "encontrado";
 
     case CatalogIds.petStatus.transito:
       return "en tránsito";

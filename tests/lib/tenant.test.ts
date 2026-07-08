@@ -51,7 +51,6 @@ import { CatalogIds } from "../../src/lib/catalog-constants.js";
 
 const superadmin = { id: 1, role: "superadmin" };
 const refugioAdmin = { id: 2, role: "admin", refugioId: 7 };
-const superadminViewing = { id: 1, role: "superadmin", viewRefugioId: 5 };
 
 // Fake QueryBuilder encadenable que registra las llamadas a andWhere.
 function fakeQb() {
@@ -98,9 +97,6 @@ describe("tenantScope", () => {
   });
   it("sin authUser queda scopeado (deny by default)", () => {
     expect(tenantScope(undefined).scoped).toBe(true);
-  });
-  it("superadmin 'mirando' un refugio (picker) queda scopeado a ese refugio", () => {
-    expect(tenantScope(superadminViewing)).toEqual({ scoped: true, refugioId: 5 });
   });
 });
 
@@ -176,13 +172,13 @@ describe("applyTenantScope (QueryBuilder)", () => {
 
 describe("stampRefugioIfManaged", () => {
   it("estampa el refugio del admin en una mascota gestionada sin refugio", () => {
-    const pet = { refugioId: null, statusId: CatalogIds.petStatus.encontrado };
+    const pet = { refugioId: null, statusId: CatalogIds.petStatus.transito };
     stampRefugioIfManaged(pet, refugioAdmin);
     expect(pet.refugioId).toBe(7);
   });
 
   it("no pisa un refugio ya asignado", () => {
-    const pet = { refugioId: 99, statusId: CatalogIds.petStatus.encontrado };
+    const pet = { refugioId: 99, statusId: CatalogIds.petStatus.transito };
     stampRefugioIfManaged(pet, refugioAdmin);
     expect(pet.refugioId).toBe(99);
   });
@@ -194,7 +190,7 @@ describe("stampRefugioIfManaged", () => {
   });
 
   it("no estampa si el admin no tiene refugio (p. ej. superadmin)", () => {
-    const pet = { refugioId: null, statusId: CatalogIds.petStatus.encontrado };
+    const pet = { refugioId: null, statusId: CatalogIds.petStatus.transito };
     stampRefugioIfManaged(pet, superadmin);
     expect(pet.refugioId).toBeNull();
   });
@@ -202,7 +198,7 @@ describe("stampRefugioIfManaged", () => {
 
 describe("MANAGED_PET_STATUS", () => {
   it("incluye los estados de refugio/adopción y excluye 'perdido'", () => {
-    expect(MANAGED_PET_STATUS).toContain(CatalogIds.petStatus.encontrado);
+    expect(MANAGED_PET_STATUS).toContain(CatalogIds.petStatus.transito);
     expect(MANAGED_PET_STATUS).toContain(CatalogIds.petStatus.adoptado);
     expect(MANAGED_PET_STATUS).not.toContain(CatalogIds.petStatus.perdido);
   });
@@ -232,13 +228,5 @@ describe("scopedUserIds", () => {
     adoptionGetRawMany.mockResolvedValue([]);
     const ids = await scopedUserIds(refugioAdmin);
     expect(ids).toEqual([-1]);
-  });
-
-  it("superadmin 'mirando' un refugio: queda scopeado (consulta la DB)", async () => {
-    userFind.mockResolvedValue([{ id: 3 }]);
-    adoptionGetRawMany.mockResolvedValue([]);
-    const ids = await scopedUserIds(superadminViewing);
-    expect(ids).toEqual([3]);
-    expect(userFind).toHaveBeenCalled();
   });
 });
