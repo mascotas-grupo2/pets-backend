@@ -1056,6 +1056,61 @@ async function seed() {
     adoptionSamples.push(a as any);
   }
   await repoAdopt.save(adoptionSamples);
+
+  // Coherencia solicitud ↔ publicación ↔ seguimientos para las solicitudes de
+  // muestra. El round-robin de estados de arriba asigna estados "avanzados"
+  // (entrevista pendiente, aceptada con seguimiento, aceptada) SIN los efectos
+  // colaterales que en la app aplica applyAdoptionTransition. Sin esto quedaban
+  // estados contradictorios (p.ej. "Aceptada con seguimiento" con la mascota en
+  // "Perdido"/"Devuelta al dueño" y CERO seguimientos post-adopción). Acá los
+  // reconciliamos igual que la transición real.
+  const A = CatalogIds.adoptionStatus;
+  const petsById = new Map(allPets.map((p) => [p.id, p]));
+  const petsToFix = new Map<string, Pet>();
+  const sampleFollowups = [] as Followup[];
+  for (const a of adoptionSamples) {
+    if (!a.petId) continue;
+    const pet = petsById.get(a.petId);
+    if (!pet) continue;
+    if (
+      a.statusId === A.entrevistaPendiente ||
+      a.statusId === A.aceptadaConSeguimiento
+    ) {
+      // En el circuito de adopción y reservada mientras corre la evaluación /
+      // seguimiento (oculta del público). No puede seguir figurando "Perdido".
+      pet.statusId = CatalogIds.petStatus.adopcion;
+      pet.reportStatusId = CatalogIds.petReportStatus.reservada;
+      petsToFix.set(pet.id, pet);
+    } else if (a.statusId === A.aceptada) {
+      // Concretada → mascota adoptada y publicación cerrada (sin vencimiento).
+      pet.statusId = CatalogIds.petStatus.adoptado;
+      pet.reportStatusId = CatalogIds.petReportStatus.finalizado;
+      pet.expiresAt = null;
+      petsToFix.set(pet.id, pet);
+    }
+    // Aceptada con seguimiento → los 3 seguimientos post-adopción (7/30/90 días).
+    if (a.statusId === A.aceptadaConSeguimiento && a.userId) {
+      const base = Date.now();
+      for (const days of [7, 30, 90]) {
+        sampleFollowups.push(
+          repoFollowup.create({
+            petId: a.petId,
+            userId: adminSaved.id, // responsable = admin
+            adopterUserId: a.userId, // adoptante
+            typeId: CatalogIds.followupType.postAdopcion,
+            statusId: CatalogIds.followupStatus.pendiente,
+            appointmentAt: new Date(base + days * 24 * 60 * 60 * 1000),
+          }),
+        );
+      }
+    }
+  }
+  if (petsToFix.size > 0) await repoPets.save([...petsToFix.values()]);
+  if (sampleFollowups.length > 0) await repoFollowup.save(sampleFollowups);
+  console.log(
+    `Seed: reconciliadas ${petsToFix.size} publicaciones y ${sampleFollowups.length} seguimientos post-adopción de solicitudes de muestra.`,
+  );
+
   // created_at es @CreateDateColumn (TypeORM lo pisa con now() en el INSERT), así
   // que todas quedarían con la MISMA fecha. Las espaciamos a lo largo del último
   // AÑO (≈33 días entre sí) para que las métricas anuales y la columna "Fecha"
